@@ -1,4 +1,4 @@
-use q::asm::r#gen::codegen_ir_prog;
+use q::asm::{emitter::emit_asm_prog, fixup::fixup, r#gen::codegen_ir_prog};
 use q::ir::r#gen::irfy_ast;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
@@ -22,9 +22,9 @@ fn run(path: impl AsRef<Path>) -> Result<(), Box<dyn std::error::Error>> {
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
     let ast = Parser::new(&src, tokens).parse()?;
     let ir_prog = irfy_ast(&ast);
-    let asm = codegen_ir_prog(&ir_prog);
+    let mut asm_prog = codegen_ir_prog(&ir_prog);
 
-    println!("{:#?}", asm);
+    emit_asm_prog(fixup(&mut asm_prog));
 
     Ok(())
 }

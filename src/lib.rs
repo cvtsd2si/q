@@ -15,5 +15,7 @@ pub mod ir {
 }
 
 pub mod asm {
+    pub mod emitter;
+    pub mod fixup;
     pub mod r#gen;
 }

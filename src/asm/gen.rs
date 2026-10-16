@@ -2,27 +2,28 @@ use crate::ir::r#gen::{IRInstr, IRProg, IRVal};
 
 #[derive(Debug)]
 pub struct AsmProg {
-    instrs: Vec<AsmInstr>,
+    pub instrs: Vec<AsmInstr>,
 }
 
-#[derive(Debug)]
-enum AsmInstr {
+#[derive(Debug, Clone)]
+pub enum AsmInstr {
     Mov { src: AsmOp, dst: AsmOp },
     Ret,
 }
 
-#[derive(Debug)]
-enum AsmOp {
+#[derive(Debug, Clone)]
+pub enum AsmOp {
     Pseudo(String),
     Reg(AsmReg),
     Imm(i64),
 }
 
-#[derive(Debug)]
-enum AsmReg {
+#[derive(Debug, Clone, Copy)]
+pub enum AsmReg {
     Bp,
     Sp,
     Ax,
+    R9,
 }
 
 pub fn codegen_ir_prog(ir_prog: &IRProg) -> AsmProg {
