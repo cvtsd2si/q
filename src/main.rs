@@ -1,3 +1,4 @@
+use q::asm::r#gen::codegen_ir_prog;
 use q::ir::r#gen::irfy_ast;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
@@ -20,9 +21,10 @@ fn run(path: impl AsRef<Path>) -> Result<(), Box<dyn std::error::Error>> {
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
     let ast = Parser::new(&src, tokens).parse()?;
-    let ir = irfy_ast(&ast);
+    let ir_prog = irfy_ast(&ast);
+    let asm = codegen_ir_prog(&ir_prog);
 
-    println!("{:#?}", ir);
+    println!("{:#?}", asm);
 
     Ok(())
 }

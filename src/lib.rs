@@ -13,3 +13,7 @@ pub mod parser {
 pub mod ir {
     pub mod r#gen;
 }
+
+pub mod asm {
+    pub mod r#gen;
+}

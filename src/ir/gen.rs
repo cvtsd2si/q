@@ -1,20 +1,20 @@
 use crate::parser::ast::{BlockItem, Declaration, Expression, Program, Statement};
 
 #[derive(Debug)]
-enum IRVal {
-    Const(f64),
+pub enum IRVal {
+    Const(i64),
     Var(String),
 }
 
 #[derive(Debug)]
-enum IRInstr {
+pub enum IRInstr {
     Cpy { src: IRVal, dst: IRVal },
     Ret { val: IRVal },
 }
 
 #[derive(Debug)]
 pub struct IRProg {
-    instrs: Vec<IRInstr>,
+    pub instrs: Vec<IRInstr>,
 }
 
 pub fn irfy_ast(ast: &Program) -> IRProg {

@@ -36,7 +36,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Literal {
-        val: f64,
+        val: i64,
         span: Span,
     },
     Variable {

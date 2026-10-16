@@ -290,7 +290,7 @@ impl<'src> Parser<'src> {
 
         Ok(Expression::Literal {
             val: self.src[token.span.start..token.span.end]
-                .parse::<f64>()
+                .parse::<i64>()
                 .unwrap(),
             span: token.span,
         })
