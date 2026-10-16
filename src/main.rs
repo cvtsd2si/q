@@ -16,6 +16,8 @@ fn main() {
                     "--ir" => Some(Stage::Ir),
                     "--codegen" => Some(Stage::Codegen),
                     "--emit" => Some(Stage::Emit),
+                    "--asm" => Some(Stage::Asm),
+                    "--ln" => Some(Stage::Ln),
                     _ => {
                         eprintln!("err: unrecognized stage: {}", s);
                         std::process::exit(1);
@@ -69,7 +71,28 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Er
     asm.replace_pseudo().emit(&mut f)?;
 
     if stage == Some(Stage::Emit) {
-        todo!()
+        return Ok(());
+    }
+
+    std::process::Command::new("gcc")
+        .arg("-c")
+        .arg(path.with_extension("s"))
+        .arg("-o")
+        .arg(path.with_extension("o"))
+        .status()?;
+
+    if stage == Some(Stage::Asm) {
+        return Ok(());
+    }
+
+    std::process::Command::new("gcc")
+        .arg("-o")
+        .arg(path.with_extension(""))
+        .arg(path.with_extension("s"))
+        .status()?;
+
+    if stage == Some(Stage::Ln) {
+        return Ok(());
     }
 
     Ok(())
@@ -82,4 +105,6 @@ enum Stage {
     Ir,
     Codegen,
     Emit,
+    Asm,
+    Ln,
 }
