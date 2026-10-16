@@ -14,27 +14,33 @@ pub enum IRInstr {
 
 #[derive(Debug)]
 pub struct IRProg {
-    pub instrs: Vec<IRInstr>,
+    pub funcs: Vec<IRFunc>,
+}
+
+#[derive(Debug)]
+pub struct IRFunc {
+    pub name: String,
+    pub body: Vec<IRInstr>,
 }
 
 pub fn irfy(ast: &Program) -> IRProg {
-    let mut ir_prog = IRProg { instrs: vec![] };
+    let mut ir_prog = IRProg { funcs: vec![] };
 
     for block_item in &ast.block_items {
-        irfy_block_item(&mut ir_prog.instrs, block_item);
+        irfy_block_item(&mut ir_prog, block_item);
     }
 
     ir_prog
 }
 
-fn irfy_block_item(instrs: &mut Vec<IRInstr>, block_item: &BlockItem) {
+fn irfy_block_item(ir_prog: &mut IRProg, block_item: &BlockItem) {
     match block_item {
-        BlockItem::Decl(decl) => irfy_decl(instrs, decl),
-        BlockItem::Stmt(stmt) => irfy_stmt(instrs, stmt),
+        BlockItem::Decl(decl) => irfy_decl(ir_prog, decl),
+        BlockItem::Stmt(stmt) => unimplemented!(),
     }
 }
 
-fn irfy_decl(instrs: &mut Vec<IRInstr>, decl: &Declaration) {
+fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
     match decl {
         Declaration::Fn {
             name,
@@ -42,9 +48,16 @@ fn irfy_decl(instrs: &mut Vec<IRInstr>, decl: &Declaration) {
             params,
             body,
         } => {
-            for block_item in body {
-                irfy_block_item(instrs, block_item);
+            let mut f = IRFunc {
+                name: name.to_owned(),
+                body: vec![],
+            };
+
+            for stmt in body {
+                irfy_stmt(&mut f.body, stmt);
             }
+
+            ir_prog.funcs.push(f);
         }
     }
 }

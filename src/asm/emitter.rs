@@ -1,7 +1,13 @@
-use crate::asm::r#gen::{AsmInstr, AsmOp, AsmProg, AsmReg};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
 
 pub fn emit(asm_prog: &AsmProg) {
-    for asm_instr in &asm_prog.instrs {
+    for f in &asm_prog.funcs {
+        emit_fn(f);
+    }
+}
+
+fn emit_fn(asm_fn: &AsmFunc) {
+    for asm_instr in &asm_fn.body {
         match asm_instr {
             AsmInstr::Mov { src, dst } => {
                 println!("movq {}, {}", src, dst);

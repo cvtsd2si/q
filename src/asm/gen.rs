@@ -1,8 +1,14 @@
-use crate::ir::r#gen::{IRInstr, IRProg, IRVal};
+use crate::ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal};
 
 #[derive(Debug)]
 pub struct AsmProg {
-    pub instrs: Vec<AsmInstr>,
+    pub funcs: Vec<AsmFunc>,
+}
+
+#[derive(Debug)]
+pub struct AsmFunc {
+    pub name: String,
+    pub body: Vec<AsmInstr>,
 }
 
 #[derive(Debug, Clone)]
@@ -27,13 +33,26 @@ pub enum AsmReg {
 }
 
 pub fn codegen(ir_prog: &IRProg) -> AsmProg {
-    let mut asm_prog = AsmProg { instrs: vec![] };
+    let mut asm_prog = AsmProg { funcs: vec![] };
 
-    for ir_instr in &ir_prog.instrs {
-        codegen_ir_instr(&mut asm_prog.instrs, ir_instr);
+    for ir_func in &ir_prog.funcs {
+        codegen_ir_func(&mut asm_prog.funcs, ir_func);
     }
 
     asm_prog
+}
+
+fn codegen_ir_func(funcs: &mut Vec<AsmFunc>, ir_func: &IRFunc) {
+    let mut f = AsmFunc {
+        name: ir_func.name.to_owned(),
+        body: vec![],
+    };
+
+    for ir_instr in &ir_func.body {
+        codegen_ir_instr(&mut f.body, ir_instr);
+    }
+
+    funcs.push(f);
 }
 
 fn codegen_ir_instr(instrs: &mut Vec<AsmInstr>, ir_instr: &IRInstr) {

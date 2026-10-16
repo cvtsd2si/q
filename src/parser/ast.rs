@@ -17,7 +17,7 @@ pub enum Declaration {
         name: String,
         ret: Type,
         params: Vec<Param>,
-        body: Vec<BlockItem>,
+        body: Vec<Statement>,
     },
 }
 

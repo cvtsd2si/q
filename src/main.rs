@@ -1,4 +1,4 @@
-use q::asm::{emitter::emit, fixup::fixup, r#gen::codegen};
+use q::asm::{emitter::emit, fixup::replace_pseudo, r#gen::codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
@@ -63,7 +63,7 @@ fn run(path: impl AsRef<Path>, stage: Option<Stage>) -> Result<(), Box<dyn std::
         return Ok(());
     }
 
-    emit(fixup(&mut asm));
+    emit(replace_pseudo(&mut asm));
 
     if stage == Some(Stage::Emit) {
         todo!()

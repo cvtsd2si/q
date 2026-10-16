@@ -102,10 +102,30 @@ impl<'src> Parser<'src> {
     fn parse_block_item(&mut self) -> Result<BlockItem, ParserError> {
         match self.curr {
             Some(token) => match token.kind {
-                TokenKind::Fn => Ok(BlockItem::Decl(self.parse_fn()?)),
-                TokenKind::Ret => Ok(BlockItem::Stmt(self.parse_ret()?)),
-                TokenKind::Let => Ok(BlockItem::Stmt(self.parse_let()?)),
+                TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
+                TokenKind::Ret | TokenKind::Let => Ok(BlockItem::Stmt(self.parse_stmt()?)),
                 _ => unreachable!("got: {:?}", token.kind),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    fn parse_decl(&mut self) -> Result<Declaration, ParserError> {
+        match self.curr {
+            Some(token) => match token.kind {
+                TokenKind::Fn => Ok(self.parse_fn()?),
+                _ => unimplemented!(),
+            },
+            None => unreachable!(),
+        }
+    }
+
+    fn parse_stmt(&mut self) -> Result<Statement, ParserError> {
+        match self.curr {
+            Some(token) => match token.kind {
+                TokenKind::Let => Ok(self.parse_let()?),
+                TokenKind::Ret => Ok(self.parse_ret()?),
+                _ => unimplemented!(),
             },
             None => unreachable!(),
         }
@@ -164,13 +184,13 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_block(&mut self) -> Result<Vec<BlockItem>, ParserError> {
+    fn parse_block(&mut self) -> Result<Vec<Statement>, ParserError> {
         self.consume(TokenKind::LBrace)?;
 
         let mut body = vec![];
 
         while !self.check(TokenKind::RBrace) {
-            body.push(self.parse_block_item()?);
+            body.push(self.parse_stmt()?);
         }
 
         self.consume(TokenKind::RBrace)?;

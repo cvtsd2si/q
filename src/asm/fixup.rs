@@ -1,20 +1,26 @@
-use crate::asm::r#gen::{AsmInstr, AsmOp, AsmProg, AsmReg};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
 
-pub fn fixup(asm_prog: &mut AsmProg) -> &mut AsmProg {
-    for asm_instr in &mut asm_prog.instrs {
-        match asm_instr {
-            AsmInstr::Mov { src, dst } => {
-                replace_pseudo(src);
-                replace_pseudo(dst);
-            }
-            AsmInstr::Ret => {}
-        }
+pub fn replace_pseudo(asm_prog: &mut AsmProg) -> &mut AsmProg {
+    for f in &mut asm_prog.funcs {
+        replace_pseudo_fn(f);
     }
 
     asm_prog
 }
 
-fn replace_pseudo(asm_op: &mut AsmOp) {
+fn replace_pseudo_fn(asm_fn: &mut AsmFunc) {
+    for asm_instr in &mut asm_fn.body {
+        match asm_instr {
+            AsmInstr::Mov { src, dst } => {
+                replace_pseudo_op(src);
+                replace_pseudo_op(dst);
+            }
+            AsmInstr::Ret => {}
+        }
+    }
+}
+
+fn replace_pseudo_op(asm_op: &mut AsmOp) {
     if let AsmOp::Pseudo(pseudo) = asm_op {
         *asm_op = AsmOp::Reg(AsmReg::R9);
     }
