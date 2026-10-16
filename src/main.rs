@@ -4,7 +4,7 @@ use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use std::collections::VecDeque;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     match std::env::args().nth(1) {
