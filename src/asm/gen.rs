@@ -26,7 +26,7 @@ pub enum AsmReg {
     R9,
 }
 
-pub fn codegen_ir_prog(ir_prog: &IRProg) -> AsmProg {
+pub fn codegen(ir_prog: &IRProg) -> AsmProg {
     let mut asm_prog = AsmProg { instrs: vec![] };
 
     for ir_instr in &ir_prog.instrs {

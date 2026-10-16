@@ -17,7 +17,7 @@ pub struct IRProg {
     pub instrs: Vec<IRInstr>,
 }
 
-pub fn irfy_ast(ast: &Program) -> IRProg {
+pub fn irfy(ast: &Program) -> IRProg {
     let mut ir_prog = IRProg { instrs: vec![] };
 
     for block_item in &ast.block_items {

@@ -1,6 +1,6 @@
 use crate::asm::r#gen::{AsmInstr, AsmOp, AsmProg, AsmReg};
 
-pub fn emit_asm_prog(asm_prog: &AsmProg) {
+pub fn emit(asm_prog: &AsmProg) {
     for asm_instr in &asm_prog.instrs {
         match asm_instr {
             AsmInstr::Mov { src, dst } => {
