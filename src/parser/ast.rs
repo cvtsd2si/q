@@ -107,7 +107,6 @@ impl From<Token> for Type {
     }
 }
 
-
 #[derive(Debug, Clone, Copy)]
 pub struct Span {
     pub start: usize,

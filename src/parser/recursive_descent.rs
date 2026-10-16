@@ -134,7 +134,7 @@ impl<'src> Parser<'src> {
         while !self.check(TokenKind::RParen) {
             let param_name = self.consume(TokenKind::Identifier)?;
             self.consume(TokenKind::Colon)?;
-            let param_ty = Type::from(self.consume_primitive()?);
+            let param_ty = self.consume_primitive()?.into();
 
             params.push(Param {
                 name: self.src[param_name.start..param_name.end].to_string(),
@@ -151,7 +151,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::RParen)?;
         self.consume(TokenKind::Arrow)?;
 
-        let ret = Type::from(self.consume_primitive()?);
+        let ret = self.consume_primitive()?.into();
         let body = self.parse_block()?;
 
         Ok(Declaration::Fn {
@@ -188,7 +188,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?;
         self.consume(TokenKind::Colon)?;
-        let ty = Type::from(self.consume_primitive()?);
+        let ty = self.consume_primitive()?.into();
         self.consume(TokenKind::Equal)?;
         let init = self.parse_expr()?;
         self.consume(TokenKind::Semicolon)?;
