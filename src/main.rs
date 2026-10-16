@@ -95,6 +95,10 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Er
         return Ok(());
     }
 
+    for ext in vec!["s", "o"] {
+        std::fs::remove_file(path.with_extension(ext))?;
+    }
+
     Ok(())
 }
 
