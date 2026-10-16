@@ -1,19 +1,33 @@
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
 
-pub fn emit(asm_prog: &AsmProg) {
-    for f in &asm_prog.funcs {
-        emit_fn(f);
+pub trait Emit {
+    fn emit(&self);
+}
+
+impl Emit for AsmProg {
+    fn emit(&self) {
+        for f in &self.funcs {
+            f.emit();
+        }
     }
 }
 
-fn emit_fn(asm_fn: &AsmFunc) {
-    println!("\t.global {}", asm_fn.name);
-    println!("{}:", asm_fn.name);
+impl Emit for AsmFunc {
+    fn emit(&self) {
+        println!("\t.global {}", self.name);
+        println!("{}:", self.name);
 
-    for asm_instr in &asm_fn.body {
+        for instr in &self.body {
+            instr.emit();
+        }
+    }
+}
+
+impl Emit for AsmInstr {
+    fn emit(&self) {
         print!("\t");
 
-        match asm_instr {
+        match self {
             AsmInstr::Mov { src, dst } => {
                 println!("movq {}, {}", src, dst);
             }
@@ -42,7 +56,9 @@ impl std::fmt::Display for AsmOp {
                 AsmReg::Ax => write!(f, "%rax"),
                 AsmReg::R9 => write!(f, "%r9"),
             },
+
             AsmOp::Imm(n) => write!(f, "${}", n),
+            
             _ => unreachable!(),
         }
     }
