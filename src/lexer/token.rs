@@ -1,16 +1,17 @@
 #[derive(Debug, Clone, Copy)]
 pub struct Token {
     pub kind: TokenKind,
-    pub start: usize,
-    pub end: usize,
+    pub span: Span,
 }
 
 impl Token {
     pub fn single(ch: char, pos: usize) -> Self {
         Self {
             kind: Self::kind4ch(ch),
-            start: pos,
-            end: pos + 1,
+            span: Span {
+                start: pos,
+                end: pos + 1,
+            },
         }
     }
 
@@ -65,4 +66,21 @@ pub enum TokenKind {
     Str,
     Semicolon,
     Number,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl std::ops::Add for Span {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            start: self.start,
+            end: rhs.end,
+        }
+    }
 }

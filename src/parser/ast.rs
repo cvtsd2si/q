@@ -1,4 +1,4 @@
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{Span, Token, TokenKind};
 
 #[derive(Debug)]
 pub struct Program {
@@ -103,23 +103,6 @@ impl From<Token> for Type {
             TokenKind::Bool => Type::Boolean,
             TokenKind::Str => Type::String,
             _ => unreachable!(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct Span {
-    pub start: usize,
-    pub end: usize,
-}
-
-impl std::ops::Add for Span {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        Self {
-            start: self.start,
-            end: rhs.end,
         }
     }
 }

@@ -1,22 +1,23 @@
+use crate::lexer::token::Span;
+
 #[derive(Debug)]
 pub struct TokenizerError {
     pub src: String,
     pub msg: String,
-    pub start: usize,
-    pub end: usize,
+    pub span: Span,
 }
 
 impl std::fmt::Display for TokenizerError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let line_start = self.src[..self.start].rfind('\n').map_or(0, |i| i + 1);
-        let line_end = self.src[self.start..]
+        let line_start = self.src[..self.span.start].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = self.src[self.span.start..]
             .find('\n')
-            .map_or(self.src.len(), |i| self.start + i);
+            .map_or(self.src.len(), |i| self.span.start + i);
 
         let line = &self.src[line_start..line_end];
 
-        let col = self.start - line_start;
-        let width = self.end - self.start;
+        let col = self.span.start - line_start;
+        let width = self.span.end - self.span.start;
 
         write!(f, "tokenizer: ")?;
         writeln!(f)?;

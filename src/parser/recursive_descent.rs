@@ -1,6 +1,6 @@
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{Span, Token, TokenKind};
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Param, Program, Span, Statement, Type,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Param, Program, Statement,
 };
 use crate::parser::error::ParserError;
 use std::collections::VecDeque;
@@ -53,13 +53,14 @@ impl<'src> Parser<'src> {
             }
             Some(token) => Err(ParserError {
                 src: self.src.to_string(),
-                start: token.start,
-                end: token.end,
+                span: token.span,
             }),
             None => Err(ParserError {
                 src: self.src.to_string(),
-                start: self.src.len(),
-                end: self.src.len(),
+                span: Span {
+                    start: self.src.len(),
+                    end: self.src.len(),
+                },
             }),
         }
     }
@@ -85,14 +86,15 @@ impl<'src> Parser<'src> {
                 }
                 _ => Err(ParserError {
                     src: self.src.to_string(),
-                    start: token.start,
-                    end: token.end,
+                    span: token.span,
                 }),
             },
             None => Err(ParserError {
                 src: self.src.to_string(),
-                start: self.src.len(),
-                end: self.src.len(),
+                span: Span {
+                    start: self.src.len(),
+                    end: self.src.len(),
+                },
             }),
         }
     }
@@ -137,7 +139,7 @@ impl<'src> Parser<'src> {
             let param_ty = self.consume_primitive()?.into();
 
             params.push(Param {
-                name: self.src[param_name.start..param_name.end].to_string(),
+                name: self.src[param_name.span.start..param_name.span.end].to_string(),
                 ty: param_ty,
             });
 
@@ -155,7 +157,7 @@ impl<'src> Parser<'src> {
         let body = self.parse_block()?;
 
         Ok(Declaration::Fn {
-            name: self.src[name.start..name.end].to_string(),
+            name: self.src[name.span.start..name.span.end].to_string(),
             ret,
             params,
             body,
@@ -194,7 +196,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Let {
-            name: self.src[name.start..name.end].to_string(),
+            name: self.src[name.span.start..name.span.end].to_string(),
             init,
             ty,
         })
@@ -277,12 +279,9 @@ impl<'src> Parser<'src> {
         let token = self.consume(TokenKind::Identifier)?;
 
         Ok(Expression::Variable {
-            name: self.src[token.start..token.end].to_string(),
+            name: self.src[token.span.start..token.span.end].to_string(),
             ty: None,
-            span: Span {
-                start: token.start,
-                end: token.end,
-            },
+            span: token.span,
         })
     }
 
@@ -290,11 +289,10 @@ impl<'src> Parser<'src> {
         let token = self.consume(TokenKind::Number)?;
 
         Ok(Expression::Literal {
-            val: self.src[token.start..token.end].parse::<f64>().unwrap(),
-            span: Span {
-                start: token.start,
-                end: token.end,
-            },
+            val: self.src[token.span.start..token.span.end]
+                .parse::<f64>()
+                .unwrap(),
+            span: token.span,
         })
     }
 }

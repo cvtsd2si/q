@@ -1,5 +1,5 @@
 use crate::lexer::error::TokenizerError;
-use crate::lexer::token::{Token, TokenKind};
+use crate::lexer::token::{Span, Token, TokenKind};
 use std::iter::Peekable;
 use std::str::CharIndices;
 
@@ -34,8 +34,10 @@ impl<'src> Iterator for Tokenizer<'src> {
                     if self.chars.next_if(|(_, ch)| *ch == '>').is_some() {
                         Ok(Token {
                             kind: TokenKind::Arrow,
-                            start: idx,
-                            end: idx + 2,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
                         })
                     } else {
                         Ok(Token::single(ch, idx))
@@ -59,8 +61,10 @@ impl<'src> Iterator for Tokenizer<'src> {
                                 return Some(Err(TokenizerError {
                                     src: self.src.to_string(),
                                     msg: "Already seen fp.".to_string(),
-                                    start: idx,
-                                    end: idx + 1,
+                                    span: Span {
+                                        start: idx,
+                                        end: idx + 1,
+                                    },
                                 }));
                             }
 
@@ -76,8 +80,7 @@ impl<'src> Iterator for Tokenizer<'src> {
 
                     Ok(Token {
                         kind: TokenKind::Number,
-                        start: idx,
-                        end,
+                        span: Span { start: idx, end },
                     })
                 }
                 _ if ch.is_alphabetic() || ch == '_' => {
@@ -116,15 +119,16 @@ impl<'src> Iterator for Tokenizer<'src> {
 
                     Ok(Token {
                         kind,
-                        start: idx,
-                        end,
+                        span: Span { start: idx, end },
                     })
                 }
                 _ => Err(TokenizerError {
                     src: self.src.to_string(),
                     msg: "Encountered unknown token.".to_string(),
-                    start: idx,
-                    end: idx + 1,
+                    span: Span {
+                        start: idx,
+                        end: idx + 1,
+                    },
                 }),
             };
 
