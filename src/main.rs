@@ -3,7 +3,8 @@ use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use std::collections::VecDeque;
-use std::path::Path;
+use std::fs::File;
+use std::path::{Path, PathBuf};
 
 fn main() {
     match std::env::args().nth(1) {
@@ -24,7 +25,7 @@ fn main() {
                 None
             };
 
-            if let Err(e) = run(path, stage) {
+            if let Err(e) = run(path.into(), stage) {
                 eprintln!("err: {}", e);
             }
         }
@@ -32,8 +33,8 @@ fn main() {
     }
 }
 
-fn run(path: impl AsRef<Path>, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Error>> {
-    let src = std::fs::read_to_string(path)?;
+fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Error>> {
+    let src = std::fs::read_to_string(&path)?;
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
 
@@ -63,7 +64,9 @@ fn run(path: impl AsRef<Path>, stage: Option<Stage>) -> Result<(), Box<dyn std::
         return Ok(());
     }
 
-    asm.replace_pseudo().emit();
+    let mut f = File::create(path.with_extension("s"))?;
+
+    asm.replace_pseudo().emit(&mut f)?;
 
     if stage == Some(Stage::Emit) {
         todo!()

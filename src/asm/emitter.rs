@@ -1,49 +1,56 @@
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
+use std::{fs::File, io::Write};
 
 pub trait Emit {
-    fn emit(&self);
+    fn emit(&self, f: &mut File) -> Result<(), std::io::Error>;
 }
 
 impl Emit for AsmProg {
-    fn emit(&self) {
-        for f in &self.funcs {
-            f.emit();
+    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+        for func in &self.funcs {
+            func.emit(f)?;
         }
+
+        Ok(())
     }
 }
 
 impl Emit for AsmFunc {
-    fn emit(&self) {
-        println!("\t.global {}", self.name);
-        println!("{}:", self.name);
+    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+        writeln!(f, "\t.global {}", self.name)?;
+        writeln!(f, "{}:", self.name)?;
 
         for instr in &self.body {
-            instr.emit();
+            instr.emit(f)?;
         }
+
+        Ok(())
     }
 }
 
 impl Emit for AsmInstr {
-    fn emit(&self) {
-        print!("\t");
+    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+        write!(f, "\t")?;
 
         match self {
             AsmInstr::Mov { src, dst } => {
-                println!("movq {}, {}", src, dst);
+                writeln!(f, "movq {}, {}", src, dst)?;
             }
 
             AsmInstr::Ret => {
-                println!("ret");
+                writeln!(f, "ret")?;
             }
 
             AsmInstr::Push(reg) => {
-                println!("pushq {}", reg);
+                writeln!(f, "pushq {}", reg)?;
             }
 
             AsmInstr::Pop(reg) => {
-                println!("popq {}", reg);
+                writeln!(f, "popq {}", reg)?;
             }
         }
+
+        Ok(())
     }
 }
 
