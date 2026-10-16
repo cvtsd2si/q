@@ -1,4 +1,4 @@
-use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::codegen};
+use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::Codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
@@ -52,14 +52,14 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Er
         return Ok(());
     }
 
-    let ir = irfy(&ast);
+    let mut ir = irfy(&ast);
 
     if stage == Some(Stage::Ir) {
         println!("{:#?}", ir);
         return Ok(());
     }
 
-    let mut asm = codegen(&ir);
+    let mut asm = ir.codegen();
 
     if stage == Some(Stage::Codegen) {
         println!("{:#?}", asm);

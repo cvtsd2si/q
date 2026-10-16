@@ -34,59 +34,75 @@ pub enum AsmReg {
     R9,
 }
 
-pub fn codegen(ir_prog: &IRProg) -> AsmProg {
-    let mut asm_prog = AsmProg { funcs: vec![] };
+pub trait Codegen {
+    type Output;
 
-    for ir_func in &ir_prog.funcs {
-        codegen_ir_func(&mut asm_prog.funcs, ir_func);
-    }
-
-    asm_prog
+    fn codegen(&mut self) -> Self::Output;
 }
 
-fn codegen_ir_func(funcs: &mut Vec<AsmFunc>, ir_func: &IRFunc) {
-    let mut f = AsmFunc {
-        name: ir_func.name.to_owned(),
-        body: vec![],
-    };
+impl Codegen for IRProg {
+    type Output = AsmProg;
 
-    insert_prologue(&mut f.body);
-
-    for ir_instr in &ir_func.body {
-        codegen_ir_instr(&mut f.body, ir_instr);
-    }
-
-    funcs.push(f);
-}
-
-fn codegen_ir_instr(instrs: &mut Vec<AsmInstr>, ir_instr: &IRInstr) {
-    match ir_instr {
-        IRInstr::Cpy { src, dst } => {
-            let src = codegen_ir_val(src);
-            let dst = codegen_ir_val(dst);
-
-            instrs.push(AsmInstr::Mov { src, dst });
-        }
-
-        IRInstr::Ret { val } => {
-            let v = codegen_ir_val(val);
-
-            instrs.push(AsmInstr::Mov {
-                src: v,
-                dst: AsmOp::Reg(AsmReg::Ax),
-            });
-
-            insert_epilogue(instrs);
-
-            instrs.push(AsmInstr::Ret);
+    fn codegen(&mut self) -> Self::Output {
+        AsmProg {
+            funcs: self.funcs.iter_mut().map(|f| f.codegen()).collect(),
         }
     }
 }
 
-fn codegen_ir_val(ir_val: &IRVal) -> AsmOp {
-    match ir_val {
-        IRVal::Const(konst) => AsmOp::Imm(*konst),
-        IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
+impl Codegen for IRFunc {
+    type Output = AsmFunc;
+
+    fn codegen(&mut self) -> Self::Output {
+        let mut body = vec![];
+
+        insert_prologue(&mut body);
+
+        for instr in &mut self.body {
+            body.extend(instr.codegen());
+        }
+
+        AsmFunc {
+            name: self.name.to_owned(),
+            body,
+        }
+    }
+}
+
+impl Codegen for IRInstr {
+    type Output = Vec<AsmInstr>;
+
+    fn codegen(&mut self) -> Self::Output {
+        match self {
+            IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
+                src: src.codegen(),
+                dst: dst.codegen(),
+            }],
+
+            IRInstr::Ret { val } => {
+                let mut instrs = vec![AsmInstr::Mov {
+                    src: val.codegen(),
+                    dst: AsmOp::Reg(AsmReg::Ax),
+                }];
+
+                insert_epilogue(&mut instrs);
+
+                instrs.push(AsmInstr::Ret);
+
+                instrs
+            }
+        }
+    }
+}
+
+impl Codegen for IRVal {
+    type Output = AsmOp;
+
+    fn codegen(&mut self) -> Self::Output {
+        match self {
+            IRVal::Const(konst) => AsmOp::Imm(*konst),
+            IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
+        }
     }
 }
 
