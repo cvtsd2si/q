@@ -15,6 +15,8 @@ pub struct AsmFunc {
 pub enum AsmInstr {
     Mov { src: AsmOp, dst: AsmOp },
     Ret,
+    Push(AsmOp),
+    Pop(AsmOp),
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +50,8 @@ fn codegen_ir_func(funcs: &mut Vec<AsmFunc>, ir_func: &IRFunc) {
         body: vec![],
     };
 
+    insert_prologue(&mut f.body);
+
     for ir_instr in &ir_func.body {
         codegen_ir_instr(&mut f.body, ir_instr);
     }
@@ -71,6 +75,9 @@ fn codegen_ir_instr(instrs: &mut Vec<AsmInstr>, ir_instr: &IRInstr) {
                 src: v,
                 dst: AsmOp::Reg(AsmReg::Ax),
             });
+
+            insert_epilogue(instrs);
+
             instrs.push(AsmInstr::Ret);
         }
     }
@@ -81,4 +88,20 @@ fn codegen_ir_val(ir_val: &IRVal) -> AsmOp {
         IRVal::Const(konst) => AsmOp::Imm(*konst),
         IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
     }
+}
+
+fn insert_prologue(body: &mut Vec<AsmInstr>) {
+    body.push(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
+    body.push(AsmInstr::Mov {
+        src: AsmOp::Reg(AsmReg::Sp),
+        dst: AsmOp::Reg(AsmReg::Bp),
+    });
+}
+
+fn insert_epilogue(body: &mut Vec<AsmInstr>) {
+    body.push(AsmInstr::Mov {
+        src: AsmOp::Reg(AsmReg::Bp),
+        dst: AsmOp::Reg(AsmReg::Sp),
+    });
+    body.push(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
 }

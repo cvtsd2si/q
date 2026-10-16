@@ -15,7 +15,8 @@ fn replace_pseudo_fn(asm_fn: &mut AsmFunc) {
                 replace_pseudo_op(src);
                 replace_pseudo_op(dst);
             }
-            AsmInstr::Ret => {}
+
+            AsmInstr::Ret | AsmInstr::Push(_) | AsmInstr::Pop(_) => {}
         }
     }
 }

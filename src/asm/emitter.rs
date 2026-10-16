@@ -7,7 +7,12 @@ pub fn emit(asm_prog: &AsmProg) {
 }
 
 fn emit_fn(asm_fn: &AsmFunc) {
+    println!("\t.global {}", asm_fn.name);
+    println!("{}:", asm_fn.name);
+
     for asm_instr in &asm_fn.body {
+        print!("\t");
+
         match asm_instr {
             AsmInstr::Mov { src, dst } => {
                 println!("movq {}, {}", src, dst);
@@ -15,6 +20,14 @@ fn emit_fn(asm_fn: &AsmFunc) {
 
             AsmInstr::Ret => {
                 println!("ret");
+            }
+
+            AsmInstr::Push(reg) => {
+                println!("pushq {}", reg);
+            }
+
+            AsmInstr::Pop(reg) => {
+                println!("popq {}", reg);
             }
         }
     }
