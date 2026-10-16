@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub struct TokenizerError {
     pub src: String,
+    pub msg: String,
     pub start: usize,
     pub end: usize,
 }
@@ -19,6 +20,8 @@ impl std::fmt::Display for TokenizerError {
 
         write!(f, "tokenizer: ")?;
         writeln!(f)?;
+
+        writeln!(f, "{}", self.msg)?;
 
         write!(f, "{}", line)?;
         writeln!(f)?;

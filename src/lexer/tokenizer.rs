@@ -55,7 +55,14 @@ impl<'src> Iterator for Tokenizer<'src> {
                                 self.chars.next();
                             }
 
-                            '.' => panic!("Already seen fp."),
+                            '.' => {
+                                return Some(Err(TokenizerError {
+                                    src: self.src.to_string(),
+                                    msg: "Already seen fp.".to_string(),
+                                    start: idx,
+                                    end: idx + 1,
+                                }));
+                            }
 
                             _ => break,
                         }
@@ -115,6 +122,7 @@ impl<'src> Iterator for Tokenizer<'src> {
                 }
                 _ => Err(TokenizerError {
                     src: self.src.to_string(),
+                    msg: "Encountered unknown token.".to_string(),
                     start: idx,
                     end: idx + 1,
                 }),
