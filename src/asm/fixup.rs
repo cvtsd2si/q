@@ -1,28 +1,50 @@
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
 
-pub fn replace_pseudo(asm_prog: &mut AsmProg) -> &mut AsmProg {
-    for f in &mut asm_prog.funcs {
-        replace_pseudo_fn(f);
-    }
-
-    asm_prog
+pub trait ReplacePseudo {
+    fn replace_pseudo(&mut self) -> &mut Self;
 }
 
-fn replace_pseudo_fn(asm_fn: &mut AsmFunc) {
-    for asm_instr in &mut asm_fn.body {
-        match asm_instr {
+impl ReplacePseudo for AsmProg {
+    fn replace_pseudo(&mut self) -> &mut Self {
+        for f in &mut self.funcs {
+            f.replace_pseudo();
+        }
+
+        self
+    }
+}
+
+impl ReplacePseudo for AsmFunc {
+    fn replace_pseudo(&mut self) -> &mut Self {
+        for instr in &mut self.body {
+            instr.replace_pseudo();
+        }
+
+        self
+    }
+}
+
+impl ReplacePseudo for AsmInstr {
+    fn replace_pseudo(&mut self) -> &mut Self {
+        match self {
             AsmInstr::Mov { src, dst } => {
-                replace_pseudo_op(src);
-                replace_pseudo_op(dst);
+                src.replace_pseudo();
+                dst.replace_pseudo();
             }
 
             AsmInstr::Ret | AsmInstr::Push(_) | AsmInstr::Pop(_) => {}
         }
+
+        self
     }
 }
 
-fn replace_pseudo_op(asm_op: &mut AsmOp) {
-    if let AsmOp::Pseudo(pseudo) = asm_op {
-        *asm_op = AsmOp::Reg(AsmReg::R9);
+impl ReplacePseudo for AsmOp {
+    fn replace_pseudo(&mut self) -> &mut Self {
+        if let AsmOp::Pseudo(pseudo) = self {
+            *self = AsmOp::Reg(AsmReg::R9);
+        }
+
+        self
     }
 }

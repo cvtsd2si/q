@@ -58,7 +58,7 @@ impl std::fmt::Display for AsmOp {
             },
 
             AsmOp::Imm(n) => write!(f, "${}", n),
-            
+
             _ => unreachable!(),
         }
     }
