@@ -52,7 +52,7 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Er
         return Ok(());
     }
 
-    let mut ir = irfy(&ast);
+    let ir = irfy(&ast);
 
     if stage == Some(Stage::Ir) {
         println!("{:#?}", ir);

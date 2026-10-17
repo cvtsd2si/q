@@ -37,15 +37,15 @@ pub enum AsmReg {
 pub trait Codegen {
     type Output;
 
-    fn codegen(&mut self) -> Self::Output;
+    fn codegen(&self) -> Self::Output;
 }
 
 impl Codegen for IRProg {
     type Output = AsmProg;
 
-    fn codegen(&mut self) -> Self::Output {
+    fn codegen(&self) -> Self::Output {
         AsmProg {
-            funcs: self.funcs.iter_mut().map(|f| f.codegen()).collect(),
+            funcs: self.funcs.iter().map(|f| f.codegen()).collect(),
         }
     }
 }
@@ -53,12 +53,12 @@ impl Codegen for IRProg {
 impl Codegen for IRFunc {
     type Output = AsmFunc;
 
-    fn codegen(&mut self) -> Self::Output {
+    fn codegen(&self) -> Self::Output {
         let mut body = vec![];
 
         insert_prologue(&mut body);
 
-        for instr in &mut self.body {
+        for instr in &self.body {
             body.extend(instr.codegen());
         }
 
@@ -72,7 +72,7 @@ impl Codegen for IRFunc {
 impl Codegen for IRInstr {
     type Output = Vec<AsmInstr>;
 
-    fn codegen(&mut self) -> Self::Output {
+    fn codegen(&self) -> Self::Output {
         match self {
             IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
                 src: src.codegen(),
@@ -98,7 +98,7 @@ impl Codegen for IRInstr {
 impl Codegen for IRVal {
     type Output = AsmOp;
 
-    fn codegen(&mut self) -> Self::Output {
+    fn codegen(&self) -> Self::Output {
         match self {
             IRVal::Const(konst) => AsmOp::Imm(*konst),
             IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
