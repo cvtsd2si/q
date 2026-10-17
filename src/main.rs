@@ -115,8 +115,6 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<i32, Box<dyn std::error::E
 
         return Ok(r);
     }
-
-    Ok(0)
 }
 
 #[derive(PartialEq)]
