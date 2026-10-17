@@ -1,6 +1,7 @@
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
 };
+use structopt::StructOpt;
 use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::Codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
@@ -10,62 +11,40 @@ use std::collections::VecDeque;
 use std::path::PathBuf;
 
 fn main() {
-    match std::env::args().nth(1) {
-        Some(path) => {
-            let stage = if let Some(s) = std::env::args().nth(2) {
-                match s.as_str() {
-                    "--tokenize" => Some(Stage::Tokenize),
-                    "--parse" => Some(Stage::Parse),
-                    "--ir" => Some(Stage::Ir),
-                    "--codegen" => Some(Stage::Codegen),
-                    "--emit" => Some(Stage::Emit),
-                    "--asm" => Some(Stage::Asm),
-                    "--ln" => Some(Stage::Ln),
-                    _ => {
-                        eprintln!("err: unrecognized stage: {}", s);
-                        std::process::exit(1);
-                    }
-                }
-            } else {
-                None
-            };
-
-            match run(path.into(), stage) {
-                Ok(r) => std::process::exit(r),
-                Err(e) => eprintln!("err: {}", e),
-            }
-        }
-        None => eprintln!("usage: q <path>"),
+    let opts = Opt::from_args();
+    match run(&opts) {
+        Ok(r) => std::process::exit(r),
+        Err(e) => eprintln!("err: {}", e)
     }
 }
 
-fn run(path: PathBuf, stage: Option<Stage>) -> Result<i32, Box<dyn std::error::Error>> {
-    let src = std::fs::read_to_string(&path)?;
+fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
+    let src = std::fs::read_to_string(&opts.path)?;
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
 
-    if stage == Some(Stage::Tokenize) {
-        println!("{:?}", tokens);
+    if opts.tokenize {
+        println!("{:#?}", tokens);
         return Ok(0);
     }
 
     let ast = Parser::new(&src, tokens).parse()?;
 
-    if stage == Some(Stage::Parse) {
+    if opts.parse {
         println!("{:#?}", ast);
         return Ok(0);
     }
 
     let ir = irfy(&ast);
 
-    if stage == Some(Stage::Ir) {
+    if opts.ir {
         println!("{:#?}", ir);
         return Ok(0);
     }
 
     let mut asm = ir.codegen();
 
-    if stage == Some(Stage::Codegen) {
+    if opts.codegen {
         println!("{:#?}", asm);
         return Ok(0);
     }
@@ -73,6 +52,11 @@ fn run(path: PathBuf, stage: Option<Stage>) -> Result<i32, Box<dyn std::error::E
     let mut asm_txt = String::new();
 
     asm.replace_pseudo().emit(&mut asm_txt)?;
+
+    if opts.emit {
+        println!("{asm_txt}");
+        return Ok(0);
+    }
 
     let mut assembler =
         rsasm::assembler::Assembler::new(rsasm::arch::lookup("x86-64").unwrap(), Options::new());
@@ -126,4 +110,27 @@ enum Stage {
     Emit,
     Asm,
     Ln,
+}
+
+#[derive(Debug, Clone, StructOpt)]
+struct Opt {
+    #[structopt(short = "o", long = "output", parse(from_os_str))] 
+    output: Option<PathBuf>,
+
+    path: PathBuf,
+
+    #[structopt(name = "tokenize", long)]
+    tokenize: bool,
+    
+    #[structopt(name = "parse", long)]
+    parse: bool,
+
+    #[structopt(name = "ir", long)]
+    ir: bool,
+
+    #[structopt(name = "codegen", long)]
+    codegen: bool,
+
+    #[structopt(name = "emit", long)]
+    emit: bool,
 }
