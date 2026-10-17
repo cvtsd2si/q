@@ -1,4 +1,4 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmProg, AsmReg};
 use std::{fs::File, io::Write};
 
 pub trait Emit {
@@ -47,6 +47,13 @@ impl Emit for AsmInstr {
 
             AsmInstr::Pop(reg) => {
                 writeln!(f, "popq {}", reg)?;
+            }
+
+            AsmInstr::Bin { kind, lhs, rhs } => {
+                match kind {
+                    AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs)?,
+                    AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs)?,
+                }
             }
         }
 

@@ -33,6 +33,12 @@ impl ReplacePseudo for AsmInstr {
             }
 
             AsmInstr::Ret | AsmInstr::Push(_) | AsmInstr::Pop(_) => {}
+            
+            AsmInstr::Bin { kind: _, lhs, rhs } => {
+                lhs.replace_pseudo();
+                rhs.replace_pseudo();
+            }
+
         }
 
         self

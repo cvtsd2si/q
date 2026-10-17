@@ -1,6 +1,8 @@
-use crate::parser::ast::{BlockItem, Declaration, Expression, Program, Statement};
+use std::sync::atomic::AtomicU64;
 
-#[derive(Debug)]
+use crate::parser::ast::{BinaryExpressionKind, BlockItem, Declaration, Expression, Program, Statement};
+
+#[derive(Debug, Clone)]
 pub enum IRVal {
     Const(i64),
     Var(String),
@@ -10,6 +12,7 @@ pub enum IRVal {
 pub enum IRInstr {
     Cpy { src: IRVal, dst: IRVal },
     Ret { val: IRVal },
+    Bin { kind: BinaryExpressionKind, lhs: IRVal, rhs: IRVal, dst: IRVal },
 }
 
 #[derive(Debug)]
@@ -102,7 +105,27 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             ty,
             span,
         } => {
-            todo!()
+            let lhs = irfy_expr_and_cvt(instrs, lhs);
+            let rhs = irfy_expr_and_cvt(instrs, rhs);
+
+            let dst = mkirvar();
+
+            instrs.push(IRInstr::Bin { kind: *kind, lhs, rhs, dst: dst.clone() });
+
+            ExpRes::Plain(dst)
         }
     }
+}
+
+fn mkirvar() -> IRVal {
+    let tmp = mktmp();
+
+    IRVal::Var(format!("tmp.{}", tmp))
+
+}
+
+fn mktmp() -> u64 {
+    static NEXT_TMP: AtomicU64 = AtomicU64::new(0);
+
+    NEXT_TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }

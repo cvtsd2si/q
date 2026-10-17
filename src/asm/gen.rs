@@ -1,4 +1,4 @@
-use crate::ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal};
+use crate::{ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal}, parser::ast::BinaryExpressionKind};
 
 #[derive(Debug)]
 pub struct AsmProg {
@@ -17,6 +17,13 @@ pub enum AsmInstr {
     Ret,
     Push(AsmOp),
     Pop(AsmOp),
+    Bin { kind: AsmInstrBinKind, lhs: AsmOp, rhs: AsmOp },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AsmInstrBinKind {
+    Add,
+    Sub,
 }
 
 #[derive(Debug, Clone)]
@@ -88,6 +95,21 @@ impl Codegen for IRInstr {
                 insert_epilogue(&mut instrs);
 
                 instrs.push(AsmInstr::Ret);
+
+                instrs
+            }
+
+            IRInstr::Bin { kind, lhs, rhs, dst } => {
+                let kind = match kind {
+                    BinaryExpressionKind::Add => AsmInstrBinKind::Add,
+                    BinaryExpressionKind::Sub => AsmInstrBinKind::Sub,
+                    _ => unimplemented!(),
+                };
+                
+                let mut instrs = vec![
+                    AsmInstr::Mov { src: lhs.codegen(), dst: dst.codegen() },
+                    AsmInstr::Bin { kind, lhs: rhs.codegen(), rhs: dst.codegen() },
+                ];
 
                 instrs
             }
