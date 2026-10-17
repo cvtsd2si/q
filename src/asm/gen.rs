@@ -103,7 +103,6 @@ impl Codegen for IRInstr {
                 }];
 
                 insert_epilogue(&mut instrs);
-
                 instrs.push(AsmInstr::Ret);
 
                 instrs
@@ -121,7 +120,7 @@ impl Codegen for IRInstr {
                     _ => unimplemented!(),
                 };
 
-                let mut instrs = vec![
+                let instrs = vec![
                     AsmInstr::Mov {
                         src: lhs.codegen(),
                         dst: dst.codegen(),
