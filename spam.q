@@ -1,8 +1,4 @@
-fn main() -> i32 {
-    let x: i32 = 1 + 2 - 3;
+fn main() -> i64 {
+    let x: i64 = 1 + 2;
     ret x;
-}
-
-fn f() -> i8 {
-    ret 16;
 }

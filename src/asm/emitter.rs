@@ -1,12 +1,12 @@
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmProg, AsmReg};
-use std::{fs::File, io::Write};
+use std::fmt::Write;
 
 pub trait Emit {
-    fn emit(&self, f: &mut File) -> Result<(), std::io::Error>;
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error>;
 }
 
 impl Emit for AsmProg {
-    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         for func in &self.funcs {
             func.emit(f)?;
         }
@@ -16,7 +16,7 @@ impl Emit for AsmProg {
 }
 
 impl Emit for AsmFunc {
-    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         writeln!(f, "\t.global {}", self.name)?;
         writeln!(f, "{}:", self.name)?;
 
@@ -29,7 +29,7 @@ impl Emit for AsmFunc {
 }
 
 impl Emit for AsmInstr {
-    fn emit(&self, f: &mut File) -> Result<(), std::io::Error> {
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         write!(f, "\t")?;
 
         match self {

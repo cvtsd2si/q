@@ -1,9 +1,12 @@
+use libc::{
+    MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
+};
 use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::Codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
+use rsasm::assembler::Options;
 use std::collections::VecDeque;
-use std::fs::File;
 use std::path::PathBuf;
 
 fn main() {
@@ -27,79 +30,93 @@ fn main() {
                 None
             };
 
-            if let Err(e) = run(path.into(), stage) {
-                eprintln!("err: {}", e);
+            match run(path.into(), stage) {
+                Ok(r) => std::process::exit(r),
+                Err(e) => eprintln!("err: {}", e),
             }
         }
         None => eprintln!("usage: q <path>"),
     }
 }
 
-fn run(path: PathBuf, stage: Option<Stage>) -> Result<(), Box<dyn std::error::Error>> {
+fn run(path: PathBuf, stage: Option<Stage>) -> Result<i32, Box<dyn std::error::Error>> {
     let src = std::fs::read_to_string(&path)?;
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
 
     if stage == Some(Stage::Tokenize) {
         println!("{:?}", tokens);
-        return Ok(());
+        return Ok(0);
     }
 
     let ast = Parser::new(&src, tokens).parse()?;
 
     if stage == Some(Stage::Parse) {
         println!("{:#?}", ast);
-        return Ok(());
+        return Ok(0);
     }
 
     let ir = irfy(&ast);
 
     if stage == Some(Stage::Ir) {
         println!("{:#?}", ir);
-        return Ok(());
+        return Ok(0);
     }
 
     let mut asm = ir.codegen();
 
     if stage == Some(Stage::Codegen) {
         println!("{:#?}", asm);
-        return Ok(());
+        return Ok(0);
     }
 
-    let mut f = File::create(path.with_extension("s"))?;
+    let mut asm_txt = String::new();
 
-    asm.replace_pseudo().emit(&mut f)?;
+    asm.replace_pseudo().emit(&mut asm_txt)?;
 
-    if stage == Some(Stage::Emit) {
-        return Ok(());
+    let mut assembler =
+        rsasm::assembler::Assembler::new(rsasm::arch::lookup("x86-64").unwrap(), Options::new());
+
+    assembler.assemble_str("", &asm_txt);
+
+    assert!(assembler.finish());
+
+    let raw_bytes = assembler.section_bytes(rsasm::section::SectionId(0));
+
+    unsafe {
+        let len = raw_bytes.len();
+
+        let ptr = mmap(
+            std::ptr::null_mut(),
+            len,
+            PROT_READ | PROT_WRITE,
+            MAP_PRIVATE | MAP_ANON,
+            -1,
+            0,
+        );
+
+        if ptr == MAP_FAILED {
+            panic!("mmap failed");
+        }
+
+        std::ptr::copy_nonoverlapping(raw_bytes.as_ptr(), ptr.cast::<u8>(), len);
+
+        if mprotect(ptr, len, PROT_READ | PROT_EXEC) != 0 {
+            panic!("mprotect failed");
+        }
+
+        type Main = unsafe extern "C" fn() -> i32;
+
+        let main: Main = std::mem::transmute(ptr);
+
+        let r: i32 = main();
+
+        munmap(ptr, len);
+
+        return Ok(r);
     }
 
-    std::process::Command::new("gcc")
-        .arg("-c")
-        .arg(path.with_extension("s"))
-        .arg("-o")
-        .arg(path.with_extension("o"))
-        .status()?;
-
-    if stage == Some(Stage::Asm) {
-        return Ok(());
-    }
-
-    std::process::Command::new("gcc")
-        .arg("-o")
-        .arg(path.with_extension(""))
-        .arg(path.with_extension("s"))
-        .status()?;
-
-    if stage == Some(Stage::Ln) {
-        return Ok(());
-    }
-
-    for ext in ["s", "o"] {
-        std::fs::remove_file(path.with_extension(ext))?;
-    }
-
-    Ok(())
+    Ok(0)
 }
 
 #[derive(PartialEq)]
