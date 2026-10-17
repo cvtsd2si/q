@@ -53,19 +53,19 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut asm_txt = String::new();
+    let mut asm_str = String::new();
 
-    asm.replace_pseudo().emit(&mut asm_txt)?;
+    asm.replace_pseudo().emit(&mut asm_str)?;
 
     if opts.emit {
-        println!("{asm_txt}");
+        println!("{asm_str}");
         return Ok(0);
     }
 
     let arch = arch::lookup("x86-64").unwrap();
     let mut assembler = Assembler::new(arch, Options::new());
 
-    assembler.assemble_str("", &asm_txt);
+    assembler.assemble_str("", &asm_str);
 
     assert!(assembler.finish());
 
