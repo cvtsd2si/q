@@ -49,12 +49,10 @@ impl Emit for AsmInstr {
                 writeln!(f, "popq {}", reg)?;
             }
 
-            AsmInstr::Bin { kind, lhs, rhs } => {
-                match kind {
-                    AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs)?,
-                    AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs)?,
-                }
-            }
+            AsmInstr::Bin { kind, lhs, rhs } => match kind {
+                AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs)?,
+                AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs)?,
+            },
         }
 
         Ok(())

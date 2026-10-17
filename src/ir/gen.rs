@@ -1,6 +1,8 @@
 use std::sync::atomic::AtomicU64;
 
-use crate::parser::ast::{BinaryExpressionKind, BlockItem, Declaration, Expression, Program, Statement};
+use crate::parser::ast::{
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Program, Statement,
+};
 
 #[derive(Debug, Clone)]
 pub enum IRVal {
@@ -10,9 +12,19 @@ pub enum IRVal {
 
 #[derive(Debug)]
 pub enum IRInstr {
-    Cpy { src: IRVal, dst: IRVal },
-    Ret { val: IRVal },
-    Bin { kind: BinaryExpressionKind, lhs: IRVal, rhs: IRVal, dst: IRVal },
+    Cpy {
+        src: IRVal,
+        dst: IRVal,
+    },
+    Ret {
+        val: IRVal,
+    },
+    Bin {
+        kind: BinaryExpressionKind,
+        lhs: IRVal,
+        rhs: IRVal,
+        dst: IRVal,
+    },
 }
 
 #[derive(Debug)]
@@ -110,7 +122,12 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             let dst = mkirvar();
 
-            instrs.push(IRInstr::Bin { kind: *kind, lhs, rhs, dst: dst.clone() });
+            instrs.push(IRInstr::Bin {
+                kind: *kind,
+                lhs,
+                rhs,
+                dst: dst.clone(),
+            });
 
             ExpRes::Plain(dst)
         }
@@ -121,7 +138,6 @@ fn mkirvar() -> IRVal {
     let tmp = mktmp();
 
     IRVal::Var(format!("tmp.{}", tmp))
-
 }
 
 fn mktmp() -> u64 {
