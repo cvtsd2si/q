@@ -1,7 +1,6 @@
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
 };
-use structopt::StructOpt;
 use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::Codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
@@ -9,12 +8,13 @@ use q::parser::recursive_descent::Parser;
 use rsasm::assembler::Options;
 use std::collections::VecDeque;
 use std::path::PathBuf;
+use structopt::StructOpt;
 
 fn main() {
     let opts = Opt::from_args();
     match run(&opts) {
         Ok(r) => std::process::exit(r),
-        Err(e) => eprintln!("err: {}", e)
+        Err(e) => eprintln!("err: {}", e),
     }
 }
 
@@ -114,14 +114,14 @@ enum Stage {
 
 #[derive(Debug, Clone, StructOpt)]
 struct Opt {
-    #[structopt(short = "o", long = "output", parse(from_os_str))] 
+    #[structopt(short = "o", long = "output", parse(from_os_str))]
     output: Option<PathBuf>,
 
     path: PathBuf,
 
     #[structopt(name = "tokenize", long)]
     tokenize: bool,
-    
+
     #[structopt(name = "parse", long)]
     parse: bool,
 
