@@ -101,17 +101,6 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
     }
 }
 
-#[derive(PartialEq)]
-enum Stage {
-    Tokenize,
-    Parse,
-    Ir,
-    Codegen,
-    Emit,
-    Asm,
-    Ln,
-}
-
 #[derive(Debug, Clone, StructOpt)]
 struct Opt {
     #[structopt(short = "o", long = "output", parse(from_os_str))]
