@@ -5,7 +5,11 @@ use q::asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::Codegen};
 use q::ir::r#gen::irfy;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
-use rsasm::assembler::Options;
+use rsasm::{
+    arch,
+    assembler::{Assembler, Options},
+    section::SectionId,
+};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -58,14 +62,14 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut assembler =
-        rsasm::assembler::Assembler::new(rsasm::arch::lookup("x86-64").unwrap(), Options::new());
+    let arch = arch::lookup("x86-64").unwrap();
+    let mut assembler = Assembler::new(arch, Options::new());
 
     assembler.assemble_str("", &asm_txt);
 
     assert!(assembler.finish());
 
-    let raw_bytes = assembler.section_bytes(rsasm::section::SectionId(0));
+    let raw_bytes = assembler.section_bytes(SectionId(0));
 
     unsafe {
         let len = raw_bytes.len();
@@ -89,11 +93,11 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
             panic!("mprotect failed");
         }
 
-        type Main = unsafe extern "C" fn() -> i32;
+        type Entry = unsafe extern "C" fn() -> i32;
 
-        let main: Main = std::mem::transmute(ptr);
+        let entry: Entry = std::mem::transmute(ptr);
 
-        let r: i32 = main();
+        let r: i32 = entry();
 
         munmap(ptr, len);
 
