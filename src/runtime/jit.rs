@@ -1,10 +1,6 @@
 use crate::{
-    asm::{
-        emitter::Emit,
-        fixup::ReplacePseudo,
-        r#gen::{AsmInstr, Codegen, insert_epilogue},
-    },
-    ir::r#gen::{IRFunc, IRInstr, IRProg},
+    asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::AsmFunc},
+    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
     runtime::{value::Value, vm::VM},
 };
 use libc::{
@@ -55,7 +51,7 @@ impl JitCompiler {
             body: ir_func.body[start_ir..end_ir].to_vec(),
         };
 
-        let mut asm_func = region_func.codegen();
+        let mut asm_func: AsmFunc = region_func.codegen();
         asm_func.replace_pseudo();
 
         let body_name = region_func.name.clone();

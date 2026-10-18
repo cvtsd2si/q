@@ -1,5 +1,5 @@
 use crate::{
-    ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal},
+    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::BinaryExpressionKind,
 };
 
@@ -51,32 +51,22 @@ pub enum AsmReg {
     R9,
 }
 
-pub trait Codegen {
-    type Output;
-
-    fn codegen(&self) -> Self::Output;
-}
-
-impl Codegen for IRProg {
-    type Output = AsmProg;
-
-    fn codegen(&self) -> Self::Output {
+impl Codegen<AsmProg> for IRProg {
+    fn codegen(&self) -> AsmProg {
         AsmProg {
             funcs: self.funcs.iter().map(|f| f.codegen()).collect(),
         }
     }
 }
 
-impl Codegen for IRFunc {
-    type Output = AsmFunc;
-
-    fn codegen(&self) -> Self::Output {
+impl Codegen<AsmFunc> for IRFunc {
+    fn codegen(&self) -> AsmFunc {
         let mut body = vec![];
 
         insert_prologue(&mut body);
 
         for instr in &self.body {
-            body.extend(instr.codegen());
+            body.extend::<Vec<AsmInstr>>(instr.codegen());
         }
 
         AsmFunc {
@@ -86,10 +76,8 @@ impl Codegen for IRFunc {
     }
 }
 
-impl Codegen for IRInstr {
-    type Output = Vec<AsmInstr>;
-
-    fn codegen(&self) -> Self::Output {
+impl Codegen<Vec<AsmInstr>> for IRInstr {
+    fn codegen(&self) -> Vec<AsmInstr> {
         match self {
             IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
                 src: src.codegen(),
@@ -140,10 +128,8 @@ impl Codegen for IRInstr {
     }
 }
 
-impl Codegen for IRVal {
-    type Output = AsmOp;
-
-    fn codegen(&self) -> Self::Output {
+impl Codegen<AsmOp> for IRVal {
+    fn codegen(&self) -> AsmOp {
         match self {
             IRVal::Const(konst) => AsmOp::Imm(*konst),
             IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),

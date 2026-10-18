@@ -4,6 +4,10 @@ use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Program, Statement,
 };
 
+pub trait Codegen<T> {
+    fn codegen(&self) -> T;
+}
+
 #[derive(Debug, Clone)]
 pub enum IRVal {
     Const(i64),

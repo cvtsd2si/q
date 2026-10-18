@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal},
+    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::BinaryExpressionKind,
 };
 
@@ -30,30 +30,20 @@ pub struct BytecodeFunc {
     pub ir_map: Vec<usize>,
 }
 
-pub trait Codegen {
-    type Output;
-
-    fn codegen<T>(&self) -> Self::Output;
-}
-
-impl Codegen for IRProg {
-    type Output = BytecodeProg;
-
-    fn codegen<T>(&self) -> Self::Output {
+impl Codegen<BytecodeProg> for IRProg {
+    fn codegen(&self) -> BytecodeProg {
         let mut bytecode_prog = BytecodeProg { funcs: vec![] };
 
         for f in &self.funcs {
-            bytecode_prog.funcs.push(f.codegen::<Bytecode>());
+            bytecode_prog.funcs.push(f.codegen());
         }
 
         bytecode_prog
     }
 }
 
-impl Codegen for IRFunc {
-    type Output = BytecodeFunc;
-
-    fn codegen<T>(&self) -> Self::Output {
+impl Codegen<BytecodeFunc> for IRFunc {
+    fn codegen(&self) -> BytecodeFunc {
         let mut f = BytecodeFunc {
             name: self.name.to_owned(),
             body: vec![],
@@ -61,7 +51,7 @@ impl Codegen for IRFunc {
         };
 
         for (ir_idx, instr) in self.body.iter().enumerate() {
-            let ops = instr.codegen::<Bytecode>();
+            let ops: Bytecode = instr.codegen();
 
             for _ in 0..ops.len() {
                 f.ir_map.push(ir_idx);
@@ -74,10 +64,8 @@ impl Codegen for IRFunc {
     }
 }
 
-impl Codegen for IRInstr {
-    type Output = Bytecode;
-
-    fn codegen<T>(&self) -> Self::Output {
+impl Codegen<Bytecode> for IRInstr {
+    fn codegen(&self) -> Bytecode {
         let mut bytecode = vec![];
 
         match self {
@@ -88,8 +76,8 @@ impl Codegen for IRInstr {
                 dst: _,
             } => match kind {
                 BinaryExpressionKind::Add => {
-                    bytecode.push(lhs.codegen::<Bytecode>());
-                    bytecode.push(rhs.codegen::<Bytecode>());
+                    bytecode.push(lhs.codegen());
+                    bytecode.push(rhs.codegen());
                     bytecode.push(Op::Add);
                 }
 
@@ -99,12 +87,12 @@ impl Codegen for IRInstr {
             },
 
             IRInstr::Ret { val } => {
-                bytecode.push(val.codegen::<Bytecode>());
+                bytecode.push(val.codegen());
                 bytecode.push(Op::Ret);
             }
 
             IRInstr::Print { val } => {
-                bytecode.push(val.codegen::<Bytecode>());
+                bytecode.push(val.codegen());
                 bytecode.push(Op::Print);
             }
 
@@ -115,10 +103,8 @@ impl Codegen for IRInstr {
     }
 }
 
-impl Codegen for IRVal {
-    type Output = Op;
-
-    fn codegen<T>(&self) -> Self::Output {
+impl Codegen<Op> for IRVal {
+    fn codegen(&self) -> Op {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
             IRVal::Var(var) => Op::Deepget(0),
