@@ -30,32 +30,7 @@ impl Emit for AsmFunc {
 
 impl Emit for AsmInstr {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
-        write!(f, "\t")?;
-
-        match self {
-            AsmInstr::Mov { src, dst } => {
-                writeln!(f, "movq {}, {}", src, dst)?;
-            }
-
-            AsmInstr::Ret => {
-                writeln!(f, "ret")?;
-            }
-
-            AsmInstr::Push(reg) => {
-                writeln!(f, "pushq {}", reg)?;
-            }
-
-            AsmInstr::Pop(reg) => {
-                writeln!(f, "popq {}", reg)?;
-            }
-
-            AsmInstr::Bin { kind, lhs, rhs } => match kind {
-                AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs)?,
-                AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs)?,
-            },
-        }
-
-        Ok(())
+        write!(f, "{}", self)
     }
 }
 
