@@ -12,6 +12,7 @@ pub struct AsmProg {
 pub struct AsmFunc {
     pub name: String,
     pub body: Vec<AsmInstr>,
+    pub space: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,7 @@ pub enum AsmOp {
     Pseudo(String),
     Reg(AsmReg),
     Imm(i64),
+    Stack(isize),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -48,7 +50,16 @@ pub enum AsmReg {
     Bp,
     Sp,
     Ax,
+    R8,
     R9,
+    R10,
+    R11,
+    R12,
+    R13,
+    Cx,
+    Dx,
+    Di,
+    Si,
 }
 
 impl Codegen<AsmProg> for IRProg {
@@ -72,6 +83,7 @@ impl Codegen<AsmFunc> for IRFunc {
         AsmFunc {
             name: self.name.to_owned(),
             body,
+            space: 0,
         }
     }
 }
@@ -161,6 +173,11 @@ where
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
         dst: AsmOp::Reg(AsmReg::Bp),
+    });
+    body.sink(AsmInstr::Bin {
+        kind: AsmInstrBinKind::Sub,
+        lhs: AsmOp::Imm(0),
+        rhs: AsmOp::Reg(AsmReg::Sp),
     });
 }
 

@@ -1,8 +1,9 @@
 use crate::{
     asm::{
         emitter::Emit,
-        fixup::ReplacePseudo,
-        r#gen::{AsmFunc, insert_epilogue, insert_prologue},
+        fixup::Fixup,
+        r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, insert_epilogue, insert_prologue},
+        regalloc::Regalloc,
     },
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
     runtime::{value::Value, vm::Vm},
@@ -56,10 +57,23 @@ impl JitCompiler {
         };
 
         let mut asm_func: AsmFunc = region_func.codegen();
-        asm_func.replace_pseudo();
+        let mut asm_func = asm_func.regalloc().fixup();
 
         let body_name = region_func.name.clone();
         let mut body_txt = String::new();
+
+        if let Some(instr) = asm_func.body.iter_mut().nth(2) {
+            match instr {
+                AsmInstr::Bin {
+                    kind: AsmInstrBinKind::Sub,
+                    lhs,
+                    ..
+                } => {
+                    *lhs = AsmOp::Imm(asm_func.space as i64);
+                }
+                _ => unreachable!(),
+            }
+        }
 
         if asm_func.emit(&mut body_txt).is_err() {
             return None;
@@ -76,9 +90,6 @@ impl JitCompiler {
         /* Preserve callee-saved registers we use in our ABI.  */
         writeln!(asm_txt, "\tpushq %r12").ok();
         writeln!(asm_txt, "\tpushq %r13").ok();
-
-        /* Align the stack before the call instruction.  */
-        writeln!(asm_txt, "\tsubq $8, %rsp").ok();
 
         /* Since `JitResult` is a large struct, it is passed by a hidden mem ptr.
          *
@@ -110,7 +121,6 @@ impl JitCompiler {
         writeln!(asm_txt, "\tmovq %r12, %rax").ok();
 
         /* Restore the native stack/register state and return to VM.  */
-        writeln!(asm_txt, "\taddq $8, %rsp").ok();
         writeln!(asm_txt, "\tpopq %r13").ok();
         writeln!(asm_txt, "\tpopq %r12").ok();
 

@@ -1,55 +1,56 @@
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
 
-pub trait ReplacePseudo {
-    fn replace_pseudo(&mut self) -> &mut Self;
+pub trait Fixup {
+    type Output;
+
+    fn fixup(&self) -> Self::Output;
 }
 
-impl ReplacePseudo for AsmProg {
-    fn replace_pseudo(&mut self) -> &mut Self {
-        for f in &mut self.funcs {
-            f.replace_pseudo();
-        }
+impl Fixup for AsmProg {
+    type Output = AsmProg;
 
-        self
+    fn fixup(&self) -> Self::Output {
+        AsmProg {
+            funcs: self.funcs.iter().map(|f| f.fixup()).collect(),
+        }
     }
 }
 
-impl ReplacePseudo for AsmFunc {
-    fn replace_pseudo(&mut self) -> &mut Self {
-        for instr in &mut self.body {
-            instr.replace_pseudo();
+impl Fixup for AsmFunc {
+    type Output = AsmFunc;
+    fn fixup(&self) -> Self::Output {
+        AsmFunc {
+            name: self.name.clone(),
+            body: self
+                .body
+                .iter()
+                .map(|instr| instr.fixup())
+                .flatten()
+                .collect(),
+            space: self.space,
         }
-
-        self
     }
 }
 
-impl ReplacePseudo for AsmInstr {
-    fn replace_pseudo(&mut self) -> &mut Self {
+impl Fixup for AsmInstr {
+    type Output = Vec<AsmInstr>;
+
+    fn fixup(&self) -> Self::Output {
         match self {
-            AsmInstr::Mov { src, dst } => {
-                src.replace_pseudo();
-                dst.replace_pseudo();
-            }
-
-            AsmInstr::Ret | AsmInstr::Push(_) | AsmInstr::Pop(_) => {}
-
-            AsmInstr::Bin { kind: _, lhs, rhs } => {
-                lhs.replace_pseudo();
-                rhs.replace_pseudo();
-            }
+            AsmInstr::Mov { src, dst } => match (src, dst) {
+                (AsmOp::Stack(a), AsmOp::Stack(b)) => vec![
+                    AsmInstr::Mov {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R9),
+                        dst: dst.clone(),
+                    },
+                ],
+                _ => vec![self.clone()],
+            },
+            _ => vec![self.clone()],
         }
-
-        self
-    }
-}
-
-impl ReplacePseudo for AsmOp {
-    fn replace_pseudo(&mut self) -> &mut Self {
-        if let AsmOp::Pseudo(pseudo) = self {
-            *self = AsmOp::Reg(AsmReg::R9);
-        }
-
-        self
     }
 }

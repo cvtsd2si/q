@@ -18,6 +18,7 @@ pub mod asm {
     pub mod emitter;
     pub mod fixup;
     pub mod r#gen;
+    pub mod regalloc;
 }
 
 pub mod bytecode {

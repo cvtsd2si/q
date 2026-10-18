@@ -58,12 +58,22 @@ impl std::fmt::Display for AsmOp {
                 AsmReg::Bp => write!(f, "%rbp"),
                 AsmReg::Sp => write!(f, "%rsp"),
                 AsmReg::Ax => write!(f, "%rax"),
+                AsmReg::R8 => write!(f, "%r8"),
                 AsmReg::R9 => write!(f, "%r9"),
+                AsmReg::R10 => write!(f, "%r10"),
+                AsmReg::R11 => write!(f, "%r11"),
+                AsmReg::R12 => write!(f, "%r12"),
+                AsmReg::R13 => write!(f, "%r13"),
+                AsmReg::Cx => write!(f, "%rcx"),
+                AsmReg::Dx => write!(f, "%rdx"),
+                AsmReg::Si => write!(f, "%rsi"),
+                AsmReg::Di => write!(f, "%rdi"),
             },
 
             AsmOp::Imm(n) => write!(f, "${}", n),
 
-            _ => unreachable!(),
+            AsmOp::Stack(offset) => write!(f, "{}(%rbp)", offset),
+            _ => unreachable!("got: {:?}", self),
         }
     }
 }
