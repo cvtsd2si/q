@@ -2,7 +2,7 @@ use q::bytecode::r#gen::{Bytecode, BytecodeProg};
 use q::ir::r#gen::{Codegen, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
-use q::runtime::vm::VM;
+use q::runtime::vm::Vm;
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -46,7 +46,7 @@ fn run(opts: &Opt) -> Result<i64, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut vm = VM::new(bytecode, ir);
+    let mut vm = Vm::new(bytecode, ir);
     let r = vm.exec();
 
     Ok(r.payload)

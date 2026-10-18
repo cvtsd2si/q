@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-pub struct VM {
+pub struct Vm {
     stack: Vec<Object>,
     ir: IRProg,
     func: usize,
@@ -18,9 +18,9 @@ pub struct VM {
     bytecode: BytecodeProg,
 }
 
-impl VM {
+impl Vm {
     pub fn new(bytecode: BytecodeProg, ir: IRProg) -> Self {
-        VM {
+        Vm {
             stack: Vec::new(),
             ir,
             func: 0,
@@ -92,7 +92,7 @@ impl VM {
         let start_ir = bytecode_func.ir_map.get(start_pc)?;
         let end_ir = self.find_region_end(func, start_pc)?;
 
-        /* Find the first bytecode PC (for the VM) that belongs to the IRInstr
+        /* Find the first bytecode PC (for the Vm) that belongs to the IRInstr
          * at (or after) `end_ir`.
          *
          * If such a PC does not exist, bytecode length is taken.
@@ -127,7 +127,7 @@ impl VM {
         );
 
         /* Call into the generated machine code through the function ptr.  */
-        let r = unsafe { entry(self as *mut VM) };
+        let r = unsafe { entry(self as *mut Vm) };
 
         eprintln!("[JIT] native returned {:?}", r);
 

@@ -1,7 +1,7 @@
 use crate::{
     asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::AsmFunc},
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
-    runtime::{value::Value, vm::VM},
+    runtime::{value::Value, vm::Vm},
 };
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
@@ -77,7 +77,7 @@ impl JitCompiler {
         /* Since `JitResult` is a large struct, it is passed by a hidden mem ptr.
          *
          * %rdi = hidden *mut JitResult ptr
-         * %rsi = *mut VM  */
+         * %rsi = *mut Vm  */
         writeln!(asm_txt, "\tmovq %rdi, %r12").ok();
         writeln!(asm_txt, "\tmovq %rsi, %r13").ok();
 
@@ -162,7 +162,7 @@ impl JitCompiler {
     }
 }
 
-pub type JitEntry = unsafe extern "C" fn(*mut VM) -> JitResult;
+pub type JitEntry = unsafe extern "C" fn(*mut Vm) -> JitResult;
 
 pub const JIT_THRESHOLD: u32 = 1;
 
