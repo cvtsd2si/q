@@ -134,6 +134,8 @@ impl Codegen for IRInstr {
 
                 instrs
             }
+
+            IRInstr::Print { val: _ } => todo!(),
         }
     }
 }
@@ -149,7 +151,7 @@ impl Codegen for IRVal {
     }
 }
 
-fn insert_prologue(body: &mut Vec<AsmInstr>) {
+pub fn insert_prologue(body: &mut Vec<AsmInstr>) {
     body.push(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
     body.push(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
@@ -157,7 +159,7 @@ fn insert_prologue(body: &mut Vec<AsmInstr>) {
     });
 }
 
-fn insert_epilogue(body: &mut Vec<AsmInstr>) {
+pub fn insert_epilogue(body: &mut Vec<AsmInstr>) {
     body.push(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),

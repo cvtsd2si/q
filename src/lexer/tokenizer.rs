@@ -100,6 +100,7 @@ impl<'src> Iterator for Tokenizer<'src> {
 
                     let kind = match &self.src[idx..end] {
                         "fn" => TokenKind::Fn,
+                        "print" => TokenKind::Print,
                         "ret" => TokenKind::Ret,
                         "let" => TokenKind::Let,
                         "u8" => TokenKind::U8,

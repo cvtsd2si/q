@@ -10,7 +10,7 @@ pub enum IRVal {
     Var(String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum IRInstr {
     Cpy {
         src: IRVal,
@@ -25,6 +25,9 @@ pub enum IRInstr {
         rhs: IRVal,
         dst: IRVal,
     },
+    Print {
+        val: IRVal,
+    },
 }
 
 #[derive(Debug)]
@@ -32,7 +35,7 @@ pub struct IRProg {
     pub funcs: Vec<IRFunc>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IRFunc {
     pub name: String,
     pub body: Vec<IRInstr>,
@@ -90,6 +93,12 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             let r = irfy_expr_and_cvt(instrs, value);
 
             instrs.push(IRInstr::Ret { val: r });
+        }
+
+        Statement::Print { value } => {
+            let r = irfy_expr_and_cvt(instrs, value);
+
+            instrs.push(IRInstr::Print { val: r });
         }
     }
 }

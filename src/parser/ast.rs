@@ -31,6 +31,9 @@ pub enum Statement {
         init: Expression,
         ty: Type,
     },
+    Print {
+        value: Expression,
+    },
 }
 
 #[derive(Debug, Clone)]

@@ -37,6 +37,7 @@ impl Token {
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TokenKind {
     Fn,
+    Print,
     Identifier,
     LParen,
     RParen,

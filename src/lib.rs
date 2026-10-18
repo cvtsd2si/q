@@ -19,3 +19,14 @@ pub mod asm {
     pub mod fixup;
     pub mod r#gen;
 }
+
+pub mod bytecode {
+    pub mod r#gen;
+}
+
+pub mod runtime {
+    pub mod jit;
+    pub mod object;
+    pub mod value;
+    pub mod vm;
+}

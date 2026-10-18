@@ -103,7 +103,9 @@ impl<'src> Parser<'src> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
-                TokenKind::Ret | TokenKind::Let => Ok(BlockItem::Stmt(self.parse_stmt()?)),
+                TokenKind::Ret | TokenKind::Let | TokenKind::Print => {
+                    Ok(BlockItem::Stmt(self.parse_stmt()?))
+                }
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -125,6 +127,7 @@ impl<'src> Parser<'src> {
             Some(token) => match token.kind {
                 TokenKind::Let => Ok(self.parse_let()?),
                 TokenKind::Ret => Ok(self.parse_ret()?),
+                TokenKind::Print => Ok(self.parse_print()?),
                 _ => unimplemented!(),
             },
             None => unreachable!(),
@@ -204,6 +207,14 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Ret { value })
+    }
+
+    fn parse_print(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Print)?;
+        let value = self.parse_expr()?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Print { value })
     }
 
     fn parse_let(&mut self) -> Result<Statement, ParserError> {
