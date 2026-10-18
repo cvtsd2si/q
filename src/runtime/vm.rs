@@ -60,7 +60,7 @@ impl Vm {
             self.hotness[self.func][self.pc] += 1;
 
             /* We have not jitted this instruction before.
-             * If its hotness is among the `JIT_THRESHOLD`,
+             * If its hotness is above the `JIT_THRESHOLD`,
              * compile it into native code, cache it, and loop again.  */
             if self.hotness[self.func][self.pc] == JIT_THRESHOLD {
                 if let Some(block) = self.compile_region(self.func, self.pc) {
