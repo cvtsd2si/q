@@ -59,6 +59,23 @@ impl Emit for AsmInstr {
     }
 }
 
+impl std::fmt::Display for AsmInstr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\t")?;
+
+        match self {
+            AsmInstr::Ret => writeln!(f, "ret"),
+            AsmInstr::Pop(val) => writeln!(f, "popq {}", val),
+            AsmInstr::Push(val) => writeln!(f, "pushq {}", val),
+            AsmInstr::Mov { src, dst } => writeln!(f, "movq {}, {}", src, dst),
+            AsmInstr::Bin { kind, lhs, rhs } => match kind {
+                AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs),
+                AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs),
+            },
+        }
+    }
+}
+
 impl std::fmt::Display for AsmOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

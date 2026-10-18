@@ -1,5 +1,9 @@
 use crate::{
-    asm::{emitter::Emit, fixup::ReplacePseudo, r#gen::AsmFunc},
+    asm::{
+        emitter::Emit,
+        fixup::ReplacePseudo,
+        r#gen::{AsmFunc, insert_epilogue, insert_prologue},
+    },
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
     runtime::{value::Value, vm::Vm},
 };
@@ -64,8 +68,10 @@ impl JitCompiler {
         /* Build the `jit_entry` wrapper around the code we're compiling.  */
         let mut asm_txt = String::new();
 
-        writeln!(asm_txt, ".global jit_entry").ok();
+        writeln!(asm_txt, "\t.global jit_entry").ok();
         writeln!(asm_txt, "jit_entry:").ok();
+
+        insert_prologue(&mut asm_txt);
 
         /* Preserve callee-saved registers we use in our ABI.  */
         writeln!(asm_txt, "\tpushq %r12").ok();
@@ -107,6 +113,9 @@ impl JitCompiler {
         writeln!(asm_txt, "\taddq $8, %rsp").ok();
         writeln!(asm_txt, "\tpopq %r13").ok();
         writeln!(asm_txt, "\tpopq %r12").ok();
+
+        insert_epilogue(&mut asm_txt);
+
         writeln!(asm_txt, "\tret").ok();
 
         writeln!(asm_txt).ok();

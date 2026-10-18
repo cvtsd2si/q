@@ -137,18 +137,40 @@ impl Codegen<AsmOp> for IRVal {
     }
 }
 
-pub fn insert_prologue(body: &mut Vec<AsmInstr>) {
-    body.push(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
-    body.push(AsmInstr::Mov {
+pub trait AsmSink {
+    fn sink(&mut self, instr: AsmInstr);
+}
+
+impl AsmSink for Vec<AsmInstr> {
+    fn sink(&mut self, instr: AsmInstr) {
+        self.push(instr);
+    }
+}
+
+impl AsmSink for String {
+    fn sink(&mut self, instr: AsmInstr) {
+        self.push_str(&instr.to_string());
+    }
+}
+
+pub fn insert_prologue<T>(body: &mut T)
+where
+    T: AsmSink,
+{
+    body.sink(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
+    body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
         dst: AsmOp::Reg(AsmReg::Bp),
     });
 }
 
-pub fn insert_epilogue(body: &mut Vec<AsmInstr>) {
-    body.push(AsmInstr::Mov {
+pub fn insert_epilogue<T>(body: &mut T)
+where
+    T: AsmSink,
+{
+    body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
     });
-    body.push(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
+    body.sink(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
 }
