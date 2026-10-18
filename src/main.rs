@@ -15,7 +15,7 @@ fn main() {
     }
 }
 
-fn run(opts: &Opt) -> Result<u64, Box<dyn std::error::Error>> {
+fn run(opts: &Opt) -> Result<i64, Box<dyn std::error::Error>> {
     let src = std::fs::read_to_string(&opts.path)?;
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;

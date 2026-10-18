@@ -2,7 +2,7 @@
 #[derive(Debug, Copy, Clone)]
 pub struct Value {
     pub tag: ValueTag,
-    pub payload: u64,
+    pub payload: i64,
 }
 
 #[repr(u64)]

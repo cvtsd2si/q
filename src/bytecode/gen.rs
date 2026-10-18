@@ -75,13 +75,15 @@ impl Codegen<Bytecode> for IRInstr {
                 rhs,
                 dst: _,
             } => match kind {
-                BinaryExpressionKind::Add => {
+                BinaryExpressionKind::Add | BinaryExpressionKind::Sub => {
                     bytecode.push(lhs.codegen());
                     bytecode.push(rhs.codegen());
-                    bytecode.push(Op::Add);
+                    bytecode.push(match kind {
+                        BinaryExpressionKind::Add => Op::Add,
+                        BinaryExpressionKind::Sub => Op::Sub,
+                        _ => unimplemented!(),
+                    });
                 }
-
-                BinaryExpressionKind::Sub => {}
 
                 _ => todo!(),
             },

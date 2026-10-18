@@ -2,7 +2,7 @@ use crate::runtime::value::{Value, ValueTag};
 
 #[derive(Debug, Clone)]
 pub enum Object {
-    Number(i32),
+    Number(i64),
 }
 
 impl From<Object> for Value {
@@ -10,7 +10,7 @@ impl From<Object> for Value {
         match value {
             Object::Number(n) => Value {
                 tag: ValueTag::Number,
-                payload: (n as i64) as u64,
+                payload: n,
             },
         }
     }

@@ -73,7 +73,7 @@ impl VM {
             let op = self.bytecode.funcs[self.func].body[self.pc];
 
             match op {
-                Op::Const(konst) => self.handle_op_const(konst as i32),
+                Op::Const(konst) => self.handle_op_const(konst),
                 Op::Add => self.handle_op_add(),
                 Op::Sub => self.handle_op_sub(),
                 Op::Print => self.handle_op_print(),
@@ -158,7 +158,7 @@ impl VM {
         None
     }
 
-    fn handle_op_const(&mut self, n: i32) {
+    fn handle_op_const(&mut self, n: i64) {
         self.stack.push(Object::Number(n));
     }
 
