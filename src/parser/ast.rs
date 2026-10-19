@@ -29,7 +29,7 @@ pub enum Statement {
     Let {
         name: String,
         init: Expression,
-        ty: Type,
+        ty: Option<Type>,
     },
     Print {
         value: Expression,
@@ -48,6 +48,7 @@ pub enum Statement {
 pub enum Expression {
     Literal {
         val: Literal,
+        ty: Option<Type>,
         span: Span,
     },
     Variable {
@@ -72,6 +73,20 @@ impl Expression {
             Expression::Binary { span, .. } => *span,
         }
     }
+
+    pub fn ty(&self) -> Option<Type> {
+        match self {
+            Expression::Literal { val, ty, span } => *ty,
+            Expression::Variable { name, ty, span } => *ty,
+            Expression::Binary {
+                kind,
+                lhs,
+                rhs,
+                ty,
+                span,
+            } => *ty,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -82,7 +97,7 @@ pub enum BinaryExpressionKind {
     Div,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Type {
     UInt8,
     Int8,

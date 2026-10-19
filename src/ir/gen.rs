@@ -176,7 +176,7 @@ fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
 
 fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
     match expr {
-        Expression::Literal { val, span } => ExpRes::Plain(IRVal::Const(*val)),
+        Expression::Literal { val, ty, span } => ExpRes::Plain(IRVal::Const(*val)),
         Expression::Variable { name, ty, span } => ExpRes::Plain(IRVal::Var(name.to_owned())),
         Expression::Binary {
             kind,
@@ -208,7 +208,7 @@ fn mkirvar() -> IRVal {
     IRVal::Var(format!("tmp.{}", tmp))
 }
 
-fn mktmp() -> u64 {
+pub fn mktmp() -> u64 {
     static NEXT_TMP: AtomicU64 = AtomicU64::new(0);
 
     NEXT_TMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed)

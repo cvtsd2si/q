@@ -3,6 +3,8 @@ use q::ir::r#gen::{Codegen, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use q::runtime::vm::Vm;
+use q::semantics::resolver::{Resolve, Resolver};
+use q::semantics::typechecker::{Typecheck, Typechecker};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use structopt::StructOpt;
@@ -35,7 +37,23 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let ir = irfy(&ast);
+    let mut resolver = Resolver::new();
+    let resolved_ast = ast.resolve(&mut resolver)?;
+
+    if opts.resolve {
+        println!("{:#?}", resolved_ast);
+        return Ok(0);
+    }
+
+    let mut typechecker = Typechecker::new();
+    let typechecked_ast = resolved_ast.typecheck(&mut typechecker)?;
+
+    if opts.typecheck {
+        println!("{:#?}", typechecked_ast);
+        return Ok(0);
+    }
+
+    let ir = irfy(&typechecked_ast);
 
     if opts.ir {
         println!("{:#?}", ir);
@@ -64,6 +82,12 @@ struct Opt {
 
     #[structopt(name = "parse", long)]
     parse: bool,
+
+    #[structopt(name = "resolve", long)]
+    resolve: bool,
+
+    #[structopt(name = "typecheck", long)]
+    typecheck: bool,
 
     #[structopt(name = "ir", long)]
     ir: bool,

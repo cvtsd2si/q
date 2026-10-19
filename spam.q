@@ -1,4 +1,4 @@
-fn main() -> i8 {
+fn main() -> i64 {
     let cond: bool = true;
 
     if (cond) {
@@ -6,6 +6,8 @@ fn main() -> i8 {
     } else {
     	ret 6+7+8+9+10;
     }
+
+    let z: i64 = 0;
     
-    ret 0;
+    ret z;
 }

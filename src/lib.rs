@@ -30,3 +30,8 @@ pub mod runtime {
     pub mod value;
     pub mod vm;
 }
+
+pub mod semantics {
+    pub mod resolver;
+    pub mod typechecker;
+}

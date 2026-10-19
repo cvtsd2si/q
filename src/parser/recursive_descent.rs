@@ -1,6 +1,7 @@
 use crate::lexer::token::{Span, Token, TokenKind};
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program, Statement,
+    Type,
 };
 use crate::parser::error::ParserError;
 use std::collections::VecDeque;
@@ -225,7 +226,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?;
         self.consume(TokenKind::Colon)?;
-        let ty = self.consume_primitive()?.into();
+        let ty = Some(self.consume_primitive()?.into());
         self.consume(TokenKind::Equal)?;
         let init = self.parse_expr()?;
         self.consume(TokenKind::Semicolon)?;
@@ -358,6 +359,7 @@ impl<'src> Parser<'src> {
                     .parse::<i64>()
                     .unwrap(),
             ),
+            ty: Some(Type::Int64),
             span: token.span,
         })
     }
@@ -371,6 +373,7 @@ impl<'src> Parser<'src> {
                 TokenKind::False => false,
                 _ => unreachable!(),
             }),
+            ty: Some(Type::Boolean),
             span: token.span,
         })
     }
