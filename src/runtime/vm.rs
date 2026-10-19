@@ -193,6 +193,6 @@ impl Vm {
     }
 
     fn handle_op_ret(&mut self) -> Value {
-        self.stack.pop().unwrap().into()
+        self.stack.pop().unwrap()
     }
 }
