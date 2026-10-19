@@ -1,8 +1,7 @@
-use q::bytecode::r#gen::{Bytecode, BytecodeProg};
+use q::bytecode::r#gen::BytecodeProg;
 use q::ir::r#gen::{Codegen, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
-use q::runtime::value::ValueTag;
 use q::runtime::vm::Vm;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -12,7 +11,10 @@ fn main() {
     let opts = Opt::from_args();
     match run(&opts) {
         Ok(r) => std::process::exit(r as i32),
-        Err(e) => eprintln!("err: {}", e),
+        Err(e) => {
+            eprintln!("err: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
