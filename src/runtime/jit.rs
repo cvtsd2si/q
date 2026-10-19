@@ -6,7 +6,10 @@ use crate::{
         regalloc::Regalloc,
     },
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
-    runtime::{value::Value, vm::Vm},
+    runtime::{
+        value::{Value, ValueTag},
+        vm::Vm,
+    },
 };
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
@@ -114,7 +117,7 @@ impl JitCompiler {
          */
         writeln!(asm_txt, "\tmovq ${}, 0(%r12)", 1).ok(); // kind = 1 is JIT_RET
         writeln!(asm_txt, "\tmovq ${}, 8(%r12)", end_pc).ok();
-        writeln!(asm_txt, "\tmovq $0, 16(%r12)").ok(); // tag = 0 is Number
+        writeln!(asm_txt, "\tmovq ${}, 16(%r12)", ValueTag::Int64 as i64).ok();
         writeln!(asm_txt, "\tmovq %rax, 24(%r12)").ok(); // retval from our compiler code ended up
         // in %rax
 
