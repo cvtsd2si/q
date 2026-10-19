@@ -57,6 +57,7 @@ impl JitCompiler {
         let region_func = IRFunc {
             name: format!("jit_{}_{}", ir_func.name, start_ir),
             body: ir_func.body[start_ir..end_ir].to_vec(),
+            ret_ty: ir_func.ret_ty.clone(),
         };
 
         let mut asm_func: AsmFunc = region_func.codegen();
@@ -117,10 +118,8 @@ impl JitCompiler {
          */
         writeln!(asm_txt, "\tmovq ${}, 0(%r12)", 1).ok(); // kind = 1 is JIT_RET
         writeln!(asm_txt, "\tmovq ${}, 8(%r12)", end_pc).ok();
-        writeln!(asm_txt, "\tmovq ${}, 16(%r12)", ValueTag::Int64 as i64).ok();
-        writeln!(asm_txt, "\tmovq %rax, 24(%r12)").ok(); // retval from our compiler code ended up
-        // in %rax
-
+        writeln!(asm_txt, "\tmovq %rdx, 16(%r12)").ok(); // value tag
+        writeln!(asm_txt, "\tmovq %rax, 24(%r12)").ok(); // payload 
         writeln!(asm_txt, "\tmovq %r12, %rax").ok();
 
         /* Restore the native stack/register state and return to VM.  */

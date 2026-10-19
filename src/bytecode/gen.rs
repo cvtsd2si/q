@@ -58,9 +58,7 @@ impl Codegen<BytecodeFunc> for IRFunc {
         for (ir_idx, instr) in self.body.iter().enumerate() {
             let ops: Bytecode = instr.codegen_with_locals(&mut locals);
 
-            for _ in 0..ops.len() {
-                f.ir_map.extend(std::iter::repeat(ir_idx).take(ops.len()));
-            }
+            f.ir_map.extend(std::iter::repeat(ir_idx).take(ops.len()));
 
             f.body.extend(ops);
         }

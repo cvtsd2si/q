@@ -2,6 +2,7 @@ use q::bytecode::r#gen::{Bytecode, BytecodeProg};
 use q::ir::r#gen::{Codegen, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
+use q::runtime::value::ValueTag;
 use q::runtime::vm::Vm;
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -15,7 +16,7 @@ fn main() {
     }
 }
 
-fn run(opts: &Opt) -> Result<i64, Box<dyn std::error::Error>> {
+fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
     let src = std::fs::read_to_string(&opts.path)?;
 
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
@@ -49,7 +50,7 @@ fn run(opts: &Opt) -> Result<i64, Box<dyn std::error::Error>> {
     let mut vm = Vm::new(bytecode, ir);
     let r = vm.exec();
 
-    Ok(r.payload)
+    Ok(r.payload as i32)
 }
 
 #[derive(Debug, Clone, StructOpt)]

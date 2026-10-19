@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Program, Statement,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Program, Statement, Type,
 };
 
 pub trait Codegen<T> {
@@ -43,6 +43,7 @@ pub struct IRProg {
 pub struct IRFunc {
     pub name: String,
     pub body: Vec<IRInstr>,
+    pub ret_ty: Type,
 }
 
 pub fn irfy(ast: &Program) -> IRProg {
@@ -73,6 +74,7 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
             let mut f = IRFunc {
                 name: name.to_owned(),
                 body: vec![],
+                ret_ty: *ret,
             };
 
             for stmt in body {

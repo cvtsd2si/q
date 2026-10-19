@@ -1,6 +1,7 @@
 use crate::{
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
-    parser::ast::{BinaryExpressionKind, Literal},
+    parser::ast::{BinaryExpressionKind, Literal, Type},
+    runtime::value::ValueTag,
 };
 
 #[derive(Debug)]
@@ -77,7 +78,7 @@ impl Codegen<AsmFunc> for IRFunc {
         insert_prologue(&mut body);
 
         for instr in &self.body {
-            body.extend::<Vec<AsmInstr>>(instr.codegen());
+            body.extend(instr.codegen_with_ret_ty(self.ret_ty));
         }
 
         AsmFunc {
@@ -88,8 +89,8 @@ impl Codegen<AsmFunc> for IRFunc {
     }
 }
 
-impl Codegen<Vec<AsmInstr>> for IRInstr {
-    fn codegen(&self) -> Vec<AsmInstr> {
+impl IRInstr {
+    fn codegen_with_ret_ty(&self, ret_ty: Type) -> Vec<AsmInstr> {
         match self {
             IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
                 src: src.codegen(),
@@ -97,10 +98,16 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
             }],
 
             IRInstr::Ret { val } => {
-                let mut instrs = vec![AsmInstr::Mov {
-                    src: val.codegen(),
-                    dst: AsmOp::Reg(AsmReg::Ax),
-                }];
+                let mut instrs = vec![
+                    AsmInstr::Mov {
+                        src: val.codegen(),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(ValueTag::from(ret_ty) as i64),
+                        dst: AsmOp::Reg(AsmReg::Dx),
+                    },
+                ];
 
                 insert_epilogue(&mut instrs);
                 instrs.push(AsmInstr::Ret);

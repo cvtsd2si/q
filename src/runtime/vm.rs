@@ -4,13 +4,12 @@ use crate::{
     parser::ast::Literal,
     runtime::{
         jit::{JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
-        object::Object,
         value::Value,
     },
 };
 
 pub struct Vm {
-    stack: Vec<Object>,
+    stack: Vec<Value>,
     ir: IRProg,
     func: usize,
     pc: usize,
@@ -195,27 +194,5 @@ impl Vm {
 
     fn handle_op_ret(&mut self) -> Value {
         self.stack.pop().unwrap().into()
-    }
-}
-
-impl std::ops::Add for Object {
-    type Output = Self;
-
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Object::Number(a), Object::Number(b)) => Object::Number(a + b),
-            _ => unreachable!(),
-        }
-    }
-}
-
-impl std::ops::Sub for Object {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self, rhs) {
-            (Object::Number(a), Object::Number(b)) => Object::Number(a - b),
-            _ => unreachable!(),
-        }
     }
 }
