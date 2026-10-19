@@ -38,6 +38,10 @@ impl JitCompiler {
         start_pc: usize,
         end_pc: usize,
     ) -> Option<JitBlock> {
+        if start_pc != 0 {
+            return None;
+        }
+
         let ir_func = ir.funcs.get(func)?;
         let region = &ir_func.body[start_ir..end_ir];
 
