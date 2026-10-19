@@ -1,5 +1,3 @@
-use libc::uint16_t;
-
 use crate::{
     bytecode::r#gen::{BytecodeProg, Op},
     ir::r#gen::{IRInstr, IRProg},
