@@ -183,8 +183,7 @@ impl Vm {
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {
-        let obj = self.stack[idx].clone();
-        self.stack.push(obj);
+        self.stack.push(self.stack[idx]);
     }
 
     fn handle_op_deepset(&mut self, idx: usize) {
