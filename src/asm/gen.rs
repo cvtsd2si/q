@@ -30,6 +30,17 @@ pub enum AsmInstr {
         lhs: AsmOp,
         rhs: AsmOp,
     },
+    Cmp {
+        src: AsmOp,
+        dst: AsmOp,
+    },
+    Jz {
+        target: String,
+    },
+    Jmp {
+        target: String,
+    },
+    Label(String),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -78,7 +89,7 @@ impl Codegen<AsmFunc> for IRFunc {
         insert_prologue(&mut body);
 
         for instr in &self.body {
-            body.extend(instr.codegen_with_ret_ty(self.ret_ty));
+            body.extend(instr.codegen_with(self.ret_ty, &self.name));
         }
 
         AsmFunc {
@@ -90,7 +101,7 @@ impl Codegen<AsmFunc> for IRFunc {
 }
 
 impl IRInstr {
-    fn codegen_with_ret_ty(&self, ret_ty: Type) -> Vec<AsmInstr> {
+    fn codegen_with(&self, ret_ty: Type, func_name: &str) -> Vec<AsmInstr> {
         match self {
             IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
                 src: src.codegen(),
@@ -143,6 +154,22 @@ impl IRInstr {
             }
 
             IRInstr::Print { val: _ } => todo!(),
+
+            IRInstr::Jz { cond, target } => vec![
+                AsmInstr::Cmp {
+                    src: cond.codegen(),
+                    dst: AsmOp::Imm(0),
+                },
+                AsmInstr::Jz {
+                    target: format!(".L{}_{}", func_name, target),
+                },
+            ],
+
+            IRInstr::Jmp { target } => vec![AsmInstr::Jmp {
+                target: format!(".L{}_{}", func_name, target),
+            }],
+
+            IRInstr::Label(target) => vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))],
         }
     }
 }

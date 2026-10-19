@@ -17,7 +17,7 @@ pub enum Declaration {
         name: String,
         ret: Type,
         params: Vec<Param>,
-        body: Vec<Statement>,
+        body: Statement,
     },
 }
 
@@ -33,6 +33,14 @@ pub enum Statement {
     },
     Print {
         value: Expression,
+    },
+    If {
+        cond: Expression,
+        then_block: Box<Statement>,
+        else_block: Option<Box<Statement>>,
+    },
+    Block {
+        body: Vec<Statement>,
     },
 }
 

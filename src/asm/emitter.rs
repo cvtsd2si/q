@@ -36,6 +36,10 @@ impl Emit for AsmInstr {
 
 impl std::fmt::Display for AsmInstr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if let AsmInstr::Label(target) = self {
+            return writeln!(f, "{}:", target);
+        }
+
         write!(f, "\t")?;
 
         match self {
@@ -47,6 +51,10 @@ impl std::fmt::Display for AsmInstr {
                 AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs),
                 AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs),
             },
+            AsmInstr::Cmp { src, dst } => writeln!(f, "cmpq {}, {}", src, dst),
+            AsmInstr::Jz { target } => writeln!(f, "je {}", target),
+            AsmInstr::Jmp { target } => writeln!(f, "jmp {}", target),
+            _ => unreachable!(),
         }
     }
 }

@@ -44,6 +44,11 @@ impl RegAllocator {
                 rhs: self.replace_pseudo(rhs),
             },
 
+            AsmInstr::Cmp { src, dst } => AsmInstr::Cmp {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+            },
+
             _ => instr.clone(),
         }
     }

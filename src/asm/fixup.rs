@@ -50,6 +50,18 @@ impl Fixup for AsmInstr {
                 ],
                 _ => vec![self.clone()],
             },
+
+            AsmInstr::Cmp { src, dst } if matches!(dst, AsmOp::Imm(_)) => vec![
+                AsmInstr::Mov {
+                    src: dst.clone(),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Cmp {
+                    src: src.clone(),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+            ],
+
             _ => vec![self.clone()],
         }
     }

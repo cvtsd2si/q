@@ -103,7 +103,7 @@ impl<'src> Parser<'src> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
-                TokenKind::Ret | TokenKind::Let | TokenKind::Print => {
+                TokenKind::Ret | TokenKind::Let | TokenKind::Print | TokenKind::If => {
                     Ok(BlockItem::Stmt(self.parse_stmt()?))
                 }
                 _ => unreachable!("got: {:?}", token.kind),
@@ -128,7 +128,11 @@ impl<'src> Parser<'src> {
                 TokenKind::Let => Ok(self.parse_let()?),
                 TokenKind::Ret => Ok(self.parse_ret()?),
                 TokenKind::Print => Ok(self.parse_print()?),
-                _ => unimplemented!(),
+                TokenKind::If => Ok(self.parse_if()?),
+                TokenKind::LBrace => Ok(Statement::Block {
+                    body: self.parse_block()?,
+                }),
+                _ => unimplemented!("got: {:?}", self.curr),
             },
             None => unreachable!(),
         }
@@ -183,7 +187,7 @@ impl<'src> Parser<'src> {
             name: self.src[name.span.start..name.span.end].to_string(),
             ret,
             params,
-            body,
+            body: Statement::Block { body },
         })
     }
 
@@ -230,6 +234,34 @@ impl<'src> Parser<'src> {
             name: self.src[name.span.start..name.span.end].to_string(),
             init,
             ty,
+        })
+    }
+
+    fn parse_if(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::If)?;
+
+        self.consume(TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.consume(TokenKind::RParen)?;
+
+        let then_block = self.parse_stmt()?.into();
+
+        let else_block = if self.check(TokenKind::Else) {
+            self.consume(TokenKind::Else)?;
+            Some(
+                Statement::Block {
+                    body: self.parse_block()?,
+                }
+                .into(),
+            )
+        } else {
+            None
+        };
+
+        Ok(Statement::If {
+            cond,
+            then_block,
+            else_block,
         })
     }
 

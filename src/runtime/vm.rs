@@ -79,6 +79,8 @@ impl Vm {
                 Op::Print => self.handle_op_print(),
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
+                Op::Jz(target) => self.handle_op_jz(target),
+                Op::Jmp(target) => self.handle_op_jmp(target),
                 Op::Ret => break self.handle_op_ret(),
             };
 
@@ -140,23 +142,16 @@ impl Vm {
     }
 
     fn find_region_end(&self, func: usize, start_pc: usize) -> Option<usize> {
-        /* Given a start PC, iterate through each `IRInstr` in the func,
-         * up until you encounter the `IRInstr::Ret` instruction.
-         * Once you do, this means that the region ends there (for now).  */
-        let bc_func = &self.bytecode.funcs[func];
-        let start_ir = bc_func.ir_map.get(start_pc)?;
-
-        let ir_func = self.ir.funcs.get(func)?;
-
-        for ir_idx in *start_ir..ir_func.body.len() {
-            if matches!(ir_func.body[ir_idx], IRInstr::Ret { .. },) {
-                /* +1 is because the slices are exclusive.
-                 * We want to include the `IRInstr::Ret`, too.  */
-                return Some(ir_idx + 1);
-            }
+        if start_pc != 0 {
+            return None;
         }
 
-        None
+        let body = &self.ir.funcs.get(func)?.body;
+
+        match body.last()? {
+            IRInstr::Ret { .. } => Some(body.len()),
+            _ => None,
+        }
     }
 
     fn handle_op_const(&mut self, n: Literal) {
@@ -189,6 +184,18 @@ impl Vm {
     fn handle_op_deepset(&mut self, idx: usize) {
         let obj = self.stack.pop().unwrap();
         self.stack[idx] = obj;
+    }
+
+    fn handle_op_jz(&mut self, target: usize) {
+        let cond = self.stack.pop().unwrap();
+
+        if cond.payload == 0 {
+            self.pc = target - 1;
+        }
+    }
+
+    fn handle_op_jmp(&mut self, target: usize) {
+        self.pc = target - 1;
     }
 
     fn handle_op_ret(&mut self) -> Value {

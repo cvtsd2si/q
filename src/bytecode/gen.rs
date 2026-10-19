@@ -14,6 +14,8 @@ pub enum Op {
     Print,
     Deepget(usize),
     Deepset(usize),
+    Jz(usize),
+    Jmp(usize),
 }
 
 pub type Bytecode = Vec<Op>;
@@ -55,12 +57,40 @@ impl Codegen<BytecodeFunc> for IRFunc {
 
         let mut locals = Locals::new();
 
+        let mut labels = HashMap::new();
+        let mut fixups = vec![];
+
         for (ir_idx, instr) in self.body.iter().enumerate() {
             let ops: Bytecode = instr.codegen_with_locals(&mut locals);
+
+            match instr {
+                IRInstr::Label(target) => {
+                    labels.insert(target, f.body.len());
+                }
+
+                IRInstr::Jz { target, .. } | IRInstr::Jmp { target } => {
+                    let pc = f.body.len() + ops.len() - 1;
+                    fixups.push((pc, target.clone()));
+                }
+
+                _ => {}
+            }
 
             f.ir_map.extend(std::iter::repeat(ir_idx).take(ops.len()));
 
             f.body.extend(ops);
+        }
+
+        for (pc, name) in &fixups {
+            let dst = labels.get(name).unwrap();
+
+            match f.body[*pc] {
+                Op::Jz(ref mut target) | Op::Jmp(ref mut target) => {
+                    *target = *dst;
+                }
+
+                _ => unreachable!(),
+            }
         }
 
         f
@@ -101,6 +131,12 @@ impl IRInstr {
             IRInstr::Ret { val } => vec![val.load_op(locals), Op::Ret],
 
             IRInstr::Print { val } => vec![val.load_op(locals), Op::Print],
+
+            IRInstr::Jz { cond, target } => vec![cond.load_op(locals), Op::Jz(usize::MAX)],
+
+            IRInstr::Jmp { target } => vec![Op::Jmp(usize::MAX)],
+
+            IRInstr::Label(target) => vec![],
         }
     }
 

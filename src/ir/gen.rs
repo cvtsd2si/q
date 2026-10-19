@@ -32,6 +32,14 @@ pub enum IRInstr {
     Print {
         val: IRVal,
     },
+    Jmp {
+        target: String,
+    },
+    Jz {
+        cond: IRVal,
+        target: String,
+    },
+    Label(String),
 }
 
 #[derive(Debug)]
@@ -77,8 +85,10 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
                 ret_ty: *ret,
             };
 
-            for stmt in body {
-                irfy_stmt(&mut f.body, stmt);
+            if let Statement::Block { body } = body {
+                for stmt in body {
+                    irfy_stmt(&mut f.body, stmt);
+                }
             }
 
             ir_prog.funcs.push(f);
@@ -105,6 +115,49 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             let r = irfy_expr_and_cvt(instrs, value);
 
             instrs.push(IRInstr::Print { val: r });
+        }
+
+        Statement::If {
+            cond,
+            then_block,
+            else_block,
+        } => {
+            let r = irfy_expr_and_cvt(instrs, cond);
+
+            let tmp = mktmp();
+
+            if else_block.is_none() {
+                instrs.push(IRInstr::Jz {
+                    cond: r,
+                    target: format!("End.{}", tmp),
+                });
+
+                irfy_stmt(instrs, then_block);
+
+                instrs.push(IRInstr::Label(format!("End.{}", tmp)));
+            } else {
+                instrs.push(IRInstr::Jz {
+                    cond: r,
+                    target: format!("Else.{}", tmp),
+                });
+                irfy_stmt(instrs, then_block);
+
+                instrs.push(IRInstr::Jmp {
+                    target: format!("End.{}", tmp),
+                });
+
+                instrs.push(IRInstr::Label(format!("Else.{}", tmp)));
+
+                irfy_stmt(instrs, else_block.as_ref().unwrap());
+
+                instrs.push(IRInstr::Label(format!("End.{}", tmp)));
+            }
+        }
+
+        Statement::Block { body } => {
+            for stmt in body {
+                irfy_stmt(instrs, stmt);
+            }
         }
     }
 }
