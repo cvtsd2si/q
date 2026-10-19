@@ -332,7 +332,7 @@ impl<'src> Parser<'src> {
             Some(token) => match token.kind {
                 TokenKind::Identifier => self.parse_var(),
                 TokenKind::Number => self.parse_literal(),
-                TokenKind::True | TokenKind::False => self.parse_bool(),
+                TokenKind::True | TokenKind::False => self.parse_bool(&token),
                 _ => unreachable!(),
             },
             None => unreachable!(),
@@ -362,14 +362,8 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_bool(&mut self) -> Result<Expression, ParserError> {
-        let token = if self.check(TokenKind::True) {
-            self.consume(TokenKind::True)?
-        } else if self.check(TokenKind::False) {
-            self.consume(TokenKind::False)?
-        } else {
-            unreachable!()
-        };
+    fn parse_bool(&mut self, token: &Token) -> Result<Expression, ParserError> {
+        self.advance();
 
         Ok(Expression::Literal {
             val: Literal::Bool(match token.kind {
