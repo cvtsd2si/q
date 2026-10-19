@@ -122,7 +122,7 @@ impl IRVal {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
             IRVal::Var(var) => {
-                if let Some(idx) = locals.get(dbg!(var)) {
+                if let Some(idx) = locals.get(var) {
                     Op::Deepget(*idx)
                 } else {
                     unreachable!();
