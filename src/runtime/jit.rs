@@ -61,7 +61,7 @@ impl JitCompiler {
         let region_func = IRFunc {
             name: format!("jit_{}_{}", ir_func.name, start_ir),
             body: ir_func.body[start_ir..end_ir].to_vec(),
-            ret_ty: ir_func.ret_ty.clone(),
+            ret_ty: ir_func.ret_ty,
         };
 
         let mut asm_func: AsmFunc = region_func.codegen();
