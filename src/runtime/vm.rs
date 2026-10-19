@@ -1,6 +1,9 @@
+use libc::uint16_t;
+
 use crate::{
     bytecode::r#gen::{BytecodeProg, Op},
     ir::r#gen::{IRInstr, IRProg},
+    parser::ast::Literal,
     runtime::{
         jit::{JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
         object::Object,
@@ -78,6 +81,7 @@ impl Vm {
                 Op::Sub => self.handle_op_sub(),
                 Op::Print => self.handle_op_print(),
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
+                Op::Deepset(idx) => self.handle_op_deepset(idx),
                 Op::Ret => break self.handle_op_ret(),
             };
 
@@ -158,8 +162,19 @@ impl Vm {
         None
     }
 
-    fn handle_op_const(&mut self, n: i64) {
-        self.stack.push(Object::Number(n));
+    fn handle_op_const(&mut self, n: Literal) {
+        self.stack.push(match n {
+            Literal::UInt8(uint8) => Object::Number(uint8 as i64),
+            Literal::Int8(int8) => Object::Number(int8 as i64),
+            Literal::UInt16(uint16) => Object::Number(uint16 as i64),
+            Literal::Int16(int16) => Object::Number(int16 as i64),
+            Literal::UInt32(uint32) => Object::Number(uint32 as i64),
+            Literal::Int32(int32) => Object::Number(int32 as i64),
+            Literal::UInt64(uint64) => Object::Number(uint64 as i64),
+            Literal::Int64(int64) => Object::Number(int64 as i64),
+            Literal::Bool(boolean) => Object::Boolean(boolean),
+            _ => unreachable!(),
+        });
     }
 
     fn handle_op_add(&mut self) {
@@ -186,6 +201,11 @@ impl Vm {
         self.stack.push(obj);
     }
 
+    fn handle_op_deepset(&mut self, idx: usize) {
+        let obj = self.stack.pop().unwrap();
+        self.stack[idx] = obj;
+    }
+
     fn handle_op_ret(&mut self) -> Value {
         self.stack.pop().unwrap().into()
     }
@@ -197,6 +217,7 @@ impl std::ops::Add for Object {
     fn add(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Object::Number(a), Object::Number(b)) => Object::Number(a + b),
+            _ => unreachable!(),
         }
     }
 }
@@ -207,6 +228,7 @@ impl std::ops::Sub for Object {
     fn sub(self, rhs: Self) -> Self::Output {
         match (self, rhs) {
             (Object::Number(a), Object::Number(b)) => Object::Number(a - b),
+            _ => unreachable!(),
         }
     }
 }

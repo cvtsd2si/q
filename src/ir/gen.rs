@@ -1,7 +1,7 @@
 use std::sync::atomic::AtomicU64;
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Program, Statement,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Program, Statement,
 };
 
 pub trait Codegen<T> {
@@ -10,7 +10,7 @@ pub trait Codegen<T> {
 
 #[derive(Debug, Clone)]
 pub enum IRVal {
-    Const(i64),
+    Const(Literal),
     Var(String),
 }
 

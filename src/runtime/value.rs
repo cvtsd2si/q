@@ -9,4 +9,5 @@ pub struct Value {
 #[derive(Debug, Clone, Copy)]
 pub enum ValueTag {
     Number = 0,
+    Boolean = 1,
 }

@@ -1,6 +1,6 @@
 use crate::lexer::token::{Span, Token, TokenKind};
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Param, Program, Statement,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program, Statement,
 };
 use crate::parser::error::ParserError;
 use std::collections::VecDeque;
@@ -300,6 +300,7 @@ impl<'src> Parser<'src> {
             Some(token) => match token.kind {
                 TokenKind::Identifier => self.parse_var(),
                 TokenKind::Number => self.parse_literal(),
+                TokenKind::True | TokenKind::False => self.parse_bool(),
                 _ => unreachable!(),
             },
             None => unreachable!(),
@@ -320,9 +321,30 @@ impl<'src> Parser<'src> {
         let token = self.consume(TokenKind::Number)?;
 
         Ok(Expression::Literal {
-            val: self.src[token.span.start..token.span.end]
-                .parse::<i64>()
-                .unwrap(),
+            val: Literal::Int64(
+                self.src[token.span.start..token.span.end]
+                    .parse::<i64>()
+                    .unwrap(),
+            ),
+            span: token.span,
+        })
+    }
+
+    fn parse_bool(&mut self) -> Result<Expression, ParserError> {
+        let token = if self.check(TokenKind::True) {
+            self.consume(TokenKind::True)?
+        } else if self.check(TokenKind::False) {
+            self.consume(TokenKind::False)?
+        } else {
+            unreachable!()
+        };
+
+        Ok(Expression::Literal {
+            val: Literal::Bool(match token.kind {
+                TokenKind::True => true,
+                TokenKind::False => false,
+                _ => unreachable!(),
+            }),
             span: token.span,
         })
     }

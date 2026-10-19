@@ -64,6 +64,8 @@ pub enum TokenKind {
     F32,
     F64,
     Bool,
+    True,
+    False,
     Str,
     Semicolon,
     Number,

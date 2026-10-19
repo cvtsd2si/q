@@ -1,3 +1,5 @@
 fn main() -> i64 {
-    ret 1+2+3+4+5+6+7;
+    let x: bool = true;
+    print x;
+    ret 0;
 }

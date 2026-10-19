@@ -114,6 +114,8 @@ impl<'src> Iterator for Tokenizer<'src> {
                         "f32" => TokenKind::F32,
                         "f64" => TokenKind::F64,
                         "bool" => TokenKind::Bool,
+                        "true" => TokenKind::True,
+                        "false" => TokenKind::False,
                         "str" => TokenKind::Str,
                         _ => TokenKind::Identifier,
                     };

@@ -1,6 +1,6 @@
 use crate::{
     ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
-    parser::ast::BinaryExpressionKind,
+    parser::ast::{BinaryExpressionKind, Literal},
 };
 
 #[derive(Debug)]
@@ -143,7 +143,18 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
 impl Codegen<AsmOp> for IRVal {
     fn codegen(&self) -> AsmOp {
         match self {
-            IRVal::Const(konst) => AsmOp::Imm(*konst),
+            IRVal::Const(konst) => match konst {
+                Literal::UInt8(uint8) => AsmOp::Imm(*uint8 as i64),
+                Literal::Int8(int8) => AsmOp::Imm(*int8 as i64),
+                Literal::UInt16(uint16) => AsmOp::Imm(*uint16 as i64),
+                Literal::Int16(int16) => AsmOp::Imm(*int16 as i64),
+                Literal::UInt32(uint32) => AsmOp::Imm(*uint32 as i64),
+                Literal::Int32(int32) => AsmOp::Imm(*int32 as i64),
+                Literal::UInt64(uint64) => AsmOp::Imm(*uint64 as i64),
+                Literal::Int64(int64) => AsmOp::Imm(*int64),
+                Literal::Bool(boolean) => AsmOp::Imm(if *boolean { 1 } else { 0 }),
+                _ => unimplemented!(),
+            },
             IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
         }
     }

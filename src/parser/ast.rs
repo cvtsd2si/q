@@ -39,7 +39,7 @@ pub enum Statement {
 #[derive(Debug, Clone)]
 pub enum Expression {
     Literal {
-        val: i64,
+        val: Literal,
         span: Span,
     },
     Variable {
@@ -114,4 +114,19 @@ impl From<Token> for Type {
 pub struct Param {
     pub name: String,
     pub ty: Type,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum Literal {
+    Bool(bool),
+    UInt8(u8),
+    Int8(i8),
+    UInt16(u16),
+    Int16(i16),
+    UInt32(u32),
+    Int32(i32),
+    UInt64(u64),
+    Int64(i64),
+    Float32(f32),
+    Float64(f64),
 }
