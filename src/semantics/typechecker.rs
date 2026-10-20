@@ -1,18 +1,21 @@
 use std::collections::HashMap;
 
+use crate::lexer::token::Span;
 use crate::parser::ast::{
     BlockItem::{self, Decl},
-    Declaration, Expression, Param, Program, Statement, Type,
+    Declaration, Expression, Literal, LiteralVal, Param, Program, Statement, Type,
 };
 
 pub struct Typechecker {
     pub sym_table: HashMap<String, Symbol>,
+    pub funcs: HashMap<String, FnSignature>,
 }
 
 impl Typechecker {
     pub fn new() -> Self {
         Self {
             sym_table: HashMap::new(),
+            funcs: HashMap::new(),
         }
     }
 }
@@ -36,11 +39,11 @@ impl Typecheck for Program {
                     body,
                 } = decl
                 {
-                    typechecker.sym_table.insert(
+                    typechecker.funcs.insert(
                         name.to_owned(),
-                        Symbol {
-                            name: name.to_owned(),
-                            ty: *ret,
+                        FnSignature {
+                            params: params.iter().map(|p| p.ty).collect(),
+                            ret_ty: *ret,
                         },
                     );
                 }
@@ -160,7 +163,7 @@ fn typecheck_ret(
         return Ok(Statement::Ret { value, ret_ty });
     }
 
-    let typechecked_expr = typecheck_expr(typechecker, value.unwrap())?;
+    let typechecked_expr = typecheck_expr(typechecker, value.unwrap(), ret_ty)?;
 
     let actual_ty = typechecked_expr.ty();
     let expected_ty = ret_ty;
@@ -185,7 +188,7 @@ fn typecheck_print(
     value: Expression,
 ) -> Result<Statement, TypecheckerError> {
     Ok(Statement::Print {
-        value: typecheck_expr(typechecker, value)?,
+        value: typecheck_expr(typechecker, value, None)?,
     })
 }
 
@@ -196,7 +199,7 @@ fn typecheck_if(
     else_block: Option<Box<Statement>>,
 ) -> Result<Statement, TypecheckerError> {
     Ok(Statement::If {
-        cond: typecheck_expr(typechecker, cond)?,
+        cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
         then_block: then_block.typecheck(typechecker)?.into(),
         else_block: else_block
             .map(|block| block.typecheck(typechecker).map(Box::new))
@@ -216,9 +219,10 @@ fn typecheck_block(
 fn typecheck_expr(
     typechecker: &mut Typechecker,
     expr: Expression,
+    expected_ty: Option<Type>,
 ) -> Result<Expression, TypecheckerError> {
     match expr {
-        Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
+        Expression::Literal { val, ty, span } => typecheck_literal(val, ty, expected_ty, span),
 
         Expression::Variable { name, ty, span } => {
             let sym = typechecker.sym_table.get(&name);
@@ -251,14 +255,35 @@ fn typecheck_expr(
             ty,
             span,
         } => {
-            let typechecked_lhs = typecheck_expr(typechecker, *lhs)?;
-            let typechecked_rhs = typecheck_expr(typechecker, *rhs)?;
+            let lhs_hint = known_ty(typechecker, &lhs)?;
+            let rhs_hint = known_ty(typechecker, &rhs)?;
+
+            let op_hint = merge_types(lhs_hint, rhs_hint)?;
+
+            let resolved = merge_types(expected_ty, op_hint)?;
+
+            let ty = resolved.unwrap_or_else(|| default_numeric_ty(&lhs));
+
+            if !ty.is_numeric() {
+                return Err(TypecheckerError {
+                    msg: format!("Arithmetic requires numeric operands, got {ty:?}"),
+                });
+            }
+
+            let lhs = typecheck_expr(typechecker, *lhs, Some(ty))?;
+            let rhs = typecheck_expr(typechecker, *rhs, Some(ty))?;
+
+            if lhs.ty() != Some(ty) || rhs.ty() != Some(ty) {
+                return Err(TypecheckerError {
+                    msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                });
+            }
 
             Ok(Expression::Binary {
                 kind,
-                lhs: typechecked_lhs.clone().into(), // FIXME: don't clone
-                rhs: typechecked_rhs.clone().into(), // FIXME: don't clone
-                ty: get_common_type(typechecked_lhs.ty(), typechecked_rhs.ty()),
+                lhs: lhs.into(),
+                rhs: rhs.into(),
+                ty: Some(ty),
                 span,
             })
         }
@@ -269,20 +294,92 @@ fn typecheck_expr(
             ty,
             span,
         } => {
-            let ret_ty = typechecker.sym_table.get(&target).and_then(|sym| sym.ty);
+            let s = typechecker
+                .funcs
+                .get(&target)
+                .cloned()
+                .ok_or_else(|| TypecheckerError {
+                    msg: format!("Unknown fn: {target}"),
+                })?;
+
+            if let Some(expected) = expected_ty {
+                if s.ret_ty != Some(expected) {
+                    let t = s.ret_ty.clone();
+                    return Err(TypecheckerError {
+                        msg: format!("Expected {expected:?}, but fn {target} returns {t:?}"),
+                    });
+                }
+            }
+
+            if args.len() != s.params.len() {
+                return Err(TypecheckerError {
+                    msg: format!(
+                        "Fn {target} expects {} args, got {}",
+                        s.params.len(),
+                        args.len()
+                    ),
+                });
+            }
+
             let typechecked_args = args
                 .into_iter()
-                .map(|arg| typecheck_expr(typechecker, arg.to_owned()))
+                .zip(s.params.iter().copied())
+                .enumerate()
+                .map(|(i, (arg, param_ty))| {
+                    let arg = typecheck_expr(typechecker, arg, Some(param_ty))?;
+
+                    if arg.ty() != Some(param_ty) {
+                        return Err(TypecheckerError {
+                            msg: format!(
+                                "arg {} of {target:?}: expected {:?}, got {:?}",
+                                i + 1,
+                                param_ty,
+                                arg.ty()
+                            ),
+                        });
+                    }
+
+                    Ok(arg)
+                })
                 .collect::<Result<Vec<_>, _>>()?;
 
             Ok(Expression::Call {
-                target: target.clone(),
+                target,
                 args: typechecked_args,
-                ty: ret_ty,
+                ty: s.ret_ty,
                 span,
             })
         }
     }
+}
+
+fn typecheck_literal(
+    val: LiteralVal,
+    explicit_ty: Option<Type>,
+    expected_ty: Option<Type>,
+    span: Span,
+) -> Result<Expression, TypecheckerError> {
+    if let (Some(explicit), Some(expected)) = (explicit_ty, expected_ty) {
+        if explicit != expected {
+            return Err(TypecheckerError {
+                msg: format!("got: {explicit:?}, expected: {expected:?}"),
+            });
+        }
+    }
+
+    let ty = expected_ty.or(expected_ty).unwrap_or_else(|| match &val {
+        LiteralVal::Bool(_) => Type::Boolean,
+        LiteralVal::Integer(_) => Type::Int32,
+        LiteralVal::Float(_) => Type::Float64,
+    });
+
+    Literal::try_from((&val, ty)).map_err(|msg| TypecheckerError { msg });
+
+    Ok(Expression::Literal {
+        val,
+        ty: Some(ty),
+        span,
+    })
 }
 
 fn typecheck_init(
@@ -290,7 +387,7 @@ fn typecheck_init(
     init: Expression,
     expected_ty: Option<Type>,
 ) -> Result<Expression, TypecheckerError> {
-    let typechecked_init = typecheck_expr(typechecker, init.clone())?;
+    let typechecked_init = typecheck_expr(typechecker, init.clone(), expected_ty)?;
 
     let actual_ty = typechecked_init.ty();
 
@@ -326,17 +423,55 @@ fn types_equal(a: Option<Type>, b: Option<Type>) -> bool {
     a == b
 }
 
-fn get_common_type(a: Option<Type>, b: Option<Type>) -> Option<Type> {
-    if a.is_some() && b.is_some() {
-        let a = a.unwrap();
-        let b = b.unwrap();
+fn merge_types(a: Option<Type>, b: Option<Type>) -> Result<Option<Type>, TypecheckerError> {
+    match (a, b) {
+        (Some(a), Some(b)) if a != b => Err(TypecheckerError {
+            msg: format!("{a:?} != {b:?}"),
+        }),
 
-        match (a, b) {
-            (Type::Int64, Type::Int64) => Some(Type::Int64),
-            _ => unimplemented!(),
+        (Some(ty), _) | (_, Some(ty)) => Ok(Some(ty)),
+
+        (None, None) => Ok(None),
+    }
+}
+
+fn known_ty(
+    typechecker: &mut Typechecker,
+    expr: &Expression,
+) -> Result<Option<Type>, TypecheckerError> {
+    match expr {
+        Expression::Literal { ty, .. } => Ok(*ty),
+
+        Expression::Variable { name, .. } => typechecker
+            .sym_table
+            .get(name)
+            .map(|sym| sym.ty)
+            .ok_or_else(|| TypecheckerError {
+                msg: format!("Unknown var: {name}"),
+            }),
+
+        Expression::Call { target, .. } => typechecker
+            .sym_table
+            .get(target)
+            .map(|sym| sym.ty)
+            .ok_or_else(|| TypecheckerError {
+                msg: format!("Unknown fn: {target}"),
+            }),
+
+        Expression::Binary { lhs, rhs, .. } => {
+            merge_types(known_ty(typechecker, lhs)?, known_ty(typechecker, rhs)?)
         }
-    } else {
-        None
+    }
+}
+
+fn default_numeric_ty(expr: &Expression) -> Type {
+    match expr {
+        Expression::Literal {
+            val: LiteralVal::Float(_),
+            ..
+        } => Type::Float64,
+        Expression::Binary { lhs, .. } => default_numeric_ty(lhs),
+        _ => Type::Int32,
     }
 }
 
@@ -344,6 +479,12 @@ fn get_common_type(a: Option<Type>, b: Option<Type>) -> Option<Type> {
 pub struct Symbol {
     pub name: String,
     pub ty: Option<Type>,
+}
+
+#[derive(Debug, Clone)]
+pub struct FnSignature {
+    pub params: Vec<Type>,
+    pub ret_ty: Option<Type>,
 }
 
 #[derive(Debug)]

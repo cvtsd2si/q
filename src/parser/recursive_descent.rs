@@ -1,7 +1,7 @@
-use crate::lexer::token::{Span, Token, TokenKind};
+use crate::lexer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program, Statement,
-    Type,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
+    Statement, Type,
 };
 use crate::parser::error::ParserError;
 use std::collections::VecDeque;
@@ -56,10 +56,12 @@ impl<'src> Parser<'src> {
             }
             Some(token) => Err(ParserError {
                 src: self.src.to_string(),
+                msg: format!("Encountered unexpeced token: {:?}", token),
                 span: token.span,
             }),
             None => Err(ParserError {
                 src: self.src.to_string(),
+                msg: format!("Encountered the end of the token stream."),
                 span: Span {
                     start: self.src.len(),
                     end: self.src.len(),
@@ -89,11 +91,13 @@ impl<'src> Parser<'src> {
                 }
                 _ => Err(ParserError {
                     src: self.src.to_string(),
+                    msg: format!("Encountered unknown primitive token kind: {:?}", token),
                     span: token.span,
                 }),
             },
             None => Err(ParserError {
                 src: self.src.to_string(),
+                msg: format!("Encountered the end of the token stream."),
                 span: Span {
                     start: self.src.len(),
                     end: self.src.len(),
@@ -397,7 +401,15 @@ impl<'src> Parser<'src> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Identifier => self.parse_var(),
-                TokenKind::Number => self.parse_literal(),
+                TokenKind::Number(ref number_token) => {
+                    self.advance();
+
+                    Ok(Expression::Literal {
+                        val: self.parse_numeric_val(number_token)?,
+                        ty: number_token.suffix.map(Type::from),
+                        span: token.span,
+                    })
+                }
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
                 _ => unreachable!("got: {:?}", token),
             },
@@ -415,25 +427,38 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_literal(&mut self) -> Result<Expression, ParserError> {
-        let token = self.consume(TokenKind::Number)?;
+    fn parse_numeric_val(&mut self, token: &NumberToken) -> Result<LiteralVal, ParserError> {
+        let raw = &self.src[token.value_span.start..token.value_span.end];
 
-        Ok(Expression::Literal {
-            val: Literal::Int64(
-                self.src[token.span.start..token.span.end]
-                    .parse::<i64>()
-                    .unwrap(),
-            ),
-            ty: Some(Type::Int64),
-            span: token.span,
-        })
+        /* Remove separators.  */
+        let cleaned = raw.replace('_', "");
+
+        match token.kind {
+            NumberKind::Integer { radix } => {
+                /* Skip e.g. 0x  */
+                let digits = if radix == 10 {
+                    cleaned.as_str()
+                } else {
+                    &cleaned[2..]
+                };
+
+                let v = u128::from_str_radix(digits, radix).map_err(|e| ParserError {
+                    src: self.src.to_string(),
+                    msg: e.to_string(),
+                    span: token.value_span,
+                })?;
+
+                Ok(LiteralVal::Integer(v))
+            }
+            NumberKind::Float => Ok(LiteralVal::Float(cleaned)),
+        }
     }
 
     fn parse_bool(&mut self, token: &Token) -> Result<Expression, ParserError> {
         self.advance();
 
         Ok(Expression::Literal {
-            val: Literal::Bool(match token.kind {
+            val: LiteralVal::Bool(match token.kind {
                 TokenKind::True => true,
                 TokenKind::False => false,
                 _ => unreachable!(),

@@ -1,5 +1,5 @@
 fn main() -> i64 {
-    let a: i64 = 3;
+    let a: i64 = 3i32;
     let b: i64 = 4;
 
     ret a_bool(1, 2);

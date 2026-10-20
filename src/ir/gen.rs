@@ -3,8 +3,8 @@ use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
 use crate::{
     bytecode::r#gen::BytecodeFunc,
     parser::ast::{
-        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program,
-        Statement, Type,
+        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param,
+        Program, Statement, Type,
     },
 };
 
@@ -236,7 +236,12 @@ fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
 
 fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
     match expr {
-        Expression::Literal { val, ty, span } => ExpRes::Plain(IRVal::Const(*val)),
+        Expression::Literal { val, ty, span } => {
+            let ty = ty.unwrap();
+            let literal = Literal::try_from((val, ty)).unwrap();
+
+            ExpRes::Plain(IRVal::Const(literal))
+        }
         Expression::Variable { name, ty, span } => ExpRes::Plain(IRVal::Var(name.to_owned())),
         Expression::Binary {
             kind,

@@ -4,6 +4,7 @@ use crate::lexer::token::Span;
 pub struct ParserError {
     pub src: String,
     pub span: Span,
+    pub msg: String,
 }
 
 impl std::fmt::Display for ParserError {
