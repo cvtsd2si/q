@@ -1,7 +1,8 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
-    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
+    asm::r#gen::AsmOp,
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal},
 };
 
@@ -16,6 +17,7 @@ pub enum Op {
     Deepset(usize),
     Jz(usize),
     Jmp(usize),
+    Call { target: usize, argc: usize },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -33,35 +35,47 @@ pub struct BytecodeFunc {
     pub ir_map: Vec<usize>,
 }
 
-impl Codegen<BytecodeProg> for IRProg {
-    fn codegen(&self) -> BytecodeProg {
+impl Codegen<BytecodeProg, CodegenContext> for IRProg {
+    fn codegen(
+        &self,
+        ctx: &mut CodegenContext,
+    ) -> Result<BytecodeProg, Box<dyn std::error::Error>> {
         let mut bytecode_prog = BytecodeProg { funcs: vec![] };
 
         for f in &self.funcs {
-            bytecode_prog.funcs.push(f.codegen());
+            ctx.register::<BytecodeFunc>(&f.name);
         }
 
-        bytecode_prog
+        for f in &self.funcs {
+            bytecode_prog.funcs.push(f.codegen(ctx)?);
+        }
+
+        Ok(bytecode_prog)
     }
 }
 
-type Locals = HashMap<String, usize>;
+impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
+    fn codegen(
+        &self,
+        ctx: &mut CodegenContext,
+    ) -> Result<BytecodeFunc, Box<dyn std::error::Error>> {
+        ctx.locals.clear();
 
-impl Codegen<BytecodeFunc> for IRFunc {
-    fn codegen(&self) -> BytecodeFunc {
+        for param in &self.params {
+            ctx.register::<String>(&param.name);
+        }
+
         let mut f = BytecodeFunc {
             name: self.name.to_owned(),
             body: vec![],
             ir_map: vec![],
         };
 
-        let mut locals = Locals::new();
-
         let mut labels = HashMap::new();
         let mut fixups = vec![];
 
         for (ir_idx, instr) in self.body.iter().enumerate() {
-            let ops: Bytecode = instr.codegen_with_locals(&mut locals);
+            let ops: Bytecode = instr.codegen(ctx)?;
 
             match instr {
                 IRInstr::Label(target) => {
@@ -93,19 +107,24 @@ impl Codegen<BytecodeFunc> for IRFunc {
             }
         }
 
-        f
+        Ok(f)
     }
 }
 
-impl IRInstr {
-    fn codegen_with_locals(&self, locals: &mut Locals) -> Bytecode {
+impl Codegen<Bytecode, CodegenContext> for IRInstr {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
         match self {
             IRInstr::Cpy { src, dst } => {
-                let op = src.load_op(locals);
+                let op = src.load_op(ctx);
 
-                self.register_local(locals, dst);
+                let name = match dst {
+                    IRVal::Var(name) => name,
+                    IRVal::Const(_) => unreachable!(),
+                };
 
-                vec![op]
+                ctx.register::<String>(&name);
+
+                Ok(vec![op])
             }
 
             IRInstr::Bin {
@@ -120,44 +139,70 @@ impl IRInstr {
                     _ => unreachable!(),
                 };
 
-                let lhs = lhs.load_op(locals);
-                let rhs = rhs.load_op(locals);
+                let lhs = lhs.load_op(ctx);
+                let rhs = rhs.load_op(ctx);
 
-                self.register_local(locals, dst);
+                let name = match dst {
+                    IRVal::Var(name) => name,
+                    IRVal::Const(_) => unreachable!(),
+                };
 
-                vec![lhs, rhs, op]
+                ctx.register::<String>(&name);
+
+                Ok(vec![lhs, rhs, op])
             }
 
-            IRInstr::Ret { val } => vec![val.load_op(locals), Op::Ret],
+            IRInstr::Ret { val } => Ok(vec![val.load_op(ctx), Op::Ret]),
 
-            IRInstr::Print { val } => vec![val.load_op(locals), Op::Print],
+            IRInstr::Print { val } => Ok(vec![val.load_op(ctx), Op::Print]),
 
-            IRInstr::Jz { cond, target } => vec![cond.load_op(locals), Op::Jz(usize::MAX)],
+            IRInstr::Jz { cond, target } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
 
-            IRInstr::Jmp { target } => vec![Op::Jmp(usize::MAX)],
+            IRInstr::Jmp { target } => Ok(vec![Op::Jmp(usize::MAX)]),
 
-            IRInstr::Label(target) => vec![],
-        }
-    }
+            IRInstr::Label(target) => Ok(vec![]),
 
-    fn register_local(&self, locals: &mut Locals, local: &IRVal) {
-        match local {
-            IRVal::Const(konst) => unreachable!(),
-            IRVal::Var(var) => {
-                let idx = locals.len();
-                locals.insert(var.to_owned(), idx);
+            IRInstr::Call { target, args, dst } => {
+                let mut ops = vec![];
+
+                for arg in args {
+                    ops.push(arg.load_op(ctx));
+                }
+
+                let idx = ctx.get::<BytecodeFunc>(target);
+
+                if idx.is_none() {
+                    return Err(IRError {
+                        msg: format!("trying to call an undefined fn: {}", target),
+                    }
+                    .into());
+                }
+
+                ops.push(Op::Call {
+                    target: idx.unwrap(),
+                    argc: args.len(),
+                });
+
+                let dst_name = match dst {
+                    IRVal::Var(name) => name,
+                    IRVal::Const(_) => unreachable!(),
+                };
+
+                ctx.register::<String>(&dst_name);
+
+                Ok(ops)
             }
         }
     }
 }
 
 impl IRVal {
-    fn load_op(&self, locals: &Locals) -> Op {
+    fn load_op<U: Ctx>(&self, ctx: &mut U) -> Op {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
             IRVal::Var(var) => {
-                if let Some(idx) = locals.get(var) {
-                    Op::Deepget(*idx)
+                if let Some(idx) = ctx.get::<String>(var) {
+                    Op::Deepget(idx)
                 } else {
                     unreachable!();
                 }
@@ -165,16 +210,29 @@ impl IRVal {
         }
     }
 
-    fn store_op(&self, locals: &Locals) -> Op {
+    fn store_op<U: Ctx>(&self, ctx: &U) -> Op {
         match self {
             IRVal::Const(konst) => unreachable!(),
             IRVal::Var(var) => {
-                if let Some(idx) = locals.get(var) {
-                    Op::Deepset(*idx)
+                if let Some(idx) = ctx.get::<String>(var) {
+                    Op::Deepset(idx)
                 } else {
                     unreachable!();
                 }
             }
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct IRError {
+    pub msg: String,
+}
+
+impl std::error::Error for IRError {}
+
+impl std::fmt::Display for IRError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ir: {}", self.msg)
     }
 }

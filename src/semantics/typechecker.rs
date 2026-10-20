@@ -94,13 +94,25 @@ fn typecheck_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, TypecheckerError> {
-    let typechecked = body.typecheck(typechecker)?;
+    typechecker.sym_table.insert(
+        name.clone(),
+        Symbol {
+            name: name.clone(),
+            ty: Some(ret),
+        },
+    );
+
+    let typechecked_params = params
+        .into_iter()
+        .map(|param| param.typecheck(typechecker))
+        .collect::<Result<Vec<_>, _>>()?;
+    let typechecked_body = body.typecheck(typechecker)?;
 
     Ok(Declaration::Fn {
         name,
         ret,
-        params,
-        body: typechecked,
+        params: typechecked_params,
+        body: typechecked_body,
     })
 }
 
@@ -181,7 +193,7 @@ fn typecheck_expr(
 
             if sym.is_none() {
                 return Err(TypecheckerError {
-                    msg: format!("Referenced an unknown variable."),
+                    msg: format!("Referenced an unknown variable: {:?}.", sym),
                 });
             }
 
@@ -213,6 +225,21 @@ fn typecheck_expr(
             ty,
             span,
         }),
+
+        Expression::Call {
+            target,
+            args,
+            ty,
+            span,
+        } => Ok(Expression::Call {
+            target,
+            args: args
+                .into_iter()
+                .map(|arg| typecheck_expr(typechecker, arg.to_owned()))
+                .collect::<Result<Vec<_>, _>>()?,
+            ty,
+            span,
+        }),
     }
 }
 
@@ -223,7 +250,7 @@ fn typecheck_init(
 ) -> Result<Expression, TypecheckerError> {
     let typechecked_init = typecheck_expr(typechecker, init.clone())?;
 
-    let actual_ty = init.ty();
+    let actual_ty = typechecked_init.ty();
 
     if !types_equal(actual_ty, expected_ty) {
         return Err(TypecheckerError {
@@ -234,10 +261,30 @@ fn typecheck_init(
     Ok(typechecked_init)
 }
 
+impl Typecheck for Param {
+    type Output = Param;
+
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+        typechecker.sym_table.insert(
+            self.name.clone(),
+            Symbol {
+                name: self.name.clone(),
+                ty: self.ty.clone().into(),
+            },
+        );
+
+        Ok(Param {
+            name: self.name.clone(),
+            ty: self.ty.clone(),
+        })
+    }
+}
+
 fn types_equal(a: Option<Type>, b: Option<Type>) -> bool {
     a == b
 }
 
+#[derive(Debug)]
 pub struct Symbol {
     pub name: String,
     pub ty: Option<Type>,

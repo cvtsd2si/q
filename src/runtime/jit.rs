@@ -5,11 +5,8 @@ use crate::{
         r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, insert_epilogue, insert_prologue},
         regalloc::Regalloc,
     },
-    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg},
-    runtime::{
-        value::{Value, ValueTag},
-        vm::Vm,
-    },
+    ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg},
+    runtime::{value::Value, vm::Vm},
 };
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
@@ -29,6 +26,7 @@ impl JitCompiler {
     }
 
     pub fn compile(
+        ctx: &mut CodegenContext,
         ir: &IRProg,
         func: usize,
         /* What code to compile?  */
@@ -45,6 +43,10 @@ impl JitCompiler {
         let ir_func = ir.funcs.get(func)?;
         let region = &ir_func.body[start_ir..end_ir];
 
+        if !ir_func.params.is_empty() {
+            return None;
+        }
+
         /* Reject anything that does not end up in language-level `return`.  */
         if !matches!(region.last(), Some(IRInstr::Ret { .. })) {
             return None;
@@ -53,18 +55,19 @@ impl JitCompiler {
         /* Reject `IRInstr::Print` because the asm backend currently has no impl for this.  */
         if region
             .iter()
-            .any(|instr| matches!(instr, IRInstr::Print { .. }))
+            .any(|instr| matches!(instr, IRInstr::Print { .. } | IRInstr::Call { .. }))
         {
             return None;
         }
 
         let region_func = IRFunc {
             name: format!("jit_{}_{}", ir_func.name, start_ir),
+            params: ir_func.params.clone(),
             body: ir_func.body[start_ir..end_ir].to_vec(),
             ret_ty: ir_func.ret_ty,
         };
 
-        let mut asm_func: AsmFunc = region_func.codegen();
+        let mut asm_func: AsmFunc = region_func.codegen(ctx).ok()?;
         let mut asm_func = asm_func.regalloc().fixup();
 
         let body_name = region_func.name.clone();

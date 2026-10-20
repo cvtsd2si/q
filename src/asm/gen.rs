@@ -1,5 +1,5 @@
 use crate::{
-    ir::r#gen::{Codegen, IRFunc, IRInstr, IRProg, IRVal},
+    ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal, Type},
     runtime::value::ValueTag,
 };
@@ -74,44 +74,53 @@ pub enum AsmReg {
     Si,
 }
 
-impl Codegen<AsmProg> for IRProg {
-    fn codegen(&self) -> AsmProg {
-        AsmProg {
-            funcs: self.funcs.iter().map(|f| f.codegen()).collect(),
-        }
+impl Codegen<AsmProg, CodegenContext> for IRProg {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmProg, Box<dyn std::error::Error>> {
+        Ok(AsmProg {
+            funcs: self
+                .funcs
+                .iter()
+                .map(|f| f.codegen(ctx))
+                .collect::<Result<Vec<AsmFunc>, _>>()?,
+        })
     }
 }
 
-impl Codegen<AsmFunc> for IRFunc {
-    fn codegen(&self) -> AsmFunc {
+impl Codegen<AsmFunc, CodegenContext> for IRFunc {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmFunc, Box<dyn std::error::Error>> {
         let mut body = vec![];
 
         insert_prologue(&mut body);
 
         for instr in &self.body {
-            body.extend(instr.codegen_with(self.ret_ty, &self.name));
+            body.extend(instr.codegen_with(ctx, self.ret_ty, &self.name)?);
         }
 
-        AsmFunc {
+        Ok(AsmFunc {
             name: self.name.to_owned(),
             body,
             space: 0,
-        }
+        })
     }
 }
 
 impl IRInstr {
-    fn codegen_with(&self, ret_ty: Type, func_name: &str) -> Vec<AsmInstr> {
+    fn codegen_with(
+        &self,
+        ctx: &mut CodegenContext,
+        ret_ty: Type,
+        func_name: &str,
+    ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {
-            IRInstr::Cpy { src, dst } => vec![AsmInstr::Mov {
-                src: src.codegen(),
-                dst: dst.codegen(),
-            }],
+            IRInstr::Cpy { src, dst } => Ok(vec![AsmInstr::Mov {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
 
             IRInstr::Ret { val } => {
                 let mut instrs = vec![
                     AsmInstr::Mov {
-                        src: val.codegen(),
+                        src: val.codegen(ctx)?,
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
                     AsmInstr::Mov {
@@ -123,7 +132,7 @@ impl IRInstr {
                 insert_epilogue(&mut instrs);
                 instrs.push(AsmInstr::Ret);
 
-                instrs
+                Ok(instrs)
             }
 
             IRInstr::Bin {
@@ -140,56 +149,60 @@ impl IRInstr {
 
                 let instrs = vec![
                     AsmInstr::Mov {
-                        src: lhs.codegen(),
-                        dst: dst.codegen(),
+                        src: lhs.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
                     },
                     AsmInstr::Bin {
                         kind,
-                        lhs: rhs.codegen(),
-                        rhs: dst.codegen(),
+                        lhs: rhs.codegen(ctx)?,
+                        rhs: dst.codegen(ctx)?,
                     },
                 ];
 
-                instrs
+                Ok(instrs)
             }
 
             IRInstr::Print { val: _ } => todo!(),
 
-            IRInstr::Jz { cond, target } => vec![
+            IRInstr::Jz { cond, target } => Ok(vec![
                 AsmInstr::Cmp {
-                    src: cond.codegen(),
+                    src: cond.codegen(ctx)?,
                     dst: AsmOp::Imm(0),
                 },
                 AsmInstr::Jz {
                     target: format!(".L{}_{}", func_name, target),
                 },
-            ],
+            ]),
 
-            IRInstr::Jmp { target } => vec![AsmInstr::Jmp {
+            IRInstr::Jmp { target } => Ok(vec![AsmInstr::Jmp {
                 target: format!(".L{}_{}", func_name, target),
-            }],
+            }]),
 
-            IRInstr::Label(target) => vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))],
+            IRInstr::Label(target) => {
+                Ok(vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))])
+            }
+
+            IRInstr::Call { target, args, dst } => todo!(),
         }
     }
 }
 
-impl Codegen<AsmOp> for IRVal {
-    fn codegen(&self) -> AsmOp {
+impl Codegen<AsmOp, CodegenContext> for IRVal {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
         match self {
             IRVal::Const(konst) => match konst {
-                Literal::UInt8(uint8) => AsmOp::Imm(*uint8 as i64),
-                Literal::Int8(int8) => AsmOp::Imm(*int8 as i64),
-                Literal::UInt16(uint16) => AsmOp::Imm(*uint16 as i64),
-                Literal::Int16(int16) => AsmOp::Imm(*int16 as i64),
-                Literal::UInt32(uint32) => AsmOp::Imm(*uint32 as i64),
-                Literal::Int32(int32) => AsmOp::Imm(*int32 as i64),
-                Literal::UInt64(uint64) => AsmOp::Imm(*uint64 as i64),
-                Literal::Int64(int64) => AsmOp::Imm(*int64),
-                Literal::Bool(boolean) => AsmOp::Imm(if *boolean { 1 } else { 0 }),
+                Literal::UInt8(uint8) => Ok(AsmOp::Imm(*uint8 as i64)),
+                Literal::Int8(int8) => Ok(AsmOp::Imm(*int8 as i64)),
+                Literal::UInt16(uint16) => Ok(AsmOp::Imm(*uint16 as i64)),
+                Literal::Int16(int16) => Ok(AsmOp::Imm(*int16 as i64)),
+                Literal::UInt32(uint32) => Ok(AsmOp::Imm(*uint32 as i64)),
+                Literal::Int32(int32) => Ok(AsmOp::Imm(*int32 as i64)),
+                Literal::UInt64(uint64) => Ok(AsmOp::Imm(*uint64 as i64)),
+                Literal::Int64(int64) => Ok(AsmOp::Imm(*int64)),
+                Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
                 _ => unimplemented!(),
             },
-            IRVal::Var(var) => AsmOp::Pseudo(var.to_owned()),
+            IRVal::Var(var) => Ok(AsmOp::Pseudo(var.to_owned())),
         }
     }
 }

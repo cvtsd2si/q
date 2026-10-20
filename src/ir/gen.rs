@@ -1,11 +1,60 @@
-use std::sync::atomic::AtomicU64;
+use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
 
-use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Program, Statement, Type,
+use crate::{
+    bytecode::r#gen::BytecodeFunc,
+    parser::ast::{
+        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program,
+        Statement, Type,
+    },
 };
 
-pub trait Codegen<T> {
-    fn codegen(&self) -> T;
+pub trait Codegen<T, U> {
+    fn codegen(&self, ctx: &mut U) -> Result<T, Box<dyn std::error::Error>>;
+}
+
+#[derive(Debug)]
+pub struct CodegenContext {
+    pub locals: HashMap<String, usize>,
+    pub funcs: HashMap<String, usize>,
+}
+
+impl CodegenContext {
+    pub fn new() -> Self {
+        Self {
+            locals: HashMap::new(),
+            funcs: HashMap::new(),
+        }
+    }
+}
+
+impl Ctx for CodegenContext {
+    fn get<T: 'static>(&self, name: &str) -> Option<usize> {
+        match TypeId::of::<T>() {
+            id if id == TypeId::of::<String>() => self.locals.get(name).copied(),
+            id if id == TypeId::of::<BytecodeFunc>() => self.funcs.get(name).copied(),
+
+            _ => unreachable!(),
+        }
+    }
+
+    fn register<T: 'static>(&mut self, name: &str) -> usize {
+        let structure = match TypeId::of::<T>() {
+            id if id == TypeId::of::<String>() => &mut self.locals,
+            id if id == TypeId::of::<BytecodeFunc>() => &mut self.funcs,
+            _ => unreachable!(),
+        };
+
+        let idx = structure.len();
+
+        structure.insert(name.to_owned(), idx);
+
+        idx
+    }
+}
+
+pub trait Ctx {
+    fn get<T: 'static>(&self, name: &str) -> Option<usize>;
+    fn register<T: 'static>(&mut self, name: &str) -> usize;
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +89,11 @@ pub enum IRInstr {
         target: String,
     },
     Label(String),
+    Call {
+        target: String,
+        args: Vec<IRVal>,
+        dst: IRVal,
+    },
 }
 
 #[derive(Debug)]
@@ -50,6 +104,7 @@ pub struct IRProg {
 #[derive(Debug, Clone)]
 pub struct IRFunc {
     pub name: String,
+    pub params: Vec<Param>,
     pub body: Vec<IRInstr>,
     pub ret_ty: Type,
 }
@@ -81,6 +136,7 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
         } => {
             let mut f = IRFunc {
                 name: name.to_owned(),
+                params: params.to_vec(),
                 body: vec![],
                 ret_ty: *ret,
             };
@@ -194,6 +250,28 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                 kind: *kind,
                 lhs,
                 rhs,
+                dst: dst.clone(),
+            });
+
+            ExpRes::Plain(dst)
+        }
+
+        Expression::Call {
+            target,
+            args,
+            ty,
+            span,
+        } => {
+            let ir_args = args
+                .iter()
+                .map(|arg| irfy_expr_and_cvt(instrs, arg))
+                .collect();
+
+            let dst = mkirvar();
+
+            instrs.push(IRInstr::Call {
+                target: target.to_owned(),
+                args: ir_args,
                 dst: dst.clone(),
             });
 

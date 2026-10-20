@@ -1,12 +1,19 @@
 use crate::{
     bytecode::r#gen::{BytecodeProg, Op},
-    ir::r#gen::{IRInstr, IRProg},
+    ir::r#gen::{CodegenContext, IRInstr, IRProg},
     parser::ast::Literal,
     runtime::{
         jit::{JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
         value::Value,
     },
 };
+
+#[derive(Debug)]
+struct Frame {
+    func: usize,
+    pc: usize,
+    ptr: usize,
+}
 
 pub struct Vm {
     stack: Vec<Value>,
@@ -16,14 +23,21 @@ pub struct Vm {
     hotness: Vec<Vec<u32>>,
     jit_code: Vec<Vec<Option<JitBlock>>>,
     bytecode: BytecodeProg,
+    fp: usize,
+    frames: Vec<Frame>,
 }
 
 impl Vm {
     pub fn new(bytecode: BytecodeProg, ir: IRProg) -> Self {
+        let entrypoint = match bytecode.funcs.iter().position(|f| f.name == "main") {
+            Some(entrypoint) => entrypoint,
+            None => panic!("no main fn"),
+        };
+
         Vm {
             stack: Vec::new(),
             ir,
-            func: 0,
+            func: entrypoint,
             pc: 0,
             hotness: bytecode
                 .funcs
@@ -36,6 +50,8 @@ impl Vm {
                 .map(|f| std::iter::repeat_with(|| None).take(f.body.len()).collect())
                 .collect(),
             bytecode,
+            fp: 0,
+            frames: Vec::new(),
         }
     }
 
@@ -51,7 +67,13 @@ impl Vm {
                     }
 
                     JitExit::Ret(val) => {
-                        return val;
+                        self.stack.push(val);
+
+                        if let Some(retval) = self.handle_op_ret() {
+                            return retval;
+                        }
+
+                        continue;
                     }
                 }
             }
@@ -81,7 +103,14 @@ impl Vm {
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
                 Op::Jz(target) => self.handle_op_jz(target),
                 Op::Jmp(target) => self.handle_op_jmp(target),
-                Op::Ret => break self.handle_op_ret(),
+                Op::Call { target, argc } => {
+                    self.handle_op_call(target, argc);
+                    continue;
+                }
+                Op::Ret => match self.handle_op_ret() {
+                    Some(retval) => return retval,
+                    None => continue,
+                },
             };
 
             self.pc += 1;
@@ -114,7 +143,15 @@ impl Vm {
 
         /* Passing in PC coords, too, because the JIT compiler needs them
          * to embed them as metadata on `JitBlock`s it gives out.  */
-        JitCompiler::compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc)
+        JitCompiler::compile(
+            &mut CodegenContext::new(),
+            &self.ir,
+            func,
+            *start_ir,
+            end_ir,
+            start_pc,
+            end_pc,
+        )
     }
 
     fn run_jitted(&mut self) -> JitExit {
@@ -178,12 +215,12 @@ impl Vm {
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {
-        self.stack.push(self.stack[idx]);
+        self.stack.push(self.stack[self.fp + idx]);
     }
 
     fn handle_op_deepset(&mut self, idx: usize) {
         let obj = self.stack.pop().unwrap();
-        self.stack[idx] = obj;
+        self.stack[self.fp + idx] = obj;
     }
 
     fn handle_op_jz(&mut self, target: usize) {
@@ -198,7 +235,36 @@ impl Vm {
         self.pc = target - 1;
     }
 
-    fn handle_op_ret(&mut self) -> Value {
-        self.stack.pop().unwrap()
+    fn handle_op_call(&mut self, target: usize, argc: usize) {
+        let fp = self.stack.len() - argc;
+
+        self.frames.push(Frame {
+            func: self.func,
+            pc: self.pc + 1,
+            ptr: self.fp,
+        });
+
+        self.func = target;
+        self.pc = 0;
+        self.fp = fp;
+    }
+
+    fn handle_op_ret(&mut self) -> Option<Value> {
+        let retval = self.stack.pop().unwrap();
+
+        self.stack.truncate(self.fp);
+
+        match self.frames.pop() {
+            Some(frame) => {
+                self.func = frame.func;
+                self.pc = frame.pc;
+                self.fp = frame.ptr;
+
+                self.stack.push(retval);
+
+                return None;
+            }
+            None => Some(retval),
+        }
     }
 }

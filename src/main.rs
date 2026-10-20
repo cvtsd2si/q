@@ -1,5 +1,5 @@
 use q::bytecode::r#gen::BytecodeProg;
-use q::ir::r#gen::{Codegen, irfy};
+use q::ir::r#gen::{Codegen, CodegenContext, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use q::runtime::vm::Vm;
@@ -60,7 +60,9 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let bytecode: BytecodeProg = ir.codegen();
+    let mut ctx = CodegenContext::new();
+
+    let bytecode: BytecodeProg = ir.codegen(&mut ctx)?;
 
     if opts.bytecode {
         println!("{:#?}", bytecode);

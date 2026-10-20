@@ -300,7 +300,7 @@ impl<'src> Parser<'src> {
     }
 
     fn factor(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.primary()?;
+        let mut result = self.call()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[TokenKind::Star, TokenKind::Slash]) {
@@ -313,7 +313,7 @@ impl<'src> Parser<'src> {
                 None => unreachable!(),
             };
 
-            let right = self.primary()?;
+            let right = self.call()?;
             let end = right.span();
 
             result = Expression::Binary {
@@ -328,13 +328,57 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
+    fn call(&mut self) -> Result<Expression, ParserError> {
+        let mut expr = self.primary()?;
+
+        loop {
+            if self.check(TokenKind::LParen) {
+                let target = match expr {
+                    Expression::Variable { name, ty, span } => name,
+                    _ => unreachable!(),
+                };
+
+                expr = self.finish_call(&target)?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn finish_call(&mut self, target: &str) -> Result<Expression, ParserError> {
+        self.consume(TokenKind::LParen)?;
+
+        let mut args = vec![];
+
+        while !self.check(TokenKind::RParen) {
+            args.push(self.parse_expr()?);
+
+            if self.check(TokenKind::RParen) {
+                break;
+            }
+
+            self.consume(TokenKind::Comma)?;
+        }
+
+        let rparen = self.consume(TokenKind::RParen)?;
+
+        Ok(Expression::Call {
+            target: target.to_owned(),
+            args,
+            ty: None,
+            span: rparen.span,
+        })
+    }
+
     fn primary(&mut self) -> Result<Expression, ParserError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Identifier => self.parse_var(),
                 TokenKind::Number => self.parse_literal(),
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
-                _ => unreachable!(),
+                _ => unreachable!("got: {:?}", token),
             },
             None => unreachable!(),
         }

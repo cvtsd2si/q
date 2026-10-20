@@ -36,6 +36,7 @@ impl Resolve for Program {
             .into_iter()
             .map(|block_item| block_item.resolve(resolver))
             .collect::<Result<Vec<_>, _>>()?;
+
         Ok(Program {
             block_items: resolved,
         })
@@ -98,6 +99,26 @@ impl Resolve for Statement {
     }
 }
 
+impl Resolve for Param {
+    type Output = Param;
+
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+        let uniq_name = mkuniq(&self.name);
+
+        resolver.var_map.insert(
+            self.name.clone(),
+            Var {
+                name: uniq_name.clone(),
+            },
+        );
+
+        Ok(Param {
+            name: uniq_name,
+            ty: self.ty.clone(),
+        })
+    }
+}
+
 fn resolve_fn(
     resolver: &mut Resolver,
     name: String,
@@ -105,11 +126,20 @@ fn resolve_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, ResolverError> {
+    let prev = std::mem::replace(&mut resolver.var_map, HashMap::new());
+
+    let resolved_params = params
+        .into_iter()
+        .map(|param| param.resolve(resolver))
+        .collect::<Result<Vec<_>, _>>()?;
     let resolved_body = body.resolve(resolver)?;
+
+    resolver.var_map = prev;
+
     Ok(Declaration::Fn {
         name,
         ret,
-        params,
+        params: resolved_params,
         body: resolved_body,
     })
 }
@@ -122,6 +152,8 @@ fn resolve_let(
 ) -> Result<Statement, ResolverError> {
     let uniq_name = mkuniq(&name);
 
+    let resolved_init = resolve_expr(resolver, init)?;
+
     resolver.var_map.insert(
         name,
         Var {
@@ -131,7 +163,7 @@ fn resolve_let(
 
     Ok(Statement::Let {
         name: uniq_name,
-        init: resolve_expr(resolver, init)?,
+        init: resolved_init,
         ty,
     })
 }
@@ -200,6 +232,21 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             kind,
             lhs: resolve_expr(resolver, *lhs)?.into(),
             rhs: resolve_expr(resolver, *rhs)?.into(),
+            ty,
+            span,
+        }),
+
+        Expression::Call {
+            target,
+            args,
+            ty,
+            span,
+        } => Ok(Expression::Call {
+            target,
+            args: args
+                .into_iter()
+                .map(|arg| resolve_expr(resolver, arg))
+                .collect::<Result<Vec<_>, _>>()?,
             ty,
             span,
         }),

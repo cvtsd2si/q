@@ -63,6 +63,12 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    Call {
+        target: String,
+        args: Vec<Expression>,
+        ty: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -71,6 +77,7 @@ impl Expression {
             Expression::Literal { span, .. } => *span,
             Expression::Variable { span, .. } => *span,
             Expression::Binary { span, .. } => *span,
+            Expression::Call { span, .. } => *span,
         }
     }
 
@@ -82,6 +89,12 @@ impl Expression {
                 kind,
                 lhs,
                 rhs,
+                ty,
+                span,
+            } => *ty,
+            Expression::Call {
+                target,
+                args,
                 ty,
                 span,
             } => *ty,
@@ -133,7 +146,7 @@ impl From<Token> for Type {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Param {
     pub name: String,
     pub ty: Type,

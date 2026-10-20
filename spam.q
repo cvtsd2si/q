@@ -1,13 +1,10 @@
 fn main() -> i64 {
-    let cond: bool = true;
+    let a: i64 = 3;
+    let b: i64 = 4;
 
-    if (cond) {
-    	ret 1+2+3+4+5;
-    } else {
-    	ret 6+7+8+9+10;
-    }
+    ret add(1, 2);
+}
 
-    let z: i64 = 0;
-    
-    ret z;
+fn a_bool(a: i64, b: i64) -> bool {
+    ret a + b;
 }
