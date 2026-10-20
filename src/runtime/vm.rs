@@ -17,6 +17,7 @@ struct Frame {
 
 pub struct Vm {
     stack: Vec<Value>,
+    fp_stack: Vec<Frame>,
     ir: IRProg,
     func: usize,
     pc: usize,
@@ -24,7 +25,6 @@ pub struct Vm {
     jit_code: Vec<Vec<Option<JitBlock>>>,
     bytecode: BytecodeProg,
     fp: usize,
-    frames: Vec<Frame>,
 }
 
 impl Vm {
@@ -36,6 +36,7 @@ impl Vm {
 
         Vm {
             stack: Vec::new(),
+            fp_stack: Vec::new(),
             ir,
             func: entrypoint,
             pc: 0,
@@ -51,7 +52,6 @@ impl Vm {
                 .collect(),
             bytecode,
             fp: 0,
-            frames: Vec::new(),
         }
     }
 
@@ -143,14 +143,7 @@ impl Vm {
 
         /* Passing in PC coords, too, because the JIT compiler needs them
          * to embed them as metadata on `JitBlock`s it gives out.  */
-        JitCompiler::compile(
-            &self.ir,
-            func,
-            *start_ir,
-            end_ir,
-            start_pc,
-            end_pc,
-        )
+        JitCompiler::compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc)
     }
 
     fn run_jitted(&mut self) -> JitExit {
@@ -237,7 +230,7 @@ impl Vm {
     fn handle_op_call(&mut self, target: usize, argc: usize) {
         let fp = self.stack.len() - argc;
 
-        self.frames.push(Frame {
+        self.fp_stack.push(Frame {
             func: self.func,
             pc: self.pc + 1,
             ptr: self.fp,
@@ -253,7 +246,7 @@ impl Vm {
 
         self.stack.truncate(self.fp);
 
-        match self.frames.pop() {
+        match self.fp_stack.pop() {
             Some(frame) => {
                 self.func = frame.func;
                 self.pc = frame.pc;
