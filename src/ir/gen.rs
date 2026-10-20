@@ -70,7 +70,7 @@ pub enum IRInstr {
         dst: IRVal,
     },
     Ret {
-        val: IRVal,
+        val: Option<IRVal>,
     },
     Bin {
         kind: BinaryExpressionKind,
@@ -106,7 +106,7 @@ pub struct IRFunc {
     pub name: String,
     pub params: Vec<Param>,
     pub body: Vec<IRInstr>,
-    pub ret_ty: Type,
+    pub ret_ty: Option<Type>,
 }
 
 pub fn irfy(ast: &Program) -> IRProg {
@@ -138,7 +138,7 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
                 name: name.to_owned(),
                 params: params.to_vec(),
                 body: vec![],
-                ret_ty: *ret,
+                ret_ty: ret.clone(),
             };
 
             if let Statement::Block { body } = body {
@@ -161,10 +161,14 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             instrs.push(IRInstr::Cpy { src: r, dst });
         }
 
-        Statement::Ret { value } => {
-            let r = irfy_expr_and_cvt(instrs, value);
+        Statement::Ret { value, ret_ty: _ } => {
+            if value.is_some() {
+                let r = irfy_expr_and_cvt(instrs, value.as_ref().unwrap());
 
-            instrs.push(IRInstr::Ret { val: r });
+                instrs.push(IRInstr::Ret { val: Some(r) });
+            } else {
+                instrs.push(IRInstr::Ret { val: None });
+            }
         }
 
         Statement::Print { value } => {

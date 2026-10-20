@@ -15,7 +15,7 @@ pub enum BlockItem {
 pub enum Declaration {
     Fn {
         name: String,
-        ret: Type,
+        ret: Option<Type>,
         params: Vec<Param>,
         body: Statement,
     },
@@ -24,7 +24,8 @@ pub enum Declaration {
 #[derive(Debug)]
 pub enum Statement {
     Ret {
-        value: Expression,
+        value: Option<Expression>,
+        ret_ty: Option<Type>,
     },
     Let {
         name: String,

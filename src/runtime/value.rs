@@ -21,6 +21,7 @@ pub enum ValueTag {
     Float32 = 8,
     Float64 = 9,
     Bool = 10,
+    Void = 11,
 }
 
 impl From<Literal> for Value {

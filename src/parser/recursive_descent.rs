@@ -11,6 +11,7 @@ pub struct Parser<'src> {
     tokens: VecDeque<Token>,
     curr: Option<Token>,
     prev: Option<Token>,
+    curr_ret_ty: Option<Type>,
 }
 
 impl<'src> Parser<'src> {
@@ -20,6 +21,7 @@ impl<'src> Parser<'src> {
             tokens,
             curr: None,
             prev: None,
+            curr_ret_ty: None,
         }
     }
 
@@ -179,14 +181,24 @@ impl<'src> Parser<'src> {
         }
 
         self.consume(TokenKind::RParen)?;
-        self.consume(TokenKind::Arrow)?;
 
-        let ret = self.consume_primitive()?.into();
+        let ret_ty = if self.check(TokenKind::Arrow) {
+            self.consume(TokenKind::Arrow)?;
+
+            Some(Type::from(self.consume_primitive()?))
+        } else {
+            None
+        };
+
+        self.curr_ret_ty = ret_ty;
+
         let body = self.parse_block()?;
+
+        self.curr_ret_ty = None;
 
         Ok(Declaration::Fn {
             name: self.src[name.span.start..name.span.end].to_string(),
-            ret,
+            ret: ret_ty,
             params,
             body: Statement::Block { body },
         })
@@ -208,10 +220,19 @@ impl<'src> Parser<'src> {
 
     fn parse_ret(&mut self) -> Result<Statement, ParserError> {
         self.consume(TokenKind::Ret)?;
-        let value = self.parse_expr()?;
+
+        let value = if self.check(TokenKind::Semicolon) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+
         self.consume(TokenKind::Semicolon)?;
 
-        Ok(Statement::Ret { value })
+        Ok(Statement::Ret {
+            value,
+            ret_ty: self.curr_ret_ty,
+        })
     }
 
     fn parse_print(&mut self) -> Result<Statement, ParserError> {

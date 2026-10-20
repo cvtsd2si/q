@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{
-    parser::ast::{BlockItem, Declaration, Expression, Param, Program, Statement, Type},
-    semantics::typechecker,
+use crate::parser::ast::{
+    BlockItem::{self, Decl},
+    Declaration, Expression, Param, Program, Statement, Type,
 };
 
 pub struct Typechecker {
@@ -27,6 +27,26 @@ impl Typecheck for Program {
     type Output = Program;
 
     fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+        self.block_items.iter().for_each(|block_item| {
+            if let BlockItem::Decl(decl) = block_item {
+                if let Declaration::Fn {
+                    name,
+                    ret,
+                    params,
+                    body,
+                } = decl
+                {
+                    typechecker.sym_table.insert(
+                        name.to_owned(),
+                        Symbol {
+                            name: name.to_owned(),
+                            ty: *ret,
+                        },
+                    );
+                }
+            }
+        });
+
         Ok(Program {
             block_items: self
                 .block_items
@@ -70,7 +90,7 @@ impl Typecheck for Statement {
         match self {
             Statement::Let { name, init, ty } => typecheck_let(typechecker, name, init, ty),
 
-            Statement::Ret { value } => typecheck_ret(typechecker, value),
+            Statement::Ret { value, ret_ty } => typecheck_ret(typechecker, value, ret_ty),
 
             Statement::Print { value } => typecheck_print(typechecker, value),
 
@@ -90,18 +110,10 @@ impl Typecheck for Statement {
 fn typecheck_fn(
     typechecker: &mut Typechecker,
     name: String,
-    ret: Type,
+    ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, TypecheckerError> {
-    typechecker.sym_table.insert(
-        name.clone(),
-        Symbol {
-            name: name.clone(),
-            ty: Some(ret),
-        },
-    );
-
     let typechecked_params = params
         .into_iter()
         .map(|param| param.typecheck(typechecker))
@@ -109,7 +121,7 @@ fn typecheck_fn(
     let typechecked_body = body.typecheck(typechecker)?;
 
     Ok(Declaration::Fn {
-        name,
+        name: name.clone(),
         ret,
         params: typechecked_params,
         body: typechecked_body,
@@ -141,10 +153,32 @@ fn typecheck_let(
 
 fn typecheck_ret(
     typechecker: &mut Typechecker,
-    value: Expression,
+    value: Option<Expression>,
+    ret_ty: Option<Type>,
 ) -> Result<Statement, TypecheckerError> {
+    if value.is_none() {
+        return Ok(Statement::Ret { value, ret_ty });
+    }
+
+    let typechecked_expr = typecheck_expr(typechecker, value.unwrap())?;
+
+    let actual_ty = typechecked_expr.ty();
+    let expected_ty = ret_ty;
+
+    dbg!(actual_ty, expected_ty);
+
+    if !types_equal(actual_ty, expected_ty) {
+        return Err(TypecheckerError {
+            msg: format!(
+                "type mismatch: got {:?} and wanted {:?}",
+                actual_ty, expected_ty
+            ),
+        });
+    }
+
     Ok(Statement::Ret {
-        value: typecheck_expr(typechecker, value)?,
+        value: Some(typechecked_expr),
+        ret_ty: expected_ty,
     })
 }
 
@@ -218,28 +252,38 @@ fn typecheck_expr(
             rhs,
             ty,
             span,
-        } => Ok(Expression::Binary {
-            kind,
-            lhs: typecheck_expr(typechecker, *lhs)?.into(),
-            rhs: typecheck_expr(typechecker, *rhs)?.into(),
-            ty,
-            span,
-        }),
+        } => {
+            let typechecked_lhs = typecheck_expr(typechecker, *lhs)?;
+            let typechecked_rhs = typecheck_expr(typechecker, *rhs)?;
+
+            Ok(Expression::Binary {
+                kind,
+                lhs: typechecked_lhs.clone().into(), // FIXME: don't clone
+                rhs: typechecked_rhs.clone().into(), // FIXME: don't clone
+                ty: get_common_type(typechecked_lhs.ty(), typechecked_rhs.ty()),
+                span,
+            })
+        }
 
         Expression::Call {
             target,
             args,
             ty,
             span,
-        } => Ok(Expression::Call {
-            target,
-            args: args
+        } => {
+            let ret_ty = typechecker.sym_table.get(&target).and_then(|sym| sym.ty);
+            let typechecked_args = args
                 .into_iter()
                 .map(|arg| typecheck_expr(typechecker, arg.to_owned()))
-                .collect::<Result<Vec<_>, _>>()?,
-            ty,
-            span,
-        }),
+                .collect::<Result<Vec<_>, _>>()?;
+
+            Ok(Expression::Call {
+                target: target.clone(),
+                args: typechecked_args,
+                ty: ret_ty,
+                span,
+            })
+        }
     }
 }
 
@@ -281,7 +325,21 @@ impl Typecheck for Param {
 }
 
 fn types_equal(a: Option<Type>, b: Option<Type>) -> bool {
-    a == b
+    dbg!(a) == dbg!(b)
+}
+
+fn get_common_type(a: Option<Type>, b: Option<Type>) -> Option<Type> {
+    if a.is_some() && b.is_some() {
+        let a = a.unwrap();
+        let b = b.unwrap();
+
+        match (a, b) {
+            (Type::Int64, Type::Int64) => Some(Type::Int64),
+            _ => unimplemented!(),
+        }
+    } else {
+        None
+    }
 }
 
 #[derive(Debug)]

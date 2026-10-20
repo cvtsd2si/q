@@ -152,7 +152,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(vec![lhs, rhs, op])
             }
 
-            IRInstr::Ret { val } => Ok(vec![val.load_op(ctx), Op::Ret]),
+            IRInstr::Ret { val } => Ok(vec![val.clone().unwrap().load_op(ctx), Op::Ret]),
 
             IRInstr::Print { val } => Ok(vec![val.load_op(ctx), Op::Print]),
 

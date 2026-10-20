@@ -85,7 +85,7 @@ impl Resolve for Statement {
     fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
         match self {
             Statement::Let { name, init, ty } => resolve_let(resolver, name, init, ty),
-            Statement::Ret { value } => resolve_ret(resolver, value),
+            Statement::Ret { value, ret_ty } => resolve_ret(resolver, value, ret_ty),
             Statement::Print { value } => resolve_print(resolver, value),
             Statement::If {
                 cond,
@@ -122,7 +122,7 @@ impl Resolve for Param {
 fn resolve_fn(
     resolver: &mut Resolver,
     name: String,
-    ret: Type,
+    ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, ResolverError> {
@@ -152,7 +152,7 @@ fn resolve_let(
 ) -> Result<Statement, ResolverError> {
     let uniq_name = mkuniq(&name);
 
-    let resolved_init = resolve_expr(resolver, init)?;
+    let resolved_init = resolve_expr(resolver, Some(init))?;
 
     resolver.var_map.insert(
         name,
@@ -168,15 +168,24 @@ fn resolve_let(
     })
 }
 
-fn resolve_ret(resolver: &mut Resolver, value: Expression) -> Result<Statement, ResolverError> {
-    Ok(Statement::Ret {
-        value: resolve_expr(resolver, value)?,
-    })
+fn resolve_ret(
+    resolver: &mut Resolver,
+    value: Option<Expression>,
+    ret_ty: Option<Type>,
+) -> Result<Statement, ResolverError> {
+    if value.is_some() {
+        Ok(Statement::Ret {
+            value: Some(resolve_expr(resolver, value)?),
+            ret_ty: ret_ty,
+        })
+    } else {
+        Ok(Statement::Ret { value, ret_ty })
+    }
 }
 
 fn resolve_print(resolver: &mut Resolver, value: Expression) -> Result<Statement, ResolverError> {
     Ok(Statement::Print {
-        value: resolve_expr(resolver, value)?,
+        value: resolve_expr(resolver, Some(value))?,
     })
 }
 
@@ -187,7 +196,7 @@ fn resolve_if(
     else_block: Option<Box<Statement>>,
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::If {
-        cond: resolve_expr(resolver, cond)?,
+        cond: resolve_expr(resolver, Some(cond))?,
         then_block: then_block.resolve(resolver)?.into(),
         else_block: else_block
             .map(|block| block.resolve(resolver).map(Box::new))
@@ -204,8 +213,15 @@ fn resolve_block(
         .collect::<Result<Vec<_>, _>>()
 }
 
-fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression, ResolverError> {
-    match expr {
+fn resolve_expr(
+    resolver: &mut Resolver,
+    expr: Option<Expression>,
+) -> Result<Expression, ResolverError> {
+    if expr.is_none() {
+        return Ok(expr.unwrap());
+    }
+
+    match expr.unwrap() {
         Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
         Expression::Variable { name, ty, span } => {
             let resolved_name = resolver.var_map.get(&name);
@@ -230,8 +246,8 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             span,
         } => Ok(Expression::Binary {
             kind,
-            lhs: resolve_expr(resolver, *lhs)?.into(),
-            rhs: resolve_expr(resolver, *rhs)?.into(),
+            lhs: resolve_expr(resolver, Some(*lhs))?.into(),
+            rhs: resolve_expr(resolver, Some(*rhs))?.into(),
             ty,
             span,
         }),
@@ -245,7 +261,7 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             target,
             args: args
                 .into_iter()
-                .map(|arg| resolve_expr(resolver, arg))
+                .map(|arg| resolve_expr(resolver, Some(arg)))
                 .collect::<Result<Vec<_>, _>>()?,
             ty,
             span,

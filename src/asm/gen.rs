@@ -108,7 +108,7 @@ impl IRInstr {
     fn codegen_with(
         &self,
         ctx: &mut CodegenContext,
-        ret_ty: Type,
+        ret_ty: Option<Type>,
         func_name: &str,
     ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {
@@ -120,11 +120,11 @@ impl IRInstr {
             IRInstr::Ret { val } => {
                 let mut instrs = vec![
                     AsmInstr::Mov {
-                        src: val.codegen(ctx)?,
+                        src: val.clone().unwrap().codegen(ctx)?,
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
                     AsmInstr::Mov {
-                        src: AsmOp::Imm(ValueTag::from(ret_ty) as i64),
+                        src: AsmOp::Imm(ret_ty.map(ValueTag::from).unwrap_or(ValueTag::Void) as i64),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
                 ];
