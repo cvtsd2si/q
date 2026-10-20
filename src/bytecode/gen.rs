@@ -31,7 +31,6 @@ pub struct BytecodeProg {
 pub struct BytecodeFunc {
     pub name: String,
     pub body: Bytecode,
-
     pub ir_map: Vec<usize>,
 }
 
