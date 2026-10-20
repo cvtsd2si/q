@@ -262,7 +262,7 @@ impl Vm {
 
                 self.stack.push(retval);
 
-                return None;
+                None
             }
             None => Some(retval),
         }
