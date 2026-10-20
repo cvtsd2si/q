@@ -165,8 +165,6 @@ fn typecheck_ret(
     let actual_ty = typechecked_expr.ty();
     let expected_ty = ret_ty;
 
-    dbg!(actual_ty, expected_ty);
-
     if !types_equal(actual_ty, expected_ty) {
         return Err(TypecheckerError {
             msg: format!(
@@ -325,7 +323,7 @@ impl Typecheck for Param {
 }
 
 fn types_equal(a: Option<Type>, b: Option<Type>) -> bool {
-    dbg!(a) == dbg!(b)
+    a == b
 }
 
 fn get_common_type(a: Option<Type>, b: Option<Type>) -> Option<Type> {
