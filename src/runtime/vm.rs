@@ -144,7 +144,6 @@ impl Vm {
         /* Passing in PC coords, too, because the JIT compiler needs them
          * to embed them as metadata on `JitBlock`s it gives out.  */
         JitCompiler::compile(
-            &mut CodegenContext::new(),
             &self.ir,
             func,
             *start_ir,

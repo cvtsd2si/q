@@ -26,7 +26,6 @@ impl JitCompiler {
     }
 
     pub fn compile(
-        ctx: &mut CodegenContext,
         ir: &IRProg,
         func: usize,
         /* What code to compile?  */
@@ -67,7 +66,7 @@ impl JitCompiler {
             ret_ty: ir_func.ret_ty,
         };
 
-        let mut asm_func: AsmFunc = region_func.codegen(ctx).ok()?;
+        let mut asm_func: AsmFunc = region_func.codegen(&mut CodegenContext::new()).ok()?;
         let mut asm_func = asm_func.regalloc().fixup();
 
         let body_name = region_func.name.clone();
