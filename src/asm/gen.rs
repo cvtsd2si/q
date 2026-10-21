@@ -120,7 +120,11 @@ impl IRInstr {
             IRInstr::Ret { val } => {
                 let mut instrs = vec![
                     AsmInstr::Mov {
-                        src: val.clone().unwrap().codegen(ctx)?,
+                        src: val
+                            .as_ref()
+                            .map(|val| val.codegen(ctx))
+                            .transpose()?
+                            .unwrap_or(AsmOp::Imm(0)),
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
                     AsmInstr::Mov {

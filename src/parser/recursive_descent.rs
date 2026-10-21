@@ -250,8 +250,14 @@ impl<'src> Parser<'src> {
     fn parse_let(&mut self) -> Result<Statement, ParserError> {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?;
-        self.consume(TokenKind::Colon)?;
-        let ty = Some(self.consume_primitive()?.into());
+
+        let ty = if self.check(TokenKind::Colon) {
+            self.consume(TokenKind::Colon)?;
+            Some(self.consume_primitive()?.into())
+        } else {
+            None
+        };
+
         self.consume(TokenKind::Equal)?;
         let init = self.parse_expr()?;
         self.consume(TokenKind::Semicolon)?;

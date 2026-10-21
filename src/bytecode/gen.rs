@@ -12,6 +12,7 @@ pub enum Op {
     Sub,
     Const(Literal),
     Ret,
+    RetVoid,
     Print,
     Deepget(usize),
     Deepset(usize),
@@ -151,7 +152,10 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(vec![lhs, rhs, op])
             }
 
-            IRInstr::Ret { val } => Ok(vec![val.clone().unwrap().load_op(ctx), Op::Ret]),
+            IRInstr::Ret { val } => match val {
+                Some(v) => Ok(vec![v.load_op(ctx), Op::Ret]),
+                None => Ok(vec![Op::RetVoid]),
+            },
 
             IRInstr::Print { val } => Ok(vec![val.load_op(ctx), Op::Print]),
 

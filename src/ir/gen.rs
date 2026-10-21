@@ -147,6 +147,10 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
                 }
             }
 
+            if ret.is_none() {
+                f.body.push(IRInstr::Ret { val: None });
+            }
+
             ir_prog.funcs.push(f);
         }
     }

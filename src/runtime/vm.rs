@@ -4,7 +4,7 @@ use crate::{
     parser::ast::Literal,
     runtime::{
         jit::{JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
-        value::Value,
+        value::{Value, ValueTag},
     },
 };
 
@@ -67,9 +67,7 @@ impl Vm {
                     }
 
                     JitExit::Ret(val) => {
-                        self.stack.push(val);
-
-                        if let Some(retval) = self.handle_op_ret() {
+                        if let Some(retval) = self.handle_op_ret(val) {
                             return retval;
                         }
 
@@ -107,10 +105,25 @@ impl Vm {
                     self.handle_op_call(target, argc);
                     continue;
                 }
-                Op::Ret => match self.handle_op_ret() {
-                    Some(retval) => return retval,
-                    None => continue,
-                },
+                Op::Ret => {
+                    let v = self.stack.pop().unwrap();
+
+                    match self.handle_op_ret(v) {
+                        Some(retval) => return retval,
+                        None => continue,
+                    }
+                }
+                Op::RetVoid => {
+                    let v = Value {
+                        tag: ValueTag::Void,
+                        payload: 0,
+                    };
+
+                    match self.handle_op_ret(v) {
+                        Some(retval) => return retval,
+                        None => continue,
+                    }
+                }
             };
 
             self.pc += 1;
@@ -241,9 +254,7 @@ impl Vm {
         self.fp = fp;
     }
 
-    fn handle_op_ret(&mut self) -> Option<Value> {
-        let retval = self.stack.pop().unwrap();
-
+    fn handle_op_ret(&mut self, v: Value) -> Option<Value> {
         self.stack.truncate(self.fp);
 
         match self.fp_stack.pop() {
@@ -252,11 +263,11 @@ impl Vm {
                 self.pc = frame.pc;
                 self.fp = frame.ptr;
 
-                self.stack.push(retval);
+                self.stack.push(v);
 
                 None
             }
-            None => Some(retval),
+            None => Some(v),
         }
     }
 }

@@ -2,8 +2,7 @@ use std::collections::HashMap;
 
 use crate::lexer::token::Span;
 use crate::parser::ast::{
-    BlockItem::{self, Decl},
-    Declaration, Expression, Literal, LiteralVal, Param, Program, Statement, Type,
+    BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program, Statement, Type,
 };
 
 pub struct Typechecker {
@@ -117,11 +116,21 @@ fn typecheck_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, TypecheckerError> {
+    let old_sym_table = std::mem::replace(&mut typechecker.sym_table, HashMap::new());
+
     let typechecked_params = params
         .into_iter()
         .map(|param| param.typecheck(typechecker))
         .collect::<Result<Vec<_>, _>>()?;
     let typechecked_body = body.typecheck(typechecker)?;
+
+    if ret.is_some() && !always_returns(&typechecked_body) {
+        return Err(TypecheckerError {
+            msg: format!("fn {name} doesn't return on every control path"),
+        });
+    }
+
+    typechecker.sym_table = old_sym_table;
 
     Ok(Declaration::Fn {
         name: name.clone(),
@@ -168,13 +177,15 @@ fn typecheck_ret(
     let actual_ty = typechecked_expr.ty();
     let expected_ty = ret_ty;
 
-    if !types_equal(actual_ty, expected_ty) {
-        return Err(TypecheckerError {
-            msg: format!(
-                "type mismatch: got {:?} and wanted {:?}",
-                actual_ty, expected_ty
-            ),
-        });
+    if let Some(expected) = expected_ty {
+        if actual_ty != Some(expected) {
+            return Err(TypecheckerError {
+                msg: format!(
+                    "type mismatch: got {:?} and wanted {:?}",
+                    actual_ty, expected_ty
+                ),
+            });
+        }
     }
 
     Ok(Statement::Ret {
@@ -367,13 +378,13 @@ fn typecheck_literal(
         }
     }
 
-    let ty = expected_ty.or(expected_ty).unwrap_or_else(|| match &val {
+    let ty = expected_ty.or(explicit_ty).unwrap_or_else(|| match &val {
         LiteralVal::Bool(_) => Type::Boolean,
         LiteralVal::Integer(_) => Type::Int32,
         LiteralVal::Float(_) => Type::Float64,
     });
 
-    Literal::try_from((&val, ty)).map_err(|msg| TypecheckerError { msg });
+    Literal::try_from((&val, ty)).map_err(|msg| TypecheckerError { msg })?;
 
     Ok(Expression::Literal {
         val,
@@ -391,10 +402,12 @@ fn typecheck_init(
 
     let actual_ty = typechecked_init.ty();
 
-    if !types_equal(actual_ty, expected_ty) {
-        return Err(TypecheckerError {
-            msg: format!("something wrong with the types"),
-        });
+    if let Some(expected) = expected_ty {
+        if actual_ty != Some(expected) {
+            return Err(TypecheckerError {
+                msg: format!("Expected {:?}, got {:?}", expected_ty, actual_ty),
+            });
+        }
     }
 
     Ok(typechecked_init)
@@ -417,10 +430,6 @@ impl Typecheck for Param {
             ty: self.ty.clone(),
         })
     }
-}
-
-fn types_equal(a: Option<Type>, b: Option<Type>) -> bool {
-    a == b
 }
 
 fn merge_types(a: Option<Type>, b: Option<Type>) -> Result<Option<Type>, TypecheckerError> {
@@ -451,9 +460,9 @@ fn known_ty(
             }),
 
         Expression::Call { target, .. } => typechecker
-            .sym_table
+            .funcs
             .get(target)
-            .map(|sym| sym.ty)
+            .map(|sig| sig.ret_ty)
             .ok_or_else(|| TypecheckerError {
                 msg: format!("Unknown fn: {target}"),
             }),
@@ -472,6 +481,22 @@ fn default_numeric_ty(expr: &Expression) -> Type {
         } => Type::Float64,
         Expression::Binary { lhs, .. } => default_numeric_ty(lhs),
         _ => Type::Int32,
+    }
+}
+
+fn always_returns(stmt: &Statement) -> bool {
+    match stmt {
+        Statement::Ret { .. } => true,
+
+        Statement::Block { body } => body.iter().any(always_returns),
+
+        Statement::If {
+            then_block,
+            else_block: Some(else_block),
+            ..
+        } => always_returns(then_block) && always_returns(else_block),
+
+        _ => false,
     }
 }
 
