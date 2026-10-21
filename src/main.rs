@@ -60,9 +60,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut ctx = CodegenContext::new();
-
-    let bytecode: BytecodeProg = ir.codegen(&mut ctx)?;
+    let bytecode: BytecodeProg = ir.codegen(&mut CodegenContext::new())?;
 
     if opts.bytecode {
         println!("{:#?}", bytecode);
@@ -70,7 +68,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
     }
 
     let mut vm = Vm::new(bytecode, ir);
-    let r = vm.exec();
+    let r = vm.exec()?;
 
     Ok(r.payload as i32)
 }

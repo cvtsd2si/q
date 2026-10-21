@@ -53,7 +53,17 @@ impl std::fmt::Display for AsmInstr {
             },
             AsmInstr::Cmp { src, dst } => writeln!(f, "cmpq {}, {}", src, dst),
             AsmInstr::Jz { target } => writeln!(f, "je {}", target),
+            AsmInstr::Jnz { target } => writeln!(f, "jne {}", target),
             AsmInstr::Jmp { target } => writeln!(f, "jmp {}", target),
+            AsmInstr::CallRt { target } => {
+                let offset = target.offset();
+
+                writeln!(f, "movq {offset}(%r14), %rax")?;
+                writeln!(f, "\tcall *%rax")?;
+
+                // Zero-extend the retval
+                writeln!(f, "\tmovl %eax, %eax")
+            }
             _ => unreachable!(),
         }
     }
