@@ -104,9 +104,9 @@ impl JitCompiler {
          *      %rdx = ValueTag::Void  */
         writeln!(body_txt, ".L{}_rt_error:", body_name,).ok();
 
-        writeln!(body_txt, "movq ${}, %rcx", JIT_ERROR,).ok();
+        writeln!(body_txt, "\tmovq ${}, %rcx", JIT_ERROR,).ok();
 
-        writeln!(body_txt, "movq ${}, %rdx", ValueTag::Void as u64,).ok();
+        writeln!(body_txt, "\tmovq ${}, %rdx", ValueTag::Void as u64,).ok();
 
         insert_epilogue(&mut body_txt);
         writeln!(body_txt, "\tret").ok();
