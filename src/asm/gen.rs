@@ -1,7 +1,7 @@
 use crate::{
     ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal, Type},
-    runtime::value::ValueTag,
+    runtime::{jit::JIT_RET, value::ValueTag},
 };
 
 #[derive(Debug)]
@@ -37,10 +37,29 @@ pub enum AsmInstr {
     Jz {
         target: String,
     },
+    Jnz {
+        target: String,
+    },
     Jmp {
         target: String,
     },
     Label(String),
+    CallRt {
+        target: RtFn,
+    },
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum RtFn {
+    Print,
+}
+
+impl RtFn {
+    pub fn offset(self) -> usize {
+        match self {
+            Self::Print => 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -131,6 +150,10 @@ impl IRInstr {
                         src: AsmOp::Imm(ret_ty.map(ValueTag::from).unwrap_or(ValueTag::Void) as i64),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(JIT_RET as i64),
+                        dst: AsmOp::Reg(AsmReg::Cx),
+                    },
                 ];
 
                 insert_epilogue(&mut instrs);
@@ -166,7 +189,57 @@ impl IRInstr {
                 Ok(instrs)
             }
 
-            IRInstr::Print { val: _ } => todo!(),
+            IRInstr::Print { val, ty } => {
+                let payload = val.codegen(ctx)?;
+
+                let tag = ValueTag::from(*ty) as u64;
+
+                Ok(vec![
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(8),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                    // *mut Vm
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R13),
+                        dst: AsmOp::Reg(AsmReg::Di),
+                    },
+                    // ValueTag
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(tag as i64),
+                        dst: AsmOp::Reg(AsmReg::Si),
+                    },
+                    // payload
+                    AsmInstr::Mov {
+                        src: payload,
+                        dst: AsmOp::Reg(AsmReg::Dx),
+                    },
+                    AsmInstr::CallRt {
+                        target: RtFn::Print,
+                    },
+                    // restore stack
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(8),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
+                    // check for error
+                    AsmInstr::Cmp {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                    },
+                    AsmInstr::Jnz {
+                        target: format!(".L{}_rt_error", func_name),
+                    },
+                ])
+            }
 
             IRInstr::Jz { cond, target } => Ok(vec![
                 AsmInstr::Cmp {

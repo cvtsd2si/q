@@ -68,7 +68,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
     }
 
     let mut vm = Vm::new(bytecode, ir);
-    let r = vm.exec();
+    let r = vm.exec()?;
 
     Ok(r.payload as i32)
 }

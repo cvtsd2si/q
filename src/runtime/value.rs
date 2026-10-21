@@ -1,3 +1,5 @@
+use std::io::Write;
+
 use crate::parser::ast::{Literal, Type};
 
 #[repr(C)]
@@ -91,4 +93,33 @@ impl std::ops::Sub for Value {
             _ => unimplemented!(),
         }
     }
+}
+
+impl TryFrom<u64> for ValueTag {
+    type Error = ();
+
+    fn try_from(value: u64) -> Result<Self, Self::Error> {
+        Ok(match value {
+            0 => Self::UInt8,
+            1 => Self::Int8,
+            2 => Self::UInt16,
+            3 => Self::Int16,
+            4 => Self::UInt32,
+            5 => Self::Int32,
+            6 => Self::UInt64,
+            7 => Self::Int64,
+            8 => Self::Float32,
+            9 => Self::Float64,
+            10 => Self::Bool,
+            11 => Self::Void,
+            _ => return Err(()),
+        })
+    }
+}
+
+pub fn print_value(value: Value) -> std::io::Result<()> {
+    let stdout = std::io::stdout();
+    let mut stdout = stdout.lock();
+
+    writeln!(stdout, "{value:?}")
 }

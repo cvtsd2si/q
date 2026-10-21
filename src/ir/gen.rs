@@ -80,6 +80,7 @@ pub enum IRInstr {
     },
     Print {
         val: IRVal,
+        ty: Type,
     },
     Jmp {
         target: String,
@@ -176,9 +177,10 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
         }
 
         Statement::Print { value } => {
+            let ty = value.ty().unwrap();
             let r = irfy_expr_and_cvt(instrs, value);
 
-            instrs.push(IRInstr::Print { val: r });
+            instrs.push(IRInstr::Print { val: r, ty });
         }
 
         Statement::If {

@@ -3,8 +3,9 @@ use crate::{
     ir::r#gen::{CodegenContext, IRInstr, IRProg},
     parser::ast::Literal,
     runtime::{
-        jit::{JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
-        value::{Value, ValueTag},
+        jit::{JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
+        rt::{RT, RtResult},
+        value::{Value, ValueTag, print_value},
     },
 };
 
@@ -55,7 +56,7 @@ impl Vm {
         }
     }
 
-    pub fn exec(&mut self) -> Value {
+    pub fn exec(&mut self) -> Result<Value, VmError> {
         loop {
             /* Have we jitted this instruction before?  */
             if self.jit_code[self.func][self.pc].is_some() {
@@ -68,11 +69,13 @@ impl Vm {
 
                     JitExit::Ret(val) => {
                         if let Some(retval) = self.handle_op_ret(val) {
-                            return retval;
+                            return Ok(retval);
                         }
 
                         continue;
                     }
+
+                    JitExit::Error(code) => return Err(VmError::Runtime(code)),
                 }
             }
 
@@ -96,7 +99,7 @@ impl Vm {
                 Op::Const(konst) => self.handle_op_const(konst),
                 Op::Add => self.handle_op_add(),
                 Op::Sub => self.handle_op_sub(),
-                Op::Print => self.handle_op_print(),
+                Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
                 Op::Jz(target) => self.handle_op_jz(target),
@@ -109,7 +112,7 @@ impl Vm {
                     let v = self.stack.pop().unwrap();
 
                     match self.handle_op_ret(v) {
-                        Some(retval) => return retval,
+                        Some(retval) => return Ok(retval),
                         None => continue,
                     }
                 }
@@ -120,7 +123,7 @@ impl Vm {
                     };
 
                     match self.handle_op_ret(v) {
-                        Some(retval) => return retval,
+                        Some(retval) => return Ok(retval),
                         None => continue,
                     }
                 }
@@ -172,14 +175,16 @@ impl Vm {
         );
 
         /* Call into the generated machine code through the function ptr.  */
-        let r = unsafe { entry(self as *mut Vm) };
+        let r = unsafe { entry(self as *mut Vm, &RT) };
 
         eprintln!("[JIT] native returned {:?}", r);
 
         match r.kind {
-            0 => JitExit::Continue(r.next_pc as usize),
-            1 => JitExit::Ret(r.value),
-            _ => unreachable!(),
+            JIT_CONTINUE => JitExit::Continue(r.next_pc as usize),
+            JIT_RET => JitExit::Ret(r.value),
+            JIT_ERROR => JitExit::Error(r.value.payload as u32),
+
+            kind => panic!("unknown JIT exit kind: {kind}"),
         }
     }
 
@@ -214,9 +219,9 @@ impl Vm {
         self.stack.push(a - b);
     }
 
-    fn handle_op_print(&mut self) {
+    fn handle_op_print(&mut self) -> Result<(), VmError> {
         let obj = self.stack.pop().unwrap();
-        println!("{:?}", obj);
+        print_value(obj).map_err(|_| VmError::Runtime(RtResult::Io as u32))
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {
@@ -268,6 +273,22 @@ impl Vm {
                 None
             }
             None => Some(v),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum VmError {
+    Runtime(u32),
+}
+
+impl std::error::Error for VmError {}
+
+impl std::fmt::Display for VmError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Runtime(1) => write!(f, "runtime err: io"),
+            Self::Runtime(code) => write!(f, "runtime err: {code}"),
         }
     }
 }

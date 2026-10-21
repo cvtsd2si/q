@@ -157,7 +157,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 None => Ok(vec![Op::RetVoid]),
             },
 
-            IRInstr::Print { val } => Ok(vec![val.load_op(ctx), Op::Print]),
+            IRInstr::Print { val, .. } => Ok(vec![val.load_op(ctx), Op::Print]),
 
             IRInstr::Jz { cond, target } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
 
