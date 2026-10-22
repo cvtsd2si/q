@@ -48,10 +48,6 @@ impl JitCompiler {
 
         let ir_func = ir.funcs.get(func).unwrap();
 
-        if !ir_func.params.is_empty() {
-            return Ok(None);
-        }
-
         let region = &ir_func.body[start_ir..end_ir];
 
         /* Reject anything that does not end up in language-level `return`.  */
@@ -261,7 +257,9 @@ impl JitCompiler {
         /*
          * %rdi = hidden *mut JitResult ptr
          * %rsi = *mut Vm
-         * %rdx = *const Rt  */
+         * %rdx = *const Rt
+         * %rcx = *const Value (args)
+         */
         body.extend(vec![
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Di),
@@ -275,12 +273,24 @@ impl JitCompiler {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Reg(AsmReg::R14),
             },
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Cx),
+                dst: AsmOp::Reg(AsmReg::Di),
+            },
         ]);
 
         /* Execute the compiled region.  */
         body.push(AsmInstr::Call {
             target: body_name.to_owned(),
         });
+
+        /* According to the internal ABI, after the call instr,
+         * %rcx will have contained the exit kind (one of CONTINUE,
+         * RET, ERROR), while %rdx will have contained the ValueTag,
+         * and %rax will have contained the payload or the err code.
+         */
+
+        /* The ptr to `JitResult` struct is in %r12.  */
 
         /* #[repr(C)]
          * pub struct JitResult {
@@ -366,7 +376,8 @@ impl JitCompiler {
     }
 }
 
-pub type JitEntry = unsafe extern "C" fn(*mut Vm, *const Rt) -> JitResult;
+pub type JitEntry =
+    unsafe extern "C" fn(*mut Vm, *const Rt, *const Value /* parameters  */) -> JitResult;
 
 pub const JIT_THRESHOLD: u32 = 1;
 

@@ -237,7 +237,8 @@ impl Vm {
         );
 
         /* Call into the generated machine code through the function ptr.  */
-        let r = unsafe { entry(self as *mut Vm, &RT) };
+        let args = self.stack[self.fp..].as_ptr();
+        let r = unsafe { entry(self as *mut Vm, &RT, args) };
 
         eprintln!("[JIT] native returned {:?}", r);
 

@@ -1,9 +1,11 @@
 use crate::{
     bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::Ctx,
-    ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg, IRVal},
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal, Type},
-    runtime::{jit::JIT_RET, value::ValueTag},
+    runtime::{
+        jit::JIT_RET,
+        value::{Value, ValueTag},
+    },
 };
 
 #[derive(Debug)]
@@ -120,6 +122,17 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
         let mut body = vec![];
 
         insert_prologue(&mut body);
+
+        /* %rdi = *const Value  */
+        for (idx, param) in self.params.iter().enumerate() {
+            let offset = (idx * std::mem::size_of::<Value>() + std::mem::offset_of!(Value, payload))
+                as isize;
+
+            body.push(AsmInstr::Mov {
+                src: AsmOp::Mem(AsmReg::Di, offset),
+                dst: AsmOp::Pseudo(param.name.clone()),
+            });
+        }
 
         for instr in &self.body {
             body.extend(instr.codegen_with(ctx, self.ret_ty, &self.name)?);
