@@ -110,9 +110,13 @@ impl<'src> Parser<'src> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
-                TokenKind::Ret | TokenKind::Let | TokenKind::Print | TokenKind::If => {
-                    Ok(BlockItem::Stmt(self.parse_stmt()?))
-                }
+                TokenKind::Ret
+                | TokenKind::Let
+                | TokenKind::Print
+                | TokenKind::If
+                | TokenKind::While
+                | TokenKind::Break
+                | TokenKind::Continue => Ok(BlockItem::Stmt(self.parse_stmt()?)),
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -136,6 +140,9 @@ impl<'src> Parser<'src> {
                 TokenKind::Ret => Ok(self.parse_ret()?),
                 TokenKind::Print => Ok(self.parse_print()?),
                 TokenKind::If => Ok(self.parse_if()?),
+                TokenKind::While => Ok(self.parse_while()?),
+                TokenKind::Break => Ok(self.parse_break()?),
+                TokenKind::Continue => Ok(self.parse_continue()?),
                 TokenKind::LBrace => Ok(Statement::Block {
                     body: self.parse_block()?,
                 }),
@@ -297,6 +304,35 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_while(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::While)?;
+
+        self.consume(TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.consume(TokenKind::RParen)?;
+
+        let body = self.parse_stmt()?.into();
+
+        Ok(Statement::While {
+            cond,
+            body,
+            label: None,
+        })
+    }
+
+    fn parse_break(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Break)?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Break { label: None })
+    }
+
+    fn parse_continue(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Continue)?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Continue { label: None })
+    }
     fn parse_expr(&mut self) -> Result<Expression, ParserError> {
         self.term()
     }

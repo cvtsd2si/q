@@ -3,6 +3,7 @@ use q::ir::r#gen::{Codegen, CodegenContext, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use q::runtime::vm::Vm;
+use q::semantics::loop_labeler::{LoopLabel, LoopLabeler};
 use q::semantics::resolver::{Resolve, Resolver};
 use q::semantics::typechecker::{Typecheck, Typechecker};
 use std::collections::VecDeque;
@@ -37,8 +38,16 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
+    let mut loop_labeler = LoopLabeler::new();
+    let labeled_ast = ast.loop_label(&mut loop_labeler)?;
+
+    if opts.loop_label {
+        println!("{:#?}", labeled_ast);
+        return Ok(0);
+    }
+
     let mut resolver = Resolver::new();
-    let resolved_ast = ast.resolve(&mut resolver)?;
+    let resolved_ast = labeled_ast.resolve(&mut resolver)?;
 
     if opts.resolve {
         println!("{:#?}", resolved_ast);
@@ -82,6 +91,9 @@ struct Opt {
 
     #[structopt(name = "parse", long)]
     parse: bool,
+
+    #[structopt(name = "loop-label", long)]
+    loop_label: bool,
 
     #[structopt(name = "resolve", long)]
     resolve: bool,

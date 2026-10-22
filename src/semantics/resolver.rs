@@ -95,6 +95,8 @@ impl Resolve for Statement {
             Statement::Block { body } => Ok(Statement::Block {
                 body: resolve_block(resolver, body)?,
             }),
+            Statement::While { cond, body, label } => resolve_while(resolver, cond, body, label),
+            _ => Ok(self),
         }
     }
 }
@@ -201,6 +203,19 @@ fn resolve_if(
         else_block: else_block
             .map(|block| block.resolve(resolver).map(Box::new))
             .transpose()?,
+    })
+}
+
+fn resolve_while(
+    resolver: &mut Resolver,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, ResolverError> {
+    Ok(Statement::While {
+        cond: resolve_expr(resolver, Some(cond))?,
+        body: body.resolve(resolver)?.into(),
+        label,
     })
 }
 

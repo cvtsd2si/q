@@ -1,4 +1,4 @@
-use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
+use std::{any::TypeId, backtrace::BacktraceStatus, collections::HashMap, sync::atomic::AtomicU64};
 
 use crate::{
     bytecode::r#gen::BytecodeFunc,
@@ -225,6 +225,51 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
                 irfy_stmt(instrs, stmt);
             }
         }
+
+        Statement::While { cond, body, label } => {
+            let label = label.as_ref().unwrap();
+
+            let break_label = format!("{label}.break");
+            let continue_label = format!("{label}.continue");
+
+            instrs.push(IRInstr::Label(continue_label.clone()));
+
+            /* eval the cond at the start of each iteration  */
+            let cond = irfy_expr_and_cvt(instrs, cond);
+
+            /* exit the loop if the cond is false  */
+            instrs.push(IRInstr::Jz {
+                cond,
+                target: break_label.clone(),
+            });
+
+            /* exec the loop body  */
+            irfy_stmt(instrs, body);
+
+            /* start the next iteration  */
+            instrs.push(IRInstr::Jmp {
+                target: continue_label,
+            });
+
+            /* resume execution here after exiting the loop  */
+            instrs.push(IRInstr::Label(break_label));
+        }
+
+        Statement::Break { label } => {
+            let label = label.as_ref().unwrap();
+            instrs.push(IRInstr::Jmp {
+                target: format!("{label}.break"),
+            });
+        }
+
+        Statement::Continue { label } => {
+            let label = label.as_ref().unwrap();
+            instrs.push(IRInstr::Jmp {
+                target: format!("{label}.continue"),
+            });
+        }
+
+        _ => unimplemented!(),
     }
 }
 

@@ -105,6 +105,12 @@ impl Typecheck for Statement {
             Statement::Block { body } => Ok(Statement::Block {
                 body: typecheck_block(typechecker, body)?,
             }),
+
+            Statement::While { cond, body, label } => {
+                typecheck_while(typechecker, cond, body, label)
+            }
+
+            _ => Ok(self),
         }
     }
 }
@@ -215,6 +221,19 @@ fn typecheck_if(
         else_block: else_block
             .map(|block| block.typecheck(typechecker).map(Box::new))
             .transpose()?,
+    })
+}
+
+fn typecheck_while(
+    typechecker: &mut Typechecker,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, TypecheckerError> {
+    Ok(Statement::While {
+        cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
+        body: body.typecheck(typechecker)?.into(),
+        label,
     })
 }
 

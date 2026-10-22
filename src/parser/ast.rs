@@ -43,6 +43,17 @@ pub enum Statement {
     Block {
         body: Vec<Statement>,
     },
+    While {
+        cond: Expression,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    Break {
+        label: Option<String>,
+    },
+    Continue {
+        label: Option<String>,
+    },
 }
 
 #[derive(Debug, Clone)]
