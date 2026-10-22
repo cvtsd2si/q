@@ -118,19 +118,75 @@ impl LoopLabel for Statement {
                     label: Some(label),
                 })
             }
+            Statement::DoWhile { cond, body, .. } => {
+                let label = labeler.get_next_label();
 
+                /* enter the loop  */
+                labeler.active_loops.push(label.clone());
+
+                /* label the body  */
+                let r = body.loop_label(labeler)?;
+
+                /* exit the loop  */
+                labeler.active_loops.pop();
+
+                Ok(Statement::DoWhile {
+                    cond,
+                    body: r.into(),
+                    label: Some(label),
+                })
+            }
+            Self::For {
+                init,
+                cond,
+                advancement,
+                body,
+                ..
+            } => {
+                let label = labeler.get_next_label();
+
+                let init = init
+                    .map(|stmt| stmt.loop_label(labeler).map(Box::new))
+                    .transpose()?;
+
+                labeler.active_loops.push(label.clone());
+
+                let r = body.loop_label(labeler)?;
+
+                labeler.active_loops.pop();
+
+                Ok(Statement::For {
+                    init,
+                    cond,
+                    advancement,
+                    body: r.into(),
+                    label: Some(label),
+                })
+            }
+            Statement::Loop { body, .. } => {
+                let label = labeler.get_next_label();
+
+                labeler.active_loops.push(label.clone());
+
+                let r = body.loop_label(labeler)?.into();
+
+                labeler.active_loops.pop();
+
+                Ok(Statement::Loop {
+                    body: r,
+                    label: Some(label),
+                })
+            }
             Statement::Break { .. } => {
                 let label = labeler.current_loop("break")?;
 
                 Ok(Statement::Break { label: Some(label) })
             }
-
             Statement::Continue { .. } => {
                 let label = labeler.current_loop("continue")?;
 
                 Ok(Statement::Continue { label: Some(label) })
             }
-
             _ => unreachable!(),
         }
     }

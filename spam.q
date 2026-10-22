@@ -1,9 +1,6 @@
 fn main() -> i64 {
-    while (true) {
+    loop {
     	print 1;
-	if (true) {
-            break;
-	}
     }
     ret 0;
 }

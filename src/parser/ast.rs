@@ -48,6 +48,22 @@ pub enum Statement {
         body: Box<Statement>,
         label: Option<String>,
     },
+    DoWhile {
+        cond: Expression,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    For {
+        init: Option<Box<Statement>>,
+        cond: Option<Expression>,
+        advancement: Option<Expression>,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    Loop {
+        body: Box<Statement>,
+        label: Option<String>,
+    },
     Break {
         label: Option<String>,
     },
