@@ -273,24 +273,18 @@ impl Vm {
                     self.handle_op_call(target, argc);
                     continue;
                 }
-                Op::Ret => {
-                    let v = self.stack.pop().unwrap();
-                    match self.handle_op_ret(v) {
-                        Some(v) => return Ok(v),
-                        None if stop_depth == Some(self.fp_stack.len()) => {
-                            return Ok(self.stack.pop().unwrap());
-                        }
-                        None => continue,
-                    }
-                }
-                Op::RetVoid => {
-                    let v = Value {
-                        tag: ValueTag::Void,
-                        payload: 0,
+                Op::Ret | Op::RetVoid => {
+                    let v = match op {
+                        Op::Ret => self.stack.pop().unwrap(),
+                        Op::RetVoid => Value {
+                            tag: ValueTag::Void,
+                            payload: 0,
+                        },
+                        _ => unreachable!(),
                     };
 
                     match self.handle_op_ret(v) {
-                        Some(retval) => return Ok(retval),
+                        Some(v) => return Ok(v),
                         None if stop_depth == Some(self.fp_stack.len()) => {
                             return Ok(self.stack.pop().unwrap());
                         }
