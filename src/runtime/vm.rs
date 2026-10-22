@@ -57,6 +57,10 @@ impl Vm {
     }
 
     pub fn exec(&mut self) -> Result<Value, VmError> {
+        self.exec_until(None)
+    }
+
+    pub fn exec_until(&mut self, stop_depth: Option<usize>) -> Result<Value, VmError> {
         loop {
             /* Have we jitted this instruction before?  */
             if self.jit_code[self.func][self.pc].is_some() {
@@ -67,13 +71,13 @@ impl Vm {
                         continue;
                     }
 
-                    JitExit::Ret(val) => {
-                        if let Some(retval) = self.handle_op_ret(val) {
-                            return Ok(retval);
+                    JitExit::Ret(val) => match self.handle_op_ret(val) {
+                        Some(v) => return Ok(v),
+                        None if stop_depth == Some(self.fp_stack.len()) => {
+                            return Ok(self.stack.pop().unwrap());
                         }
-
-                        continue;
-                    }
+                        None => continue,
+                    },
 
                     JitExit::Error(code) => return Err(VmError::Runtime(code)),
                 }
@@ -110,9 +114,11 @@ impl Vm {
                 }
                 Op::Ret => {
                     let v = self.stack.pop().unwrap();
-
                     match self.handle_op_ret(v) {
-                        Some(retval) => return Ok(retval),
+                        Some(v) => return Ok(v),
+                        None if stop_depth == Some(self.fp_stack.len()) => {
+                            return Ok(self.stack.pop().unwrap());
+                        }
                         None => continue,
                     }
                 }
@@ -124,6 +130,9 @@ impl Vm {
 
                     match self.handle_op_ret(v) {
                         Some(retval) => return Ok(retval),
+                        None if stop_depth == Some(self.fp_stack.len()) => {
+                            return Ok(self.stack.pop().unwrap());
+                        }
                         None => continue,
                     }
                 }
@@ -131,6 +140,42 @@ impl Vm {
 
             self.pc += 1;
         }
+    }
+
+    pub fn invoke_from_jit(&mut self, target: usize, payloads: &[u64]) -> Result<Value, VmError> {
+        let old_func = self.func;
+        let old_pc = self.pc;
+        let old_fp = self.fp;
+
+        let old_stack_len = self.stack.len();
+        let old_depth = self.fp_stack.len();
+
+        let params = &self.ir.funcs[target].params;
+        assert_eq!(params.len(), payloads.len()); // FIXME:  Error out from here
+
+        let values = params
+            .iter()
+            .zip(payloads)
+            .map(|(param, payload)| Value {
+                tag: ValueTag::from(param.ty),
+                payload: *payload,
+            })
+            .collect::<Vec<Value>>();
+
+        self.stack.extend(values);
+
+        self.handle_op_call(target, payloads.len());
+
+        let r = self.exec_until(Some(old_depth));
+
+        self.stack.truncate(old_stack_len);
+        self.fp_stack.truncate(old_depth);
+
+        self.func = old_func;
+        self.pc = old_pc;
+        self.fp = old_fp;
+
+        r
     }
 
     fn compile_region(&self, func: usize, start_pc: usize) -> Option<JitBlock> {
@@ -160,8 +205,23 @@ impl Vm {
         /* Passing in PC coords, too, because the JIT compiler needs them
          * to embed them as metadata on `JitBlock`s it gives out.  */
         let mut jit = JitCompiler::new();
-        jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc)
-            .ok()?
+
+        match jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc) {
+            Ok(Some(block)) => {
+                eprintln!("[JIT]: compilation successful");
+                Some(block)
+            }
+
+            Ok(None) => {
+                eprintln!("[JIT]: compilation skipped");
+                None
+            }
+
+            Err(e) => {
+                eprintln!("[JIT]: compilation failed: {e}");
+                None
+            }
+        }
     }
 
     fn run_jitted(&mut self) -> JitExit {

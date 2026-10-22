@@ -7,7 +7,8 @@ use crate::{
         },
         regalloc::Regalloc,
     },
-    ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg},
+    bytecode::r#gen::BytecodeFunc,
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg},
     runtime::{
         rt::Rt,
         value::{Value, ValueTag},
@@ -58,14 +59,6 @@ impl JitCompiler {
             return Ok(None);
         }
 
-        /* Reject `IRInstr::Call` because the asm backend currently has no impl for this.  */
-        if region
-            .iter()
-            .any(|instr| matches!(instr, IRInstr::Call { .. }))
-        {
-            return Ok(None);
-        }
-
         let region_func = IRFunc {
             name: format!("jit_{}_{}", ir_func.name, start_ir),
             params: ir_func.params.clone(),
@@ -85,13 +78,16 @@ impl JitCompiler {
             msg: format!("jit entry emission failed"),
         })?;
 
+        let mut ctx = CodegenContext::new();
+
+        for func in ir.funcs.iter() {
+            ctx.register::<BytecodeFunc>(&func.name);
+        }
+
         /* Compiled fn emission.  */
-        let mut asm_func: AsmFunc =
-            region_func
-                .codegen(&mut CodegenContext::new())
-                .map_err(|_| JitError {
-                    msg: format!("jit codegen failed"),
-                })?;
+        let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
+            msg: format!("jit codegen failed"),
+        })?;
         let mut asm_func = asm_func.regalloc().fixup();
 
         /* Backpatch the amount of stack space required.  */
