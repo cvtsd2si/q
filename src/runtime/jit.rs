@@ -22,7 +22,6 @@ use rsasm::{
     assembler::{Assembler, Options},
     section::SectionId,
 };
-use std::fmt::Write;
 
 pub struct JitCompiler {}
 
@@ -181,6 +180,70 @@ impl JitCompiler {
     }
 
     fn mk_entry(&mut self, body_name: &str, end_pc: usize) -> Vec<AsmInstr> {
+        /* SystemV AMD64 ABI (Linux x86-64)
+         *
+         * Section 1: argument passing
+         *
+         * According to the SystemV AMD64 ABI, the first six integer and ptr args
+         * are passed to the called function in %rdi, %rsi, %rdx, %rcx, %r8, %r9.
+         *
+         * Floating point args use the SIMD registers (%xmm0 through %xmm7).
+         *
+         * Args that cannot be assigned the registers required by their ABI classification
+         * are passed on the stack, where %rsp holds the return address of the caller, and
+         * the first arg is at 8(%rsp).
+         *
+         * It is *NOT* the case that every arg smaller than 8 bytes goes into a reg,
+         * and everything larger goes on the stack.  Rather, every arg is classified
+         * by the arg type and the layout (INTEGER, SSE, MEMORY, etc.)
+         *
+         * Simple scalars (like ints and ptrs) are passed through general-purpose
+         * registers, while floating point args are passed through SSE registers.
+         *
+         * Structures are divided into eightbytes and each eightbyte is classified
+         * according to its arg type.
+         *
+         * Section 2: return values
+         *
+         * Return value is passed through %rax (or %eax) for the INTEGER class,
+         * and in %xmm0 for the SSE class.  If the return value cannot fit in a
+         * single register, additional registers are used (%rdx and %xmm1), respectively.
+         * If the return value still cannot fit into these two registers, the caller
+         * must allocate space for the returned struct and pass it as a ptr in %rdi.
+         * Before returning, it places the result in %rax.
+         *
+         * Section 3: register preservation
+         *
+         * The SystemV AMD64 ABI also specifies which registers will survive the call
+         * and not get clobbered by the called function.  There are two cases:
+         *
+         *  - callee saved registers:    these registers cannot be freely modified by the called
+         *    (%rbx, %rbp, %r12-%r15)    function, and they must contain the same value when the
+         *                               called function returns, as they had when it entered
+         *
+         *  - caller saved registers:    these registers can be freely clobbered by the called
+         *    (%rax, %rcx, %rdx, %rdi,   function, and the caller must preserve them if it wants
+         *     %rsi, %r8, %r9, %r10,     to use them past the call.
+         *     %r11, %xmm0-%xmm15)
+         *
+         * Section 4: stack alignment
+         *
+         * Immediately before executing the `call` instr, the stack must be aligned to a 16-byte
+         * boundary, that is %rsp must be divisible by 16.
+         *
+         * The `call` instr conceptually does:
+         *      %rsp -= 8
+         *      %mem[%rsp] = ret_addr
+         *      %rip = addr_of(f)
+         * When `f` executes `ret`, the processor pops the ret_addr from the stack and jumps to it.
+         *
+         * Section 5: variadic functions
+         *
+         * Variadic functions calls (e.g. `printf("%d", 42)`) introduce new rule, which is that
+         * the ptr to `"%d"` is passed in %rdi, and %esi needs to contain `42`.
+         * For calls that use a variable arg list, the caller must also set %al to contain an upper
+         * bound (0-8) on the number of SSE regs used for passing args.
+         */
         let mut body = vec![];
 
         insert_prologue(&mut body);
@@ -199,8 +262,7 @@ impl JitCompiler {
             rhs: AsmOp::Reg(AsmReg::Sp),
         });
 
-        /* Since `JitResult` is a large struct, it is passed by a hidden mem ptr.
-         *
+        /*
          * %rdi = hidden *mut JitResult ptr
          * %rsi = *mut Vm
          * %rdx = *const Rt  */
