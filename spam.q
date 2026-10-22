@@ -1,5 +1,8 @@
+fn add(a: i64, b: i64) -> i64 {
+    ret a + b;
+}
+
 fn main() -> i64 {
-    let x: i64 = 42;
-    print x;
-    ret x + 1;
+    let result: i64 = add(10, 20);
+    ret result;
 }

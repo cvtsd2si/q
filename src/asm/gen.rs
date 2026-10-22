@@ -1,7 +1,11 @@
 use crate::{
-    ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg, IRVal},
+    bytecode::r#gen::BytecodeFunc,
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal, Type},
-    runtime::{jit::JIT_RET, value::ValueTag},
+    runtime::{
+        jit::JIT_RET,
+        value::{Value, ValueTag},
+    },
 };
 
 #[derive(Debug)]
@@ -55,12 +59,15 @@ pub enum AsmInstr {
 #[derive(Debug, Clone, Copy)]
 pub enum RtFn {
     Print,
+    Call,
 }
 
 impl RtFn {
     pub fn offset(self) -> usize {
+        // FIXME: Don't harcode offsets.
         match self {
             Self::Print => 0,
+            Self::Call => 8,
         }
     }
 }
@@ -115,6 +122,17 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
         let mut body = vec![];
 
         insert_prologue(&mut body);
+
+        /* %rdi = *const Value  */
+        for (idx, param) in self.params.iter().enumerate() {
+            let offset = (idx * std::mem::size_of::<Value>() + std::mem::offset_of!(Value, payload))
+                as isize;
+
+            body.push(AsmInstr::Mov {
+                src: AsmOp::Mem(AsmReg::Di, offset),
+                dst: AsmOp::Pseudo(param.name.clone()),
+            });
+        }
 
         for instr in &self.body {
             body.extend(instr.codegen_with(ctx, self.ret_ty, &self.name)?);
@@ -264,7 +282,119 @@ impl IRInstr {
                 Ok(vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))])
             }
 
-            IRInstr::Call { target, args, dst } => todo!(),
+            IRInstr::Call { target, args, dst } => {
+                let func = ctx.get::<BytecodeFunc>(target).unwrap();
+
+                let argc = args.len();
+                let args_space = argc * 8;
+
+                let frame_space = (args_space + 16).div_ceil(16) * 16;
+
+                let mut body = vec![
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
+                    AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
+                    /* FIXME: don't hardcode this */
+                    /* Fix alignment after the three pushes. */
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(8),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                    /* Alloc args and retval space.  */
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(frame_space as i64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                ];
+
+                /* Materialize each arg on the native stack.  */
+                for (idx, arg) in args.iter().enumerate() {
+                    body.extend([
+                        AsmInstr::Mov {
+                            src: arg.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::R9),
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::R9),
+                            dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
+                        },
+                    ]);
+                }
+
+                body.extend([
+                    /* %rdi = *mut Vm,  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R13),
+                        dst: AsmOp::Reg(AsmReg::Di),
+                    },
+                    /* %rsi = fn idx  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(func as i64),
+                        dst: AsmOp::Reg(AsmReg::Si),
+                    },
+                    /* %rdx = *const u64 (ptr to args)  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Sp),
+                        dst: AsmOp::Reg(AsmReg::Dx),
+                    },
+                    /* %rcx = argc  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(argc as i64),
+                        dst: AsmOp::Reg(AsmReg::Cx),
+                    },
+                    /* %r8 = ptr to retval  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Sp),
+                        dst: AsmOp::Reg(AsmReg::R8),
+                    },
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(args_space as i64),
+                        rhs: AsmOp::Reg(AsmReg::R8),
+                    },
+                    /* invoke the rt trampoline  */
+                    AsmInstr::CallRt { target: RtFn::Call },
+                    /* read in Value.payload into %r9 scratch  */
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, (args_space + 8) as isize),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    /* release tmp space  */
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(frame_space as i64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                    /* rm alignment padding */
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(8),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                    },
+                    /* restore caller-saved regs  */
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
+                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
+                    /* check rt status  */
+                    AsmInstr::Cmp {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                    },
+                    AsmInstr::Jnz {
+                        target: format!("{}_rt_err", func_name),
+                    },
+                ]);
+
+                /* store the result into IR dst  */
+                body.push(AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst: dst.codegen(ctx)?,
+                });
+
+                Ok(body)
+            }
         }
     }
 }

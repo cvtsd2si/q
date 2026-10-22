@@ -38,7 +38,7 @@ impl Fixup for AsmInstr {
     fn fixup(&self) -> Self::Output {
         match self {
             AsmInstr::Mov { src, dst } => match (src, dst) {
-                (AsmOp::Stack(a), AsmOp::Stack(b)) => vec![
+                (AsmOp::Stack(_) | AsmOp::Mem(_, _), AsmOp::Stack(_) | AsmOp::Mem(_, _)) => vec![
                     AsmInstr::Mov {
                         src: src.clone(),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -50,6 +50,23 @@ impl Fixup for AsmInstr {
                 ],
                 _ => vec![self.clone()],
             },
+
+            AsmInstr::Bin { kind, lhs, rhs }
+                if matches!(lhs, AsmOp::Stack(_) | AsmOp::Mem(_, _))
+                    && matches!(rhs, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Mov {
+                        src: lhs.clone(),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    AsmInstr::Bin {
+                        kind: *kind,
+                        lhs: AsmOp::Reg(AsmReg::R9),
+                        rhs: rhs.clone(),
+                    },
+                ]
+            }
 
             AsmInstr::Cmp { src, dst } if matches!(dst, AsmOp::Imm(_)) => vec![
                 AsmInstr::Mov {
