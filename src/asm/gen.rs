@@ -241,7 +241,7 @@ impl IRInstr {
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
                     AsmInstr::Jnz {
-                        target: format!(".L{}_rt_error", func_name),
+                        target: format!("{}_rt_err", func_name),
                     },
                 ])
             }

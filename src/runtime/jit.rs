@@ -77,7 +77,11 @@ impl JitCompiler {
         let mut asm_txt = String::new();
 
         /* JIT entry emission.  */
-        let entry = self.mk_entry(&region_func.name, end_pc);
+        let entry = AsmFunc {
+            name: format!("{}_entry", region_func.name),
+            body: self.mk_entry(&region_func.name, end_pc),
+            space: 0,
+        };
         entry.emit(&mut asm_txt).map_err(|_| JitError {
             msg: format!("jit entry emission failed"),
         })?;
@@ -110,7 +114,11 @@ impl JitCompiler {
         })?;
 
         /* Runtime error handler emission.  */
-        let rt_err_handler = self.mk_rt_err(&region_func.name);
+        let rt_err_handler = AsmFunc {
+            name: format!("{}_rt_err", region_func.name),
+            body: self.mk_rt_err(),
+            space: 0,
+        };
         rt_err_handler.emit(&mut asm_txt).map_err(|_| JitError {
             msg: format!("jit entry emission failed"),
         })?;
@@ -173,7 +181,7 @@ impl JitCompiler {
     }
 
     fn mk_entry(&mut self, body_name: &str, end_pc: usize) -> Vec<AsmInstr> {
-        let mut body = vec![AsmInstr::Label(format!("{body_name}_entry"))];
+        let mut body = vec![];
 
         insert_prologue(&mut body);
 
@@ -271,7 +279,7 @@ impl JitCompiler {
         body
     }
 
-    fn mk_rt_err(&mut self, body_name: &str) -> Vec<AsmInstr> {
+    fn mk_rt_err(&mut self) -> Vec<AsmInstr> {
         /* Build the shared runtime error handler.
          *
          * Upon entry:
@@ -282,7 +290,6 @@ impl JitCompiler {
          *      %rax = rt err code
          *      %rdx = ValueTag::Void  */
         let mut body = vec![
-            AsmInstr::Label(format!(".L{}_rt_error", body_name)),
             AsmInstr::Mov {
                 src: AsmOp::Imm(JIT_ERROR as i64),
                 dst: AsmOp::Reg(AsmReg::Cx),

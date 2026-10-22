@@ -20,9 +20,9 @@ impl Emit for AsmFunc {
         writeln!(f, "\t.global {}", self.name)?;
         writeln!(f, "{}:", self.name)?;
 
-        for instr in &self.body {
-            instr.emit(f)?;
-        }
+        self.body.emit(f)?;
+
+        writeln!(f)?;
 
         Ok(())
     }
