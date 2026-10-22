@@ -159,7 +159,9 @@ impl Vm {
 
         /* Passing in PC coords, too, because the JIT compiler needs them
          * to embed them as metadata on `JitBlock`s it gives out.  */
-        JitCompiler::compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc)
+        let mut jit = JitCompiler::new();
+        jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc)
+            .ok()?
     }
 
     fn run_jitted(&mut self) -> JitExit {

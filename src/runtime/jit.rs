@@ -2,7 +2,9 @@ use crate::{
     asm::{
         emitter::Emit,
         fixup::Fixup,
-        r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, insert_epilogue, insert_prologue},
+        r#gen::{
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, insert_epilogue, insert_prologue,
+        },
         regalloc::Regalloc,
     },
     ir::r#gen::{Codegen, CodegenContext, IRFunc, IRInstr, IRProg},
@@ -30,6 +32,7 @@ impl JitCompiler {
     }
 
     pub fn compile(
+        &mut self,
         ir: &IRProg,
         func: usize,
         /* What code to compile?  */
@@ -38,29 +41,30 @@ impl JitCompiler {
         /* What interpreted bytecode this native code replaces?  */
         start_pc: usize,
         end_pc: usize,
-    ) -> Option<JitBlock> {
+    ) -> Result<Option<JitBlock>, JitError> {
         if start_pc != 0 {
-            return None;
+            return Ok(None);
         }
 
-        let ir_func = ir.funcs.get(func)?;
-        let region = &ir_func.body[start_ir..end_ir];
+        let ir_func = ir.funcs.get(func).unwrap();
 
         if !ir_func.params.is_empty() {
-            return None;
+            return Ok(None);
         }
+
+        let region = &ir_func.body[start_ir..end_ir];
 
         /* Reject anything that does not end up in language-level `return`.  */
         if !matches!(region.last(), Some(IRInstr::Ret { .. })) {
-            return None;
+            return Ok(None);
         }
 
-        /* Reject `IRInstr::Print` because the asm backend currently has no impl for this.  */
+        /* Reject `IRInstr::Call` because the asm backend currently has no impl for this.  */
         if region
             .iter()
             .any(|instr| matches!(instr, IRInstr::Call { .. }))
         {
-            return None;
+            return Ok(None);
         }
 
         let region_func = IRFunc {
@@ -70,12 +74,24 @@ impl JitCompiler {
             ret_ty: ir_func.ret_ty,
         };
 
-        let mut asm_func: AsmFunc = region_func.codegen(&mut CodegenContext::new()).ok()?;
+        let mut asm_txt = String::new();
+
+        /* JIT entry emission.  */
+        let entry = self.mk_entry(&region_func.name, end_pc);
+        entry.emit(&mut asm_txt).map_err(|_| JitError {
+            msg: format!("jit entry emission failed"),
+        })?;
+
+        /* Compiled fn emission.  */
+        let mut asm_func: AsmFunc =
+            region_func
+                .codegen(&mut CodegenContext::new())
+                .map_err(|_| JitError {
+                    msg: format!("jit codegen failed"),
+                })?;
         let mut asm_func = asm_func.regalloc().fixup();
 
-        let body_name = region_func.name.clone();
-        let mut body_txt = String::new();
-
+        /* Backpatch the amount of stack space required.  */
         if let Some(instr) = asm_func.body.iter_mut().nth(2) {
             match instr {
                 AsmInstr::Bin {
@@ -89,88 +105,15 @@ impl JitCompiler {
             }
         }
 
-        if asm_func.emit(&mut body_txt).is_err() {
-            return None;
-        }
+        asm_func.emit(&mut asm_txt).map_err(|e| JitError {
+            msg: format!("jit code emission failed"),
+        })?;
 
-        /* Build the shared runtime error handler.
-         *
-         * Upon entry:
-         *      %rax = rt err code (zero-extended u32)
-         *
-         * Upon exit:
-         *      %rcx = JIT_ERROR
-         *      %rax = rt err code
-         *      %rdx = ValueTag::Void  */
-        writeln!(body_txt, ".L{}_rt_error:", body_name,).ok();
-
-        writeln!(body_txt, "\tmovq ${}, %rcx", JIT_ERROR,).ok();
-
-        writeln!(body_txt, "\tmovq ${}, %rdx", ValueTag::Void as u64,).ok();
-
-        insert_epilogue(&mut body_txt);
-        writeln!(body_txt, "\tret").ok();
-
-        /* Build the `jit_entry` wrapper around the code we're compiling.  */
-        let mut asm_txt = String::new();
-
-        writeln!(asm_txt, "\t.global jit_entry").ok();
-        writeln!(asm_txt, "jit_entry:").ok();
-
-        insert_prologue(&mut asm_txt);
-
-        /* Preserve callee-saved registers we use in our ABI.  */
-        writeln!(asm_txt, "\tpushq %r12").ok();
-        writeln!(asm_txt, "\tpushq %r13").ok();
-        writeln!(asm_txt, "\tpushq %r14").ok();
-
-        /* Stack alignment for now.  */
-        writeln!(asm_txt, "\tsubq $8, %rsp").ok();
-
-        /* Since `JitResult` is a large struct, it is passed by a hidden mem ptr.
-         *
-         * %rdi = hidden *mut JitResult ptr
-         * %rsi = *mut Vm
-         * %rdx = *const Rt  */
-        writeln!(asm_txt, "\tmovq %rdi, %r12").ok();
-        writeln!(asm_txt, "\tmovq %rsi, %r13").ok();
-        writeln!(asm_txt, "\tmovq %rdx, %r14").ok();
-
-        /* Execute the compiled region.  */
-        writeln!(asm_txt, "\tcall {}", body_name).ok();
-
-        /* #[repr(C)]
-         * pub struct JitResult {
-         *     pub kind: u64,     // offset 0
-         *     pub next_pc: u64,  // offset 8
-         *     pub value: Value,  // offset 16
-         * }
-         *
-         * ...and `Value` is:
-         *      offset 16: tag
-         *      offset 24: payload
-         */
-        writeln!(asm_txt, "\tmovq %rcx, 0(%r12)").ok(); // JitResult kind
-        writeln!(asm_txt, "\tmovq ${}, 8(%r12)", end_pc).ok();
-        writeln!(asm_txt, "\tmovq %rdx, 16(%r12)").ok(); // value tag
-        writeln!(asm_txt, "\tmovq %rax, 24(%r12)").ok(); // payload 
-        writeln!(asm_txt, "\tmovq %r12, %rax").ok();
-
-        /* Stack alignment for now.  */
-        writeln!(asm_txt, "\taddq $8, %rsp").ok();
-
-        /* Restore the native stack/register state and return to VM.  */
-        writeln!(asm_txt, "\tpopq %r14").ok();
-        writeln!(asm_txt, "\tpopq %r13").ok();
-        writeln!(asm_txt, "\tpopq %r12").ok();
-
-        insert_epilogue(&mut asm_txt);
-
-        writeln!(asm_txt, "\tret").ok();
-
-        writeln!(asm_txt).ok();
-
-        asm_txt.push_str(&body_txt);
+        /* Runtime error handler emission.  */
+        let rt_err_handler = self.mk_rt_err(&region_func.name);
+        rt_err_handler.emit(&mut asm_txt).map_err(|_| JitError {
+            msg: format!("jit entry emission failed"),
+        })?;
 
         eprintln!("[JIT ASM]\n{}", asm_txt);
 
@@ -185,7 +128,9 @@ impl JitCompiler {
                 assembler.diags().render(assembler.source_map(), false)
             );
 
-            panic!("JIT failed");
+            return Err(JitError {
+                msg: format!("JIT asm failed"),
+            });
         }
 
         let raw_bytes = assembler.section_bytes(SectionId(0));
@@ -217,14 +162,142 @@ impl JitCompiler {
 
             let entry = std::mem::transmute::<*mut u8, JitEntry>(mem);
 
-            Some(JitBlock {
+            Ok(Some(JitBlock {
                 entry,
                 start_pc,
                 end_pc,
                 mem,
                 len,
-            })
+            }))
         }
+    }
+
+    fn mk_entry(&mut self, body_name: &str, end_pc: usize) -> Vec<AsmInstr> {
+        let mut body = vec![AsmInstr::Label(format!("{body_name}_entry"))];
+
+        insert_prologue(&mut body);
+
+        /* Preserve callee-saved registers we use in our ABI.  */
+        body.extend(vec![
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
+        ]);
+
+        /* Stack alignment for now.  */
+        body.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Sub,
+            lhs: AsmOp::Imm(8),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+        });
+
+        /* Since `JitResult` is a large struct, it is passed by a hidden mem ptr.
+         *
+         * %rdi = hidden *mut JitResult ptr
+         * %rsi = *mut Vm
+         * %rdx = *const Rt  */
+        body.extend(vec![
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Di),
+                dst: AsmOp::Reg(AsmReg::R12),
+            },
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Si),
+                dst: AsmOp::Reg(AsmReg::R13),
+            },
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Dx),
+                dst: AsmOp::Reg(AsmReg::R14),
+            },
+        ]);
+
+        /* Execute the compiled region.  */
+        body.push(AsmInstr::Call {
+            target: body_name.to_owned(),
+        });
+
+        /* #[repr(C)]
+         * pub struct JitResult {
+         *     pub kind: u64,     // offset 0
+         *     pub next_pc: u64,  // offset 8
+         *     pub value: Value,  // offset 16
+         * }
+         *
+         * ...and `Value` is:
+         *      offset 16: tag
+         *      offset 24: payload
+         */
+        body.extend(vec![
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Cx),
+                dst: AsmOp::Mem(AsmReg::R12, 0),
+            }, // kind
+            AsmInstr::Mov {
+                src: AsmOp::Imm(end_pc as i64),
+                dst: AsmOp::Mem(AsmReg::R12, 8),
+            }, // next_pc
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Dx),
+                dst: AsmOp::Mem(AsmReg::R12, 16),
+            }, // value tag
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Ax),
+                dst: AsmOp::Mem(AsmReg::R12, 24),
+            }, // payload
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::R12),
+                dst: AsmOp::Reg(AsmReg::Ax),
+            },
+        ]);
+
+        /* Stack alignment for now.  */
+        body.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Add,
+            lhs: AsmOp::Imm(8),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+        });
+
+        /* Restore the native stack/register state and return to VM.  */
+        body.extend(vec![
+            AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
+            AsmInstr::Pop(AsmOp::Reg(AsmReg::R13)),
+            AsmInstr::Pop(AsmOp::Reg(AsmReg::R12)),
+        ]);
+
+        insert_epilogue(&mut body);
+
+        body.push(AsmInstr::Ret);
+
+        body
+    }
+
+    fn mk_rt_err(&mut self, body_name: &str) -> Vec<AsmInstr> {
+        /* Build the shared runtime error handler.
+         *
+         * Upon entry:
+         *      %rax = rt err code (zero-extended u32)
+         *
+         * Upon exit:
+         *      %rcx = JIT_ERROR
+         *      %rax = rt err code
+         *      %rdx = ValueTag::Void  */
+        let mut body = vec![
+            AsmInstr::Label(format!(".L{}_rt_error", body_name)),
+            AsmInstr::Mov {
+                src: AsmOp::Imm(JIT_ERROR as i64),
+                dst: AsmOp::Reg(AsmReg::Cx),
+            },
+            AsmInstr::Mov {
+                src: AsmOp::Imm(ValueTag::Void as u64 as i64),
+                dst: AsmOp::Reg(AsmReg::Dx),
+            },
+        ];
+
+        insert_epilogue(&mut body);
+
+        body.push(AsmInstr::Ret);
+
+        body
     }
 }
 
@@ -277,4 +350,17 @@ pub enum JitExit {
     Continue(usize), /* Carries next_pc.  */
     Ret(Value),
     Error(u32),
+}
+
+#[derive(Debug)]
+pub struct JitError {
+    pub msg: String,
+}
+
+impl std::error::Error for JitError {}
+
+impl std::fmt::Display for JitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "jit: {}", self.msg)
+    }
 }

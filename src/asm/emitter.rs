@@ -28,6 +28,16 @@ impl Emit for AsmFunc {
     }
 }
 
+impl Emit for Vec<AsmInstr> {
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
+        for instr in self {
+            instr.emit(f)?;
+        }
+
+        Ok(())
+    }
+}
+
 impl Emit for AsmInstr {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         write!(f, "{}", self)
@@ -55,6 +65,7 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::Jz { target } => writeln!(f, "je {}", target),
             AsmInstr::Jnz { target } => writeln!(f, "jne {}", target),
             AsmInstr::Jmp { target } => writeln!(f, "jmp {}", target),
+            AsmInstr::Call { target } => writeln!(f, "call {}", target),
             AsmInstr::CallRt { target } => {
                 let offset = target.offset();
 
@@ -72,26 +83,32 @@ impl std::fmt::Display for AsmInstr {
 impl std::fmt::Display for AsmOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            AsmOp::Reg(r) => match r {
-                AsmReg::Bp => write!(f, "%rbp"),
-                AsmReg::Sp => write!(f, "%rsp"),
-                AsmReg::Ax => write!(f, "%rax"),
-                AsmReg::R8 => write!(f, "%r8"),
-                AsmReg::R9 => write!(f, "%r9"),
-                AsmReg::R10 => write!(f, "%r10"),
-                AsmReg::R11 => write!(f, "%r11"),
-                AsmReg::R12 => write!(f, "%r12"),
-                AsmReg::R13 => write!(f, "%r13"),
-                AsmReg::Cx => write!(f, "%rcx"),
-                AsmReg::Dx => write!(f, "%rdx"),
-                AsmReg::Si => write!(f, "%rsi"),
-                AsmReg::Di => write!(f, "%rdi"),
-            },
-
+            AsmOp::Reg(r) => write!(f, "{r}"),
             AsmOp::Imm(n) => write!(f, "${}", n),
-
             AsmOp::Stack(offset) => write!(f, "{}(%rbp)", offset),
+            AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg),
             _ => unreachable!("got: {:?}", self),
+        }
+    }
+}
+
+impl std::fmt::Display for AsmReg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AsmReg::Bp => write!(f, "%rbp"),
+            AsmReg::Sp => write!(f, "%rsp"),
+            AsmReg::Ax => write!(f, "%rax"),
+            AsmReg::R8 => write!(f, "%r8"),
+            AsmReg::R9 => write!(f, "%r9"),
+            AsmReg::R10 => write!(f, "%r10"),
+            AsmReg::R11 => write!(f, "%r11"),
+            AsmReg::R12 => write!(f, "%r12"),
+            AsmReg::R13 => write!(f, "%r13"),
+            AsmReg::R14 => write!(f, "%r14"),
+            AsmReg::Cx => write!(f, "%rcx"),
+            AsmReg::Dx => write!(f, "%rdx"),
+            AsmReg::Si => write!(f, "%rsi"),
+            AsmReg::Di => write!(f, "%rdi"),
         }
     }
 }

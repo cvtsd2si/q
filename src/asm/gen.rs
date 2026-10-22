@@ -44,6 +44,9 @@ pub enum AsmInstr {
         target: String,
     },
     Label(String),
+    Call {
+        target: String,
+    },
     CallRt {
         target: RtFn,
     },
@@ -74,6 +77,7 @@ pub enum AsmOp {
     Reg(AsmReg),
     Imm(i64),
     Stack(isize),
+    Mem(AsmReg, isize),
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -87,6 +91,7 @@ pub enum AsmReg {
     R11,
     R12,
     R13,
+    R14,
     Cx,
     Dx,
     Di,
