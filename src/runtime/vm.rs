@@ -232,13 +232,13 @@ impl Vm {
                         continue;
                     }
 
-                    JitExit::Ret(val) => match self.handle_op_ret(val) {
-                        Some(v) => return Ok(v),
-                        None if stop_depth == Some(self.fp_stack.len()) => {
-                            return Ok(self.stack.pop().unwrap());
+                    JitExit::Ret(v) => {
+                        if let Some(v) = self.finish_ret(v, stop_depth) {
+                            return Ok(v);
                         }
-                        None => continue,
-                    },
+
+                        continue;
+                    }
 
                     JitExit::Error(code) => return Err(VmError::Runtime(code)),
                 }
@@ -274,26 +274,32 @@ impl Vm {
                     continue;
                 }
                 Op::Ret | Op::RetVoid => {
-                    let v = match op {
-                        Op::Ret => self.stack.pop().unwrap(),
-                        Op::RetVoid => Value {
+                    let v = if matches!(op, Op::Ret) {
+                        self.stack.pop().unwrap()
+                    } else {
+                        Value {
                             tag: ValueTag::Void,
                             payload: 0,
-                        },
-                        _ => unreachable!(),
+                        }
                     };
 
-                    match self.handle_op_ret(v) {
-                        Some(v) => return Ok(v),
-                        None if stop_depth == Some(self.fp_stack.len()) => {
-                            return Ok(self.stack.pop().unwrap());
-                        }
-                        None => continue,
+                    if let Some(v) = self.finish_ret(v, stop_depth) {
+                        return Ok(v);
                     }
+
+                    continue;
                 }
             };
 
             self.pc += 1;
+        }
+    }
+
+    fn finish_ret(&mut self, v: Value, stop_depth: Option<usize>) -> Option<Value> {
+        match self.handle_op_ret(v) {
+            Some(v) => Some(v),
+            None if stop_depth == Some(self.fp_stack.len()) => Some(self.stack.pop().unwrap()),
+            None => None,
         }
     }
 
