@@ -21,12 +21,7 @@ impl Fixup for AsmFunc {
     fn fixup(&self) -> Self::Output {
         AsmFunc {
             name: self.name.clone(),
-            body: self
-                .body
-                .iter()
-                .map(|instr| instr.fixup())
-                .flatten()
-                .collect(),
+            body: self.body.iter().flat_map(|instr| instr.fixup()).collect(),
             space: self.space,
         }
     }

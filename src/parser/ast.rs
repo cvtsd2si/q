@@ -118,20 +118,28 @@ impl Expression {
 
     pub fn ty(&self) -> Option<Type> {
         match self {
-            Expression::Literal { val, ty, span } => *ty,
-            Expression::Variable { name, ty, span } => *ty,
-            Expression::Binary {
-                kind,
-                lhs,
-                rhs,
+            Expression::Literal {
+                val: _,
                 ty,
-                span,
+                span: _,
+            } => *ty,
+            Expression::Variable {
+                name: _,
+                ty,
+                span: _,
+            } => *ty,
+            Expression::Binary {
+                kind: _,
+                lhs: _,
+                rhs: _,
+                ty,
+                span: _,
             } => *ty,
             Expression::Call {
-                target,
-                args,
+                target: _,
+                args: _,
                 ty,
-                span,
+                span: _,
             } => *ty,
         }
     }

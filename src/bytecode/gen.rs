@@ -1,7 +1,6 @@
 use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
-    asm::r#gen::AsmOp,
     ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
     parser::ast::{BinaryExpressionKind, Literal},
 };
@@ -90,7 +89,7 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
                 _ => {}
             }
 
-            f.ir_map.extend(std::iter::repeat(ir_idx).take(ops.len()));
+            f.ir_map.extend(std::iter::repeat_n(ir_idx, ops.len()));
 
             f.body.extend(ops);
         }
@@ -122,7 +121,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     IRVal::Const(_) => unreachable!(),
                 };
 
-                ctx.register::<String>(&name);
+                ctx.register::<String>(name);
 
                 Ok(vec![op])
             }
@@ -147,7 +146,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     IRVal::Const(_) => unreachable!(),
                 };
 
-                ctx.register::<String>(&name);
+                ctx.register::<String>(name);
 
                 Ok(vec![lhs, rhs, op])
             }
@@ -159,11 +158,11 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
             IRInstr::Print { val, .. } => Ok(vec![val.load_op(ctx), Op::Print]),
 
-            IRInstr::Jz { cond, target } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
+            IRInstr::Jz { cond, target: _ } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
 
-            IRInstr::Jmp { target } => Ok(vec![Op::Jmp(usize::MAX)]),
+            IRInstr::Jmp { target: _ } => Ok(vec![Op::Jmp(usize::MAX)]),
 
-            IRInstr::Label(target) => Ok(vec![]),
+            IRInstr::Label(_target) => Ok(vec![]),
 
             IRInstr::Call { target, args, dst } => {
                 let mut ops = vec![];
@@ -191,7 +190,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     IRVal::Const(_) => unreachable!(),
                 };
 
-                ctx.register::<String>(&dst_name);
+                ctx.register::<String>(dst_name);
 
                 Ok(ops)
             }
@@ -215,7 +214,7 @@ impl IRVal {
 
     fn store_op<U: Ctx>(&self, ctx: &U) -> Op {
         match self {
-            IRVal::Const(konst) => unreachable!(),
+            IRVal::Const(_konst) => unreachable!(),
             IRVal::Var(var) => {
                 if let Some(idx) = ctx.get::<String>(var) {
                     Op::Deepset(idx)

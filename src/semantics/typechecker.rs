@@ -19,6 +19,12 @@ impl Typechecker {
     }
 }
 
+impl Default for Typechecker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait Typecheck {
     type Output;
 
@@ -30,22 +36,21 @@ impl Typecheck for Program {
 
     fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
         self.block_items.iter().for_each(|block_item| {
-            if let BlockItem::Decl(decl) = block_item {
-                if let Declaration::Fn {
+            if let BlockItem::Decl(decl) = block_item
+                && let Declaration::Fn {
                     name,
                     ret,
                     params,
-                    body,
+                    body: _,
                 } = decl
-                {
-                    typechecker.funcs.insert(
-                        name.to_owned(),
-                        FnSignature {
-                            params: params.iter().map(|p| p.ty).collect(),
-                            ret_ty: *ret,
-                        },
-                    );
-                }
+            {
+                typechecker.funcs.insert(
+                    name.to_owned(),
+                    FnSignature {
+                        params: params.iter().map(|p| p.ty).collect(),
+                        ret_ty: *ret,
+                    },
+                );
             }
         });
 
@@ -141,7 +146,7 @@ fn typecheck_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, TypecheckerError> {
-    let old_sym_table = std::mem::replace(&mut typechecker.sym_table, HashMap::new());
+    let old_sym_table = std::mem::take(&mut typechecker.sym_table);
 
     let typechecked_params = params
         .into_iter()
@@ -177,14 +182,14 @@ fn typecheck_let(
         name.clone(),
         Symbol {
             name: name.clone(),
-            ty: ty.clone(),
+            ty,
         },
     );
 
     Ok(Statement::Let {
         name,
         init: typechecked_init,
-        ty: ty.clone(),
+        ty,
     })
 }
 
@@ -202,15 +207,15 @@ fn typecheck_ret(
     let actual_ty = typechecked_expr.ty();
     let expected_ty = ret_ty;
 
-    if let Some(expected) = expected_ty {
-        if actual_ty != Some(expected) {
-            return Err(TypecheckerError {
-                msg: format!(
-                    "type mismatch: got {:?} and wanted {:?}",
-                    actual_ty, expected_ty
-                ),
-            });
-        }
+    if let Some(expected) = expected_ty
+        && actual_ty != Some(expected)
+    {
+        return Err(TypecheckerError {
+            msg: format!(
+                "type mismatch: got {:?} and wanted {:?}",
+                actual_ty, expected_ty
+            ),
+        });
     }
 
     Ok(Statement::Ret {
@@ -320,7 +325,7 @@ fn typecheck_expr(
     match expr {
         Expression::Literal { val, ty, span } => typecheck_literal(val, ty, expected_ty, span),
 
-        Expression::Variable { name, ty, span } => {
+        Expression::Variable { name, ty: _, span } => {
             let sym = typechecker.sym_table.get(&name);
 
             if sym.is_none() {
@@ -333,7 +338,7 @@ fn typecheck_expr(
 
             if sym.ty.is_none() {
                 return Err(TypecheckerError {
-                    msg: format!("Referenced an unknown type."),
+                    msg: "Referenced an unknown type.".to_string(),
                 });
             }
 
@@ -348,7 +353,7 @@ fn typecheck_expr(
             kind,
             lhs,
             rhs,
-            ty,
+            ty: _,
             span,
         } => {
             let lhs_hint = known_ty(typechecker, &lhs)?;
@@ -387,7 +392,7 @@ fn typecheck_expr(
         Expression::Call {
             target,
             args,
-            ty,
+            ty: _,
             span,
         } => {
             let s = typechecker
@@ -398,13 +403,13 @@ fn typecheck_expr(
                     msg: format!("Unknown fn: {target}"),
                 })?;
 
-            if let Some(expected) = expected_ty {
-                if s.ret_ty != Some(expected) {
-                    let t = s.ret_ty.clone();
-                    return Err(TypecheckerError {
-                        msg: format!("Expected {expected:?}, but fn {target} returns {t:?}"),
-                    });
-                }
+            if let Some(expected) = expected_ty
+                && s.ret_ty != Some(expected)
+            {
+                let t = s.ret_ty;
+                return Err(TypecheckerError {
+                    msg: format!("Expected {expected:?}, but fn {target} returns {t:?}"),
+                });
             }
 
             if args.len() != s.params.len() {
@@ -455,15 +460,15 @@ fn typecheck_literal(
     expected_ty: Option<Type>,
     span: Span,
 ) -> Result<Expression, TypecheckerError> {
-    if let (Some(explicit), Some(expected)) = (explicit_ty, expected_ty) {
-        if explicit != expected {
-            return Err(TypecheckerError {
-                msg: format!("got: {explicit:?}, expected: {expected:?}"),
-            });
-        }
+    if let (Some(explicit), Some(expected)) = (explicit_ty, expected_ty)
+        && explicit != expected
+    {
+        return Err(TypecheckerError {
+            msg: format!("got: {explicit:?}, expected: {expected:?}"),
+        });
     }
 
-    let ty = expected_ty.or(explicit_ty).unwrap_or_else(|| match &val {
+    let ty = expected_ty.or(explicit_ty).unwrap_or(match &val {
         LiteralVal::Bool(_) => Type::Boolean,
         LiteralVal::Integer(_) => Type::Int32,
         LiteralVal::Float(_) => Type::Float64,
@@ -487,12 +492,12 @@ fn typecheck_init(
 
     let actual_ty = typechecked_init.ty();
 
-    if let Some(expected) = expected_ty {
-        if actual_ty != Some(expected) {
-            return Err(TypecheckerError {
-                msg: format!("Expected {:?}, got {:?}", expected_ty, actual_ty),
-            });
-        }
+    if let Some(expected) = expected_ty
+        && actual_ty != Some(expected)
+    {
+        return Err(TypecheckerError {
+            msg: format!("Expected {:?}, got {:?}", expected_ty, actual_ty),
+        });
     }
 
     Ok(typechecked_init)
@@ -506,13 +511,13 @@ impl Typecheck for Param {
             self.name.clone(),
             Symbol {
                 name: self.name.clone(),
-                ty: self.ty.clone().into(),
+                ty: self.ty.into(),
             },
         );
 
         Ok(Param {
             name: self.name.clone(),
-            ty: self.ty.clone(),
+            ty: self.ty,
         })
     }
 }

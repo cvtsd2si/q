@@ -36,7 +36,7 @@ impl JitCompiler {
         ir: &IRProg,
         func: usize,
         /* What code to compile?  */
-        start_ir: usize,
+        _start_ir: usize,
         end_ir: usize,
         /* What interpreted bytecode this native code replaces?  */
         start_pc: usize,
@@ -74,7 +74,7 @@ impl JitCompiler {
             space: 0,
         };
         entry.emit(&mut asm_txt).map_err(|_| JitError {
-            msg: format!("jit entry emission failed"),
+            msg: "jit entry emission failed".to_string(),
         })?;
 
         let mut ctx = CodegenContext::new();
@@ -85,12 +85,12 @@ impl JitCompiler {
 
         /* Compiled fn emission.  */
         let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
-            msg: format!("jit codegen failed"),
+            msg: "jit codegen failed".to_string(),
         })?;
         let mut asm_func = asm_func.regalloc().fixup();
 
         /* Backpatch the amount of stack space required.  */
-        if let Some(instr) = asm_func.body.iter_mut().nth(2) {
+        if let Some(instr) = asm_func.body.get_mut(2) {
             match instr {
                 AsmInstr::Bin {
                     kind: AsmInstrBinKind::Sub,
@@ -103,8 +103,8 @@ impl JitCompiler {
             }
         }
 
-        asm_func.emit(&mut asm_txt).map_err(|e| JitError {
-            msg: format!("jit code emission failed"),
+        asm_func.emit(&mut asm_txt).map_err(|_e| JitError {
+            msg: "jit code emission failed".to_string(),
         })?;
 
         /* Runtime error handler emission.  */
@@ -114,7 +114,7 @@ impl JitCompiler {
             space: 0,
         };
         rt_err_handler.emit(&mut asm_txt).map_err(|_| JitError {
-            msg: format!("jit entry emission failed"),
+            msg: "jit entry emission failed".to_string(),
         })?;
 
         eprintln!("[JIT ASM]\n{}", asm_txt);
@@ -131,7 +131,7 @@ impl JitCompiler {
             );
 
             return Err(JitError {
-                msg: format!("JIT asm failed"),
+                msg: "JIT asm failed".to_string(),
             });
         }
 
@@ -376,6 +376,12 @@ impl JitCompiler {
         body.push(AsmInstr::Ret);
 
         body
+    }
+}
+
+impl Default for JitCompiler {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

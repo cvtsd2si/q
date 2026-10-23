@@ -16,6 +16,12 @@ impl LabelCollector {
     }
 }
 
+impl Default for LabelCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait LabelCollect {
     type Output;
 

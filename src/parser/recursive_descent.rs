@@ -61,7 +61,7 @@ impl<'src> Parser<'src> {
             }),
             None => Err(ParserError {
                 src: self.src.to_string(),
-                msg: format!("Encountered the end of the token stream."),
+                msg: "Encountered the end of the token stream.".to_string(),
                 span: Span {
                     start: self.src.len(),
                     end: self.src.len(),
@@ -97,7 +97,7 @@ impl<'src> Parser<'src> {
             },
             None => Err(ParserError {
                 src: self.src.to_string(),
-                msg: format!("Encountered the end of the token stream."),
+                msg: "Encountered the end of the token stream.".to_string(),
                 span: Span {
                     start: self.src.len(),
                     end: self.src.len(),
@@ -508,7 +508,11 @@ impl<'src> Parser<'src> {
         loop {
             if self.check(TokenKind::LParen) {
                 let target = match expr {
-                    Expression::Variable { name, ty, span } => name,
+                    Expression::Variable {
+                        name,
+                        ty: _,
+                        span: _,
+                    } => name,
                     _ => unreachable!(),
                 };
 

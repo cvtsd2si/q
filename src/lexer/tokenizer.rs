@@ -130,7 +130,7 @@ impl<'src> Tokenizer<'src> {
         while let Some(ch) = self.peek_char(0) {
             if ch == '_' {
                 self.chars.next();
-            } else if ch.to_digit(radix).is_some() {
+            } else if ch.is_digit(radix) {
                 has_digit = true;
                 self.chars.next();
             } else {
@@ -179,7 +179,7 @@ impl<'src> Tokenizer<'src> {
                 let end = self.position();
                 return Err(TokenizerError {
                     src: self.src.to_string(),
-                    msg: format!("Expected at least one digit after numeric prefix."),
+                    msg: "Expected at least one digit after numeric prefix.".to_string(),
                     span: Span { start, end },
                 });
             }
@@ -221,7 +221,7 @@ impl<'src> Tokenizer<'src> {
 
                     return Err(TokenizerError {
                         src: self.src.to_string(),
-                        msg: format!("Expected at least one digit in numeric exponent"),
+                        msg: "Expected at least one digit in numeric exponent".to_string(),
                         span: Span { start, end },
                     });
                 }
@@ -251,7 +251,7 @@ impl<'src> Tokenizer<'src> {
                     None => {
                         return Err(TokenizerError {
                             src: self.src.to_string(),
-                            msg: format!("Unknown numeric suffix."),
+                            msg: "Unknown numeric suffix.".to_string(),
                             span: Span {
                                 start: value_end,
                                 end,
@@ -264,7 +264,7 @@ impl<'src> Tokenizer<'src> {
                 if kind == NumberKind::Float && !suffix.is_float() {
                     return Err(TokenizerError {
                         src: self.src.to_string(),
-                        msg: format!("A floating point literal cannot have an integer suffix."),
+                        msg: "A floating point literal cannot have an integer suffix.".to_string(),
                         span: Span {
                             start: value_end,
                             end,
@@ -275,7 +275,7 @@ impl<'src> Tokenizer<'src> {
                 if radix != 10 && suffix.is_float() {
                     return Err(TokenizerError {
                         src: self.src.to_string(),
-                        msg: format!("A non-decimal integer cannot have a float suffix."),
+                        msg: "A non-decimal integer cannot have a float suffix.".to_string(),
                         span: Span {
                             start: value_end,
                             end,
@@ -294,7 +294,7 @@ impl<'src> Tokenizer<'src> {
 
             Ok(Token {
                 kind: TokenKind::Number(NumberToken {
-                    kind: kind,
+                    kind,
                     value_span: Span {
                         start,
                         end: value_end,

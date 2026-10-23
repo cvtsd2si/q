@@ -400,7 +400,7 @@ impl IRInstr {
 }
 
 impl Codegen<AsmOp, CodegenContext> for IRVal {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
+    fn codegen(&self, _ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
         match self {
             IRVal::Const(konst) => match konst {
                 Literal::UInt8(uint8) => Ok(AsmOp::Imm(*uint8 as i64)),

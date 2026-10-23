@@ -1,13 +1,10 @@
-use std::{
-    any::TypeId, backtrace::BacktraceStatus, collections::HashMap, sync::atomic::AtomicU64,
-    thread::available_parallelism,
-};
+use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
 
 use crate::{
     bytecode::r#gen::BytecodeFunc,
     parser::ast::{
-        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param,
-        Program, Statement, Type,
+        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program,
+        Statement, Type,
     },
 };
 
@@ -27,6 +24,12 @@ impl CodegenContext {
             locals: HashMap::new(),
             funcs: HashMap::new(),
         }
+    }
+}
+
+impl Default for CodegenContext {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -126,7 +129,7 @@ pub fn irfy(ast: &Program) -> IRProg {
 fn irfy_block_item(ir_prog: &mut IRProg, block_item: &BlockItem) {
     match block_item {
         BlockItem::Decl(decl) => irfy_decl(ir_prog, decl),
-        BlockItem::Stmt(stmt) => unimplemented!(),
+        BlockItem::Stmt(_stmt) => unimplemented!(),
     }
 }
 
@@ -142,7 +145,7 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
                 name: name.to_owned(),
                 params: params.to_vec(),
                 body: vec![],
-                ret_ty: ret.clone(),
+                ret_ty: *ret,
             };
 
             if let Statement::Block { body } = body {
@@ -162,7 +165,7 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
 
 fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
     match stmt {
-        Statement::Let { name, init, ty } => {
+        Statement::Let { name, init, ty: _ } => {
             let r = irfy_expr_and_cvt(instrs, init);
             let dst = IRVal::Var(name.to_string());
 
@@ -403,19 +406,23 @@ fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
 
 fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
     match expr {
-        Expression::Literal { val, ty, span } => {
+        Expression::Literal { val, ty, span: _ } => {
             let ty = ty.unwrap();
             let literal = Literal::try_from((val, ty)).unwrap();
 
             ExpRes::Plain(IRVal::Const(literal))
         }
-        Expression::Variable { name, ty, span } => ExpRes::Plain(IRVal::Var(name.to_owned())),
+        Expression::Variable {
+            name,
+            ty: _,
+            span: _,
+        } => ExpRes::Plain(IRVal::Var(name.to_owned())),
         Expression::Binary {
             kind,
             lhs,
             rhs,
-            ty,
-            span,
+            ty: _,
+            span: _,
         } => {
             let lhs = irfy_expr_and_cvt(instrs, lhs);
             let rhs = irfy_expr_and_cvt(instrs, rhs);
@@ -435,8 +442,8 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         Expression::Call {
             target,
             args,
-            ty,
-            span,
+            ty: _,
+            span: _,
         } => {
             let ir_args = args
                 .iter()

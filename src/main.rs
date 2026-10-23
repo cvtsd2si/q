@@ -14,7 +14,7 @@ use structopt::StructOpt;
 fn main() {
     let opts = Opt::from_args();
     match run(&opts) {
-        Ok(r) => std::process::exit(r as i32),
+        Ok(r) => std::process::exit(r),
         Err(e) => {
             eprintln!("err: {}", e);
             std::process::exit(1);

@@ -29,6 +29,12 @@ impl LoopLabeler {
     }
 }
 
+impl Default for LoopLabeler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub trait LoopLabel {
     type Output;
 

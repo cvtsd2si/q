@@ -18,7 +18,7 @@ impl RegAllocator {
     pub fn new() -> Self {
         Self {
             allocatable_regs:
-                vec![AsmReg::R8, AsmReg::R10, AsmReg::R11] /* R9 reserved for fixup scratch */
+                [AsmReg::R8, AsmReg::R10, AsmReg::R11] /* R9 reserved for fixup scratch */
                     .iter()
                     .map(|r| AllocatableReg {
                         reg: r.to_owned(),
@@ -101,6 +101,12 @@ impl RegAllocator {
         let size = self.current_offset.unsigned_abs();
 
         size.div_ceil(16) * 16
+    }
+}
+
+impl Default for RegAllocator {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

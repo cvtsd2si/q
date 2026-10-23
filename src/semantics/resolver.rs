@@ -17,6 +17,12 @@ impl Resolver {
     }
 }
 
+impl Default for Resolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Var {
     pub name: String,
@@ -131,7 +137,7 @@ impl Resolve for Param {
 
         Ok(Param {
             name: uniq_name,
-            ty: self.ty.clone(),
+            ty: self.ty,
         })
     }
 }
@@ -143,7 +149,7 @@ fn resolve_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, ResolverError> {
-    let prev = std::mem::replace(&mut resolver.var_map, HashMap::new());
+    let prev = std::mem::take(&mut resolver.var_map);
 
     let resolved_params = params
         .into_iter()
@@ -169,7 +175,7 @@ fn resolve_let(
 ) -> Result<Statement, ResolverError> {
     let uniq_name = mkuniq(&name);
 
-    let resolved_init = resolve_expr(resolver, Some(init))?;
+    let resolved_init = resolve_expr(resolver, init)?;
 
     resolver.var_map.insert(
         name,
@@ -190,19 +196,15 @@ fn resolve_ret(
     value: Option<Expression>,
     ret_ty: Option<Type>,
 ) -> Result<Statement, ResolverError> {
-    if value.is_some() {
-        Ok(Statement::Ret {
-            value: Some(resolve_expr(resolver, value)?),
-            ret_ty: ret_ty,
-        })
-    } else {
-        Ok(Statement::Ret { value, ret_ty })
-    }
+    Ok(Statement::Ret {
+        value: value.map(|v| resolve_expr(resolver, v)).transpose()?,
+        ret_ty,
+    })
 }
 
 fn resolve_print(resolver: &mut Resolver, value: Expression) -> Result<Statement, ResolverError> {
     Ok(Statement::Print {
-        value: resolve_expr(resolver, Some(value))?,
+        value: resolve_expr(resolver, value)?,
     })
 }
 
@@ -213,7 +215,7 @@ fn resolve_if(
     else_block: Option<Box<Statement>>,
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::If {
-        cond: resolve_expr(resolver, Some(cond))?,
+        cond: resolve_expr(resolver, cond)?,
         then_block: then_block.resolve(resolver)?.into(),
         else_block: else_block
             .map(|block| block.resolve(resolver).map(Box::new))
@@ -228,7 +230,7 @@ fn resolve_while(
     label: Option<String>,
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::While {
-        cond: resolve_expr(resolver, Some(cond))?,
+        cond: resolve_expr(resolver, cond)?,
         body: body.resolve(resolver)?.into(),
         label,
     })
@@ -241,7 +243,7 @@ fn resolve_do_while(
     label: Option<String>,
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::DoWhile {
-        cond: resolve_expr(resolver, Some(cond))?,
+        cond: resolve_expr(resolver, cond)?,
         body: body.resolve(resolver)?.into(),
         label,
     })
@@ -259,8 +261,8 @@ fn resolve_for(
         init: init
             .map(|i| (*i).resolve(resolver).map(Box::new))
             .transpose()?,
-        cond: resolve_expr(resolver, cond)?.into(),
-        advancement: resolve_expr(resolver, advancement)?.into(),
+        cond: cond.map(|c| resolve_expr(resolver, c)).transpose()?,
+        advancement: advancement.map(|a| resolve_expr(resolver, a)).transpose()?,
         body: (*body).resolve(resolver)?.into(),
         label,
     })
@@ -286,15 +288,8 @@ fn resolve_block(
         .collect::<Result<Vec<_>, _>>()
 }
 
-fn resolve_expr(
-    resolver: &mut Resolver,
-    expr: Option<Expression>,
-) -> Result<Expression, ResolverError> {
-    if expr.is_none() {
-        return Ok(expr.unwrap());
-    }
-
-    match expr.unwrap() {
+fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression, ResolverError> {
+    match expr {
         Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
         Expression::Variable { name, ty, span } => {
             let resolved_name = resolver.var_map.get(&name);
@@ -319,8 +314,8 @@ fn resolve_expr(
             span,
         } => Ok(Expression::Binary {
             kind,
-            lhs: resolve_expr(resolver, Some(*lhs))?.into(),
-            rhs: resolve_expr(resolver, Some(*rhs))?.into(),
+            lhs: resolve_expr(resolver, *lhs)?.into(),
+            rhs: resolve_expr(resolver, *rhs)?.into(),
             ty,
             span,
         }),
@@ -334,7 +329,7 @@ fn resolve_expr(
             target,
             args: args
                 .into_iter()
-                .map(|arg| resolve_expr(resolver, Some(arg)))
+                .map(|arg| resolve_expr(resolver, arg))
                 .collect::<Result<Vec<_>, _>>()?,
             ty,
             span,
