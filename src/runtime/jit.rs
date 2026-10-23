@@ -48,6 +48,9 @@ impl JitCompiler {
 
         let ir_func = ir.funcs.get(func).unwrap();
 
+        /* FIXME: currently compiling entire funcs  */
+        let start_ir = 0;
+
         let region = &ir_func.body[start_ir..end_ir];
 
         /* Reject anything that does not end up in language-level `return`.  */

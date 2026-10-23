@@ -1,6 +1,6 @@
 use crate::lexer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
     Statement, Type,
 };
 use crate::parser::error::ParserError;
@@ -110,9 +110,16 @@ impl<'src> Parser<'src> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
-                TokenKind::Ret | TokenKind::Let | TokenKind::Print | TokenKind::If => {
-                    Ok(BlockItem::Stmt(self.parse_stmt()?))
-                }
+                TokenKind::Ret
+                | TokenKind::Let
+                | TokenKind::Print
+                | TokenKind::If
+                | TokenKind::While
+                | TokenKind::Do
+                | TokenKind::For
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Goto => Ok(BlockItem::Stmt(self.parse_stmt()?)),
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -136,9 +143,24 @@ impl<'src> Parser<'src> {
                 TokenKind::Ret => Ok(self.parse_ret()?),
                 TokenKind::Print => Ok(self.parse_print()?),
                 TokenKind::If => Ok(self.parse_if()?),
+                TokenKind::While => Ok(self.parse_while()?),
+                TokenKind::Do => Ok(self.parse_do_while()?),
+                TokenKind::For => Ok(self.parse_for()?),
+                TokenKind::Loop => Ok(self.parse_loop()?),
+                TokenKind::Break => Ok(self.parse_break()?),
+                TokenKind::Continue => Ok(self.parse_continue()?),
+                TokenKind::Goto => Ok(self.parse_goto()?),
                 TokenKind::LBrace => Ok(Statement::Block {
                     body: self.parse_block()?,
                 }),
+                TokenKind::Identifier
+                    if self
+                        .tokens
+                        .front()
+                        .is_some_and(|t| t.kind == TokenKind::Colon) =>
+                {
+                    Ok(self.parse_labeled()?)
+                }
                 _ => unimplemented!("got: {:?}", self.curr),
             },
             None => unreachable!(),
@@ -294,6 +316,127 @@ impl<'src> Parser<'src> {
             cond,
             then_block,
             else_block,
+        })
+    }
+
+    fn parse_while(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::While)?;
+
+        self.consume(TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.consume(TokenKind::RParen)?;
+
+        let body = self.parse_stmt()?.into();
+
+        Ok(Statement::While {
+            cond,
+            body,
+            label: None,
+        })
+    }
+
+    fn parse_do_while(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Do)?;
+
+        let body = self.parse_stmt()?.into();
+
+        self.consume(TokenKind::While)?;
+
+        self.consume(TokenKind::LParen)?;
+        let cond = self.parse_expr()?;
+        self.consume(TokenKind::RParen)?;
+
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::DoWhile {
+            cond,
+            body,
+            label: None,
+        })
+    }
+
+    fn parse_for(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::For)?;
+
+        self.consume(TokenKind::LParen)?;
+
+        let init = if self.check(TokenKind::Semicolon) {
+            self.consume(TokenKind::Semicolon)?;
+            None
+        } else {
+            let init = self.parse_let()?;
+            Some(init.into())
+        };
+
+        let cond = if self.check(TokenKind::Semicolon) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+
+        self.consume(TokenKind::Semicolon)?;
+
+        let advancement = if self.check(TokenKind::RParen) {
+            None
+        } else {
+            Some(self.parse_expr()?)
+        };
+
+        self.consume(TokenKind::RParen)?;
+
+        let body = self.parse_stmt()?.into();
+
+        Ok(Statement::For {
+            init,
+            cond,
+            advancement,
+            body,
+            label: None,
+        })
+    }
+
+    fn parse_loop(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Loop)?;
+        let body = self.parse_stmt()?.into();
+        Ok(Statement::Loop { body, label: None })
+    }
+
+    fn parse_break(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Break)?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Break { label: None })
+    }
+
+    fn parse_continue(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Continue)?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Continue { label: None })
+    }
+
+    fn parse_goto(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Goto)?;
+
+        let label = self.consume(TokenKind::Identifier)?;
+
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Goto {
+            label: self.src[label.span.start..label.span.end].to_string(),
+        })
+    }
+
+    fn parse_labeled(&mut self) -> Result<Statement, ParserError> {
+        let name = self.consume(TokenKind::Identifier)?;
+
+        self.consume(TokenKind::Colon)?;
+
+        let stmt = self.parse_stmt()?;
+
+        Ok(Statement::Labeled {
+            name: self.src[name.span.start..name.span.end].to_string(),
+            stmt: stmt.into(),
         })
     }
 

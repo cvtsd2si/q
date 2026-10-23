@@ -95,6 +95,23 @@ impl Resolve for Statement {
             Statement::Block { body } => Ok(Statement::Block {
                 body: resolve_block(resolver, body)?,
             }),
+            Statement::While { cond, body, label } => resolve_while(resolver, cond, body, label),
+            Statement::DoWhile { cond, body, label } => {
+                resolve_do_while(resolver, cond, body, label)
+            }
+            Statement::For {
+                init,
+                cond,
+                advancement,
+                body,
+                label,
+            } => resolve_for(resolver, init, cond, advancement, body, label),
+            Statement::Loop { body, label } => resolve_loop(resolver, body, label),
+            Statement::Labeled { name, stmt } => Ok(Statement::Labeled {
+                name,
+                stmt: stmt.resolve(resolver)?.into(),
+            }),
+            _ => Ok(self),
         }
     }
 }
@@ -201,6 +218,62 @@ fn resolve_if(
         else_block: else_block
             .map(|block| block.resolve(resolver).map(Box::new))
             .transpose()?,
+    })
+}
+
+fn resolve_while(
+    resolver: &mut Resolver,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, ResolverError> {
+    Ok(Statement::While {
+        cond: resolve_expr(resolver, Some(cond))?,
+        body: body.resolve(resolver)?.into(),
+        label,
+    })
+}
+
+fn resolve_do_while(
+    resolver: &mut Resolver,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, ResolverError> {
+    Ok(Statement::DoWhile {
+        cond: resolve_expr(resolver, Some(cond))?,
+        body: body.resolve(resolver)?.into(),
+        label,
+    })
+}
+
+fn resolve_for(
+    resolver: &mut Resolver,
+    init: Option<Box<Statement>>,
+    cond: Option<Expression>,
+    advancement: Option<Expression>,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, ResolverError> {
+    Ok(Statement::For {
+        init: init
+            .map(|i| (*i).resolve(resolver).map(Box::new))
+            .transpose()?,
+        cond: resolve_expr(resolver, cond)?.into(),
+        advancement: resolve_expr(resolver, advancement)?.into(),
+        body: (*body).resolve(resolver)?.into(),
+        label,
+    })
+}
+
+fn resolve_loop(
+    resolver: &mut Resolver,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, ResolverError> {
+    Ok(Statement::Loop {
+        body: (*body).resolve(resolver)?.into(),
+        label,
     })
 }
 

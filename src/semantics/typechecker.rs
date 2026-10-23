@@ -105,6 +105,31 @@ impl Typecheck for Statement {
             Statement::Block { body } => Ok(Statement::Block {
                 body: typecheck_block(typechecker, body)?,
             }),
+
+            Statement::While { cond, body, label } => {
+                typecheck_while(typechecker, cond, body, label)
+            }
+
+            Statement::DoWhile { cond, body, label } => {
+                typecheck_do_while(typechecker, cond, body, label)
+            }
+
+            Statement::For {
+                init,
+                cond,
+                advancement,
+                body,
+                label,
+            } => typecheck_for(typechecker, init, cond, advancement, body, label),
+
+            Statement::Loop { body, label } => typecheck_loop(typechecker, body, label),
+
+            Statement::Labeled { name, stmt } => Ok(Statement::Labeled {
+                name,
+                stmt: stmt.typecheck(typechecker)?.into(),
+            }),
+
+            _ => Ok(self),
         }
     }
 }
@@ -215,6 +240,66 @@ fn typecheck_if(
         else_block: else_block
             .map(|block| block.typecheck(typechecker).map(Box::new))
             .transpose()?,
+    })
+}
+
+fn typecheck_while(
+    typechecker: &mut Typechecker,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, TypecheckerError> {
+    Ok(Statement::While {
+        cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
+        body: body.typecheck(typechecker)?.into(),
+        label,
+    })
+}
+
+fn typecheck_do_while(
+    typechecker: &mut Typechecker,
+    cond: Expression,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, TypecheckerError> {
+    Ok(Statement::DoWhile {
+        cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
+        body: body.typecheck(typechecker)?.into(),
+        label,
+    })
+}
+
+fn typecheck_for(
+    typechecker: &mut Typechecker,
+    init: Option<Box<Statement>>,
+    cond: Option<Expression>,
+    advancement: Option<Expression>,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, TypecheckerError> {
+    Ok(Statement::For {
+        init: init
+            .map(|i| i.typecheck(typechecker).map(Box::new))
+            .transpose()?,
+        cond: cond
+            .map(|c| typecheck_expr(typechecker, c, Some(Type::Boolean)))
+            .transpose()?,
+        advancement: advancement
+            .map(|a| typecheck_expr(typechecker, a, None))
+            .transpose()?,
+        body: (*body).typecheck(typechecker)?.into(),
+        label,
+    })
+}
+
+fn typecheck_loop(
+    typechecker: &mut Typechecker,
+    body: Box<Statement>,
+    label: Option<String>,
+) -> Result<Statement, TypecheckerError> {
+    Ok(Statement::Loop {
+        body: (*body).typecheck(typechecker)?.into(),
+        label,
     })
 }
 
@@ -495,6 +580,8 @@ fn always_returns(stmt: &Statement) -> bool {
             else_block: Some(else_block),
             ..
         } => always_returns(then_block) && always_returns(else_block),
+
+        Statement::Labeled { stmt, .. } => always_returns(stmt),
 
         _ => false,
     }

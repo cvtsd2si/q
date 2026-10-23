@@ -1,4 +1,7 @@
-use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
+use std::{
+    any::TypeId, backtrace::BacktraceStatus, collections::HashMap, sync::atomic::AtomicU64,
+    thread::available_parallelism,
+};
 
 use crate::{
     bytecode::r#gen::BytecodeFunc,
@@ -224,6 +227,164 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             for stmt in body {
                 irfy_stmt(instrs, stmt);
             }
+        }
+
+        Statement::While { cond, body, label } => {
+            let label = label.as_ref().unwrap();
+
+            let break_label = format!("{label}.break");
+            let continue_label = format!("{label}.continue");
+
+            instrs.push(IRInstr::Label(continue_label.clone()));
+
+            /* eval the cond at the start of each iteration  */
+            let cond = irfy_expr_and_cvt(instrs, cond);
+
+            /* exit the loop if the cond is false  */
+            instrs.push(IRInstr::Jz {
+                cond,
+                target: break_label.clone(),
+            });
+
+            /* exec the loop body  */
+            irfy_stmt(instrs, body);
+
+            /* start the next iteration  */
+            instrs.push(IRInstr::Jmp {
+                target: continue_label,
+            });
+
+            /* resume execution here after exiting the loop  */
+            instrs.push(IRInstr::Label(break_label));
+        }
+
+        Statement::DoWhile { cond, body, label } => {
+            let label = label.as_ref().unwrap();
+
+            let start_label = format!("{label}.start");
+            let break_label = format!("{label}.break");
+            let continue_label = format!("{label}.continue");
+
+            instrs.push(IRInstr::Label(start_label.clone()));
+
+            /* exec the loop body at least once */
+            irfy_stmt(instrs, body);
+
+            /* continue stmts jmp here to eval the cond  */
+            instrs.push(IRInstr::Label(continue_label.clone()));
+
+            /* eval the cond  */
+            let cond = irfy_expr_and_cvt(instrs, cond);
+
+            /* exit the loop if the cond is false  */
+            instrs.push(IRInstr::Jz {
+                cond,
+                target: break_label.clone(),
+            });
+
+            /* start the next iteration  */
+            instrs.push(IRInstr::Jmp {
+                target: continue_label,
+            });
+
+            /* resume execution here after exiting the loop  */
+            instrs.push(IRInstr::Label(break_label));
+        }
+
+        Statement::For {
+            init,
+            cond,
+            advancement,
+            body,
+            label,
+        } => {
+            let label = label.as_ref().unwrap();
+
+            let start_label = format!("{label}.start");
+            let break_label = format!("{label}.break");
+            let continue_label = format!("{label}.continue");
+
+            /* exec the init once  */
+            if let Some(init) = init {
+                irfy_stmt(instrs, init);
+            }
+
+            /* eval the cond at the start of each iteration  */
+            instrs.push(IRInstr::Label(start_label.clone()));
+
+            if let Some(cond) = cond {
+                let cond = irfy_expr_and_cvt(instrs, cond);
+
+                instrs.push(IRInstr::Jz {
+                    cond,
+                    target: break_label.clone(),
+                });
+            }
+
+            /* exec the loop body  */
+            irfy_stmt(instrs, body);
+
+            /* continue stmts jmp here, before the advancement  */
+            instrs.push(IRInstr::Label(continue_label));
+
+            /* exec the advancement  */
+            if let Some(advancement) = advancement {
+                irfy_expr(instrs, advancement);
+            }
+
+            /* re-eval the cond  */
+            instrs.push(IRInstr::Jmp {
+                target: start_label,
+            });
+
+            /* resume execution here  */
+            instrs.push(IRInstr::Label(break_label));
+        }
+
+        Statement::Loop { body, label } => {
+            let label = label.as_ref().unwrap();
+
+            let break_label = format!("{label}.break");
+            let continue_label = format!("{label}.continue");
+
+            /* start the loop body  */
+            instrs.push(IRInstr::Label(continue_label.clone()));
+
+            /* exec the body  */
+            irfy_stmt(instrs, body);
+
+            /* repeat indefinitely  */
+            instrs.push(IRInstr::Jmp {
+                target: continue_label,
+            });
+
+            /* resume execution here  */
+            instrs.push(IRInstr::Label(break_label));
+        }
+
+        Statement::Break { label } => {
+            let label = label.as_ref().unwrap();
+            instrs.push(IRInstr::Jmp {
+                target: format!("{label}.break"),
+            });
+        }
+
+        Statement::Continue { label } => {
+            let label = label.as_ref().unwrap();
+            instrs.push(IRInstr::Jmp {
+                target: format!("{label}.continue"),
+            });
+        }
+
+        Statement::Goto { label } => {
+            instrs.push(IRInstr::Jmp {
+                target: format!("goto.{label}"),
+            });
+        }
+
+        Statement::Labeled { name, stmt } => {
+            instrs.push(IRInstr::Label(format!("goto.{name}")));
+            irfy_stmt(instrs, stmt);
         }
     }
 }

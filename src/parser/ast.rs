@@ -43,6 +43,40 @@ pub enum Statement {
     Block {
         body: Vec<Statement>,
     },
+    While {
+        cond: Expression,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    DoWhile {
+        cond: Expression,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    For {
+        init: Option<Box<Statement>>,
+        cond: Option<Expression>,
+        advancement: Option<Expression>,
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    Loop {
+        body: Box<Statement>,
+        label: Option<String>,
+    },
+    Break {
+        label: Option<String>,
+    },
+    Continue {
+        label: Option<String>,
+    },
+    Goto {
+        label: String,
+    },
+    Labeled {
+        name: String,
+        stmt: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone)]
