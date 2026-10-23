@@ -114,21 +114,17 @@ impl<'src> Parser<'src> {
                 | TokenKind::Continue
                 | TokenKind::Goto
                 | TokenKind::Identifier => self.parse_stmt().map(BlockItem::Stmt),
-                _ => {
-                    Err(ParserError {
-                        src: self.src.to_string(),
-                        span: Span { start: 0, end: 0 },
-                        msg: format!("encountered {:?} while trying to parse a block_item", token),
-                    })
-                }
-            },
-            None => {
-                Err(ParserError {
+                _ => Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
-                    msg: "Encountered the end of token stream".to_string(),
-                })
-            }
+                    msg: format!("encountered {:?} while trying to parse a block_item", token),
+                }),
+            },
+            None => Err(ParserError {
+                src: self.src.to_string(),
+                span: Span { start: 0, end: 0 },
+                msg: "Encountered the end of token stream".to_string(),
+            }),
         }
     }
 
@@ -138,13 +134,11 @@ impl<'src> Parser<'src> {
                 TokenKind::Fn => self.parse_fn(),
                 _ => unimplemented!(),
             },
-            None => {
-                Err(ParserError {
-                    src: self.src.to_string(),
-                    span: Span { start: 0, end: 0 },
-                    msg: "Encountered the end of token stream".to_string(),
-                })
-            }
+            None => Err(ParserError {
+                src: self.src.to_string(),
+                span: Span { start: 0, end: 0 },
+                msg: "Encountered the end of token stream".to_string(),
+            }),
         }
     }
 
@@ -172,21 +166,17 @@ impl<'src> Parser<'src> {
                     self.parse_labeled()
                 }
                 TokenKind::Identifier => self.parse_expr_stmt(),
-                _ => {
-                    Err(ParserError {
-                        src: self.src.to_string(),
-                        span: Span { start: 0, end: 0 },
-                        msg: format!("encountered {:?} while trying to parse a stmt", token),
-                    })
-                }
-            },
-            None => {
-                Err(ParserError {
+                _ => Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
-                    msg: "Encountered the end of token stream".to_string(),
-                })
-            }
+                    msg: format!("encountered {:?} while trying to parse a stmt", token),
+                }),
+            },
+            None => Err(ParserError {
+                src: self.src.to_string(),
+                span: Span { start: 0, end: 0 },
+                msg: "Encountered the end of token stream".to_string(),
+            }),
         }
     }
 
