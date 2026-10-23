@@ -198,6 +198,7 @@ impl LoopLabel for Statement {
                 name,
                 stmt: stmt.loop_label(labeler)?.into(),
             }),
+            Statement::Expr { expr } => Ok(Statement::Expr { expr }),
         }
     }
 }

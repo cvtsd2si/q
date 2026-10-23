@@ -154,6 +154,7 @@ impl LabelCollect for Statement {
 
                 Ok(Statement::Goto { label })
             }
+            Statement::Expr { expr } => Ok(Statement::Expr { expr }),
         }
     }
 }

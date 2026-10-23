@@ -77,6 +77,9 @@ pub enum Statement {
         name: String,
         stmt: Box<Statement>,
     },
+    Expr {
+        expr: Expression,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -104,6 +107,12 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    Assign {
+        lhs: Box<Expression>,
+        rhs: Box<Expression>,
+        ty: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -113,34 +122,17 @@ impl Expression {
             Expression::Variable { span, .. } => *span,
             Expression::Binary { span, .. } => *span,
             Expression::Call { span, .. } => *span,
+            Expression::Assign { span, .. } => *span,
         }
     }
 
     pub fn ty(&self) -> Option<Type> {
         match self {
-            Expression::Literal {
-                val: _,
-                ty,
-                span: _,
-            } => *ty,
-            Expression::Variable {
-                name: _,
-                ty,
-                span: _,
-            } => *ty,
-            Expression::Binary {
-                kind: _,
-                lhs: _,
-                rhs: _,
-                ty,
-                span: _,
-            } => *ty,
-            Expression::Call {
-                target: _,
-                args: _,
-                ty,
-                span: _,
-            } => *ty,
+            Expression::Literal { ty, .. } => *ty,
+            Expression::Variable { ty, .. } => *ty,
+            Expression::Binary { ty, .. } => *ty,
+            Expression::Call { ty, .. } => *ty,
+            Expression::Assign { ty, .. } => *ty,
         }
     }
 }

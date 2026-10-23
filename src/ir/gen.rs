@@ -389,6 +389,10 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             instrs.push(IRInstr::Label(format!("goto.{name}")));
             irfy_stmt(instrs, stmt);
         }
+
+        Statement::Expr { expr } => {
+            irfy_expr(instrs, expr);
+        }
     }
 }
 
@@ -459,6 +463,28 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             });
 
             ExpRes::Plain(dst)
+        }
+
+        Expression::Assign { lhs, rhs, .. } => {
+            /* Keep lhs as lvalue.  */
+            let lhs = irfy_expr(instrs, lhs);
+
+            /* Force lvalue-to-rvalue conversion for rhs.  */
+            let rhs = irfy_expr_and_cvt(instrs, rhs);
+
+            /* If lhs is a plain operand, just emit Cpy.  */
+
+            match lhs {
+                ExpRes::Plain(op) => {
+                    instrs.push(IRInstr::Cpy {
+                        src: rhs.clone(),
+                        dst: op,
+                    });
+                }
+            }
+
+            /* Assignments evaluate to their rhs val.  */
+            ExpRes::Plain(rhs)
         }
     }
 }

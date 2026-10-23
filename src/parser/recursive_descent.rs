@@ -119,7 +119,8 @@ impl<'src> Parser<'src> {
                 | TokenKind::For
                 | TokenKind::Break
                 | TokenKind::Continue
-                | TokenKind::Goto => Ok(BlockItem::Stmt(self.parse_stmt()?)),
+                | TokenKind::Goto
+                | TokenKind::Identifier => Ok(BlockItem::Stmt(self.parse_stmt()?)),
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -161,6 +162,7 @@ impl<'src> Parser<'src> {
                 {
                     Ok(self.parse_labeled()?)
                 }
+                TokenKind::Identifier => Ok(self.parse_expr_stmt()?),
                 _ => unimplemented!("got: {:?}", self.curr),
             },
             None => unreachable!(),
@@ -440,8 +442,34 @@ impl<'src> Parser<'src> {
         })
     }
 
+    fn parse_expr_stmt(&mut self) -> Result<Statement, ParserError> {
+        let expr = self.parse_expr()?;
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Expr { expr })
+    }
+
     fn parse_expr(&mut self) -> Result<Expression, ParserError> {
-        self.term()
+        self.assignment()
+    }
+
+    fn assignment(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.term()?;
+        let begin = result.span();
+
+        while self.check_many_greedy(&[TokenKind::Equal]) {
+            let right = self.assignment()?;
+            let end = right.span();
+
+            result = Expression::Assign {
+                lhs: result.clone().into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
     }
 
     fn term(&mut self) -> Result<Expression, ParserError> {

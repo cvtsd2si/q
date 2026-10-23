@@ -134,6 +134,10 @@ impl Typecheck for Statement {
                 stmt: stmt.typecheck(typechecker)?.into(),
             }),
 
+            Statement::Expr { expr } => Ok(Self::Expr {
+                expr: typecheck_expr(typechecker, expr, None)?,
+            }),
+
             _ => Ok(self),
         }
     }
@@ -451,6 +455,48 @@ fn typecheck_expr(
                 span,
             })
         }
+
+        Expression::Assign { lhs, rhs, span, .. } => {
+            /* Ensure lhs is assignable.  */
+            if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
+                return Err(TypecheckerError {
+                    msg: format!("lhs must be assignable"),
+                });
+            }
+
+            let lhs = typecheck_expr(typechecker, *lhs, None)?;
+
+            let lhs_ty = lhs.ty().ok_or_else(|| TypecheckerError {
+                msg: format!("cannot assign to a var with unknown ty"),
+            })?;
+
+            if let Some(expected) = expected_ty {
+                if expected != lhs_ty {
+                    return Err(TypecheckerError {
+                        msg: format!("expected assignment of type {expected:?}, got {lhs_ty:?}"),
+                    });
+                }
+            }
+
+            /* The rhs must have the same type as lhs.  */
+            let rhs = typecheck_expr(typechecker, *rhs, Some(lhs_ty))?;
+
+            if rhs.ty() != Some(lhs_ty) {
+                return Err(TypecheckerError {
+                    msg: format!(
+                        "cannot assign {:?} to a variable of type {lhs_ty:?}",
+                        rhs.ty()
+                    ),
+                });
+            }
+
+            Ok(Expression::Assign {
+                lhs: lhs.into(),
+                rhs: rhs.into(),
+                ty: Some(lhs_ty),
+                span,
+            })
+        }
     }
 }
 
@@ -559,6 +605,16 @@ fn known_ty(
 
         Expression::Binary { lhs, rhs, .. } => {
             merge_types(known_ty(typechecker, lhs)?, known_ty(typechecker, rhs)?)
+        }
+
+        Expression::Assign { lhs, .. } => {
+            if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
+                return Err(TypecheckerError {
+                    msg: format!("lhs of assign expr must be a var"),
+                });
+            }
+
+            known_ty(typechecker, lhs)
         }
     }
 }

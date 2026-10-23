@@ -114,16 +114,19 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
         match self {
             IRInstr::Cpy { src, dst } => {
-                let op = src.load_op(ctx);
+                let src = src.load_op(ctx);
 
                 let name = match dst {
                     IRVal::Var(name) => name,
                     IRVal::Const(_) => unreachable!(),
                 };
 
-                ctx.register::<String>(name);
-
-                Ok(vec![op])
+                if ctx.get::<String>(name).is_some() {
+                    Ok(vec![src, dst.store_op(ctx)])
+                } else {
+                    ctx.register::<String>(name);
+                    Ok(vec![src])
+                }
             }
 
             IRInstr::Bin {

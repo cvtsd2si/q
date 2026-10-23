@@ -117,6 +117,9 @@ impl Resolve for Statement {
                 name,
                 stmt: stmt.resolve(resolver)?.into(),
             }),
+            Statement::Expr { expr } => Ok(Statement::Expr {
+                expr: resolve_expr(resolver, expr)?.into(),
+            }),
             _ => Ok(self),
         }
     }
@@ -331,6 +334,13 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
                 .into_iter()
                 .map(|arg| resolve_expr(resolver, arg))
                 .collect::<Result<Vec<_>, _>>()?,
+            ty,
+            span,
+        }),
+
+        Expression::Assign { lhs, rhs, ty, span } => Ok(Expression::Assign {
+            lhs: resolve_expr(resolver, *lhs)?.into(),
+            rhs: resolve_expr(resolver, *rhs)?.into(),
             ty,
             span,
         }),
