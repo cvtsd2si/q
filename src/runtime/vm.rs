@@ -205,16 +205,9 @@ impl Vm {
     fn compile_region(&self, func: usize, start_pc: usize) -> Option<JitBlock> {
         let bytecode_func = &self.bytecode.funcs[func];
 
-        /* JIT compiler operates on the IR, so it needs IR coords.  */
         let start_ir = bytecode_func.ir_map.get(start_pc)?;
         let end_ir = self.find_region_end(func, start_pc)?;
 
-        /* Find the first bytecode PC (for the Vm) that belongs to the IRInstr
-         * at (or after) `end_ir`.
-         *
-         * If such a PC does not exist, bytecode length is taken.
-         *
-         * The indexes in the `ir_map` correspond to bytecode PCs.  */
         let end_pc = bytecode_func
             .ir_map
             .iter()
@@ -226,8 +219,6 @@ impl Vm {
             func, start_pc, start_ir, end_ir,
         );
 
-        /* Passing in PC coords, too, because the JIT compiler needs them
-         * to embed them as metadata on `JitBlock`s it gives out.  */
         let mut jit = JitCompiler::new();
 
         match jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc) {
@@ -249,8 +240,6 @@ impl Vm {
     }
 
     fn run_jitted(&mut self) -> JitExit {
-        /* I think it is okay to unwrap here as we had checked
-         * that this cannot be None.  */
         let block = self.jit_code[self.func][self.pc].as_ref().unwrap();
 
         let entry = block.entry;
@@ -260,7 +249,6 @@ impl Vm {
             block.mem, block.start_pc, block.end_pc,
         );
 
-        /* Call into the generated machine code through the function ptr.  */
         let args = self.stack[self.fp..].as_ptr();
         let r = unsafe { entry(self as *mut Vm, &RT, args) };
 
