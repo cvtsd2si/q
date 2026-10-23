@@ -296,7 +296,7 @@ fn typecheck_for(
         advancement: advancement
             .map(|a| typecheck_expr(typechecker, a, None))
             .transpose()?,
-        body: (*body).typecheck(typechecker)?.into(),
+        body: body.typecheck(typechecker)?.into(),
         label,
     })
 }
@@ -307,7 +307,7 @@ fn typecheck_loop(
     label: Option<String>,
 ) -> Result<Statement, TypecheckerError> {
     Ok(Statement::Loop {
-        body: (*body).typecheck(typechecker)?.into(),
+        body: body.typecheck(typechecker)?.into(),
         label,
     })
 }

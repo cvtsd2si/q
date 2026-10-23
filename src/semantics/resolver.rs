@@ -262,11 +262,11 @@ fn resolve_for(
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::For {
         init: init
-            .map(|i| (*i).resolve(resolver).map(Box::new))
+            .map(|i| i.resolve(resolver).map(Box::new))
             .transpose()?,
         cond: cond.map(|c| resolve_expr(resolver, c)).transpose()?,
         advancement: advancement.map(|a| resolve_expr(resolver, a)).transpose()?,
-        body: (*body).resolve(resolver)?.into(),
+        body: body.resolve(resolver)?.into(),
         label,
     })
 }
@@ -277,7 +277,7 @@ fn resolve_loop(
     label: Option<String>,
 ) -> Result<Statement, ResolverError> {
     Ok(Statement::Loop {
-        body: (*body).resolve(resolver)?.into(),
+        body: body.resolve(resolver)?.into(),
         label,
     })
 }
