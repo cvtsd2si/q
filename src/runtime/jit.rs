@@ -24,11 +24,18 @@ use rsasm::{
     section::SectionId,
 };
 
-pub struct JitCompiler {}
+pub struct JitCompiler {
+    assembler: Assembler,
+}
 
 impl JitCompiler {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            assembler: Assembler::new(
+                arch::lookup("x86-64").unwrap(),
+                Options::new().with_relocatable(false),
+            ),
+        }
     }
 
     pub fn compile(
@@ -117,17 +124,14 @@ impl JitCompiler {
             msg: "jit entry emission failed".to_string(),
         })?;
 
-        eprintln!("[JIT ASM]\n{}", asm_txt);
+        self.assembler.assemble_str("", &asm_txt);
 
-        let arch = arch::lookup("x86-64").unwrap();
-        let mut assembler = Assembler::new(arch, Options::new().with_relocatable(false));
-
-        assembler.assemble_str("", &asm_txt);
-
-        if !assembler.finish() {
+        if !self.assembler.finish() {
             eprintln!(
                 "{}",
-                assembler.diags().render(assembler.source_map(), false)
+                self.assembler
+                    .diags()
+                    .render(self.assembler.source_map(), false)
             );
 
             return Err(JitError {
@@ -135,7 +139,13 @@ impl JitCompiler {
             });
         }
 
-        let raw_bytes = assembler.section_bytes(SectionId(0));
+        self.assembler
+            .source_map()
+            .files()
+            .iter()
+            .for_each(|f| println!("{}", f.src));
+
+        let raw_bytes = self.assembler.section_bytes(SectionId(0));
 
         unsafe {
             let len = raw_bytes.len();
