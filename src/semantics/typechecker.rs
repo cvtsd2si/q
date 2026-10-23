@@ -471,11 +471,12 @@ fn typecheck_expr(
             })?;
 
             if let Some(expected) = expected_ty
-                && expected != lhs_ty {
-                    return Err(TypecheckerError {
-                        msg: format!("expected assignment of type {expected:?}, got {lhs_ty:?}"),
-                    });
-                }
+                && expected != lhs_ty
+            {
+                return Err(TypecheckerError {
+                    msg: format!("expected assignment of type {expected:?}, got {lhs_ty:?}"),
+                });
+            }
 
             /* The rhs must have the same type as lhs.  */
             let rhs = typecheck_expr(typechecker, *rhs, Some(lhs_ty))?;

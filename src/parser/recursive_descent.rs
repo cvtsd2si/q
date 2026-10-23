@@ -120,7 +120,7 @@ impl<'src> Parser<'src> {
                 | TokenKind::Break
                 | TokenKind::Continue
                 | TokenKind::Goto
-                | TokenKind::Identifier => Ok(BlockItem::Stmt(self.parse_stmt()?)),
+                | TokenKind::Identifier => self.parse_stmt().map(|stmt| BlockItem::Stmt(stmt)),
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -130,7 +130,7 @@ impl<'src> Parser<'src> {
     fn parse_decl(&mut self) -> Result<Declaration, ParserError> {
         match self.curr {
             Some(token) => match token.kind {
-                TokenKind::Fn => Ok(self.parse_fn()?),
+                TokenKind::Fn => self.parse_fn(),
                 _ => unimplemented!(),
             },
             None => unreachable!(),
@@ -140,32 +140,42 @@ impl<'src> Parser<'src> {
     fn parse_stmt(&mut self) -> Result<Statement, ParserError> {
         match self.curr {
             Some(token) => match token.kind {
-                TokenKind::Let => Ok(self.parse_let()?),
-                TokenKind::Ret => Ok(self.parse_ret()?),
-                TokenKind::Print => Ok(self.parse_print()?),
-                TokenKind::If => Ok(self.parse_if()?),
-                TokenKind::While => Ok(self.parse_while()?),
-                TokenKind::Do => Ok(self.parse_do_while()?),
-                TokenKind::For => Ok(self.parse_for()?),
-                TokenKind::Loop => Ok(self.parse_loop()?),
-                TokenKind::Break => Ok(self.parse_break()?),
-                TokenKind::Continue => Ok(self.parse_continue()?),
-                TokenKind::Goto => Ok(self.parse_goto()?),
-                TokenKind::LBrace => Ok(Statement::Block {
-                    body: self.parse_block()?,
-                }),
+                TokenKind::Let => self.parse_let(),
+                TokenKind::Ret => self.parse_ret(),
+                TokenKind::Print => self.parse_print(),
+                TokenKind::If => self.parse_if(),
+                TokenKind::While => self.parse_while(),
+                TokenKind::Do => self.parse_do_while(),
+                TokenKind::For => self.parse_for(),
+                TokenKind::Loop => self.parse_loop(),
+                TokenKind::Break => self.parse_break(),
+                TokenKind::Continue => self.parse_continue(),
+                TokenKind::Goto => self.parse_goto(),
+                TokenKind::LBrace => self.parse_block().map(|body| Statement::Block { body }),
                 TokenKind::Identifier
                     if self
                         .tokens
                         .front()
                         .is_some_and(|t| t.kind == TokenKind::Colon) =>
                 {
-                    Ok(self.parse_labeled()?)
+                    self.parse_labeled()
                 }
-                TokenKind::Identifier => Ok(self.parse_expr_stmt()?),
-                _ => unimplemented!("got: {:?}", self.curr),
+                TokenKind::Identifier => self.parse_expr_stmt(),
+                _ => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: format!("encountered {:?} while trying to parse a stmt", token),
+                    });
+                }
             },
-            None => unreachable!(),
+            None => {
+                return Err(ParserError {
+                    src: self.src.to_string(),
+                    span: Span { start: 0, end: 0 },
+                    msg: "end of token stream".to_string(),
+                });
+            }
         }
     }
 
