@@ -517,7 +517,6 @@ impl std::error::Error for VmError {}
 impl std::fmt::Display for VmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Runtime(1) => write!(f, "runtime err: io"),
             Self::Runtime(code) => write!(f, "runtime err: {code}"),
         }
     }
