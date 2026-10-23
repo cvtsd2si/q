@@ -113,21 +113,21 @@ impl<'src> Parser<'src> {
                 | TokenKind::Break
                 | TokenKind::Continue
                 | TokenKind::Goto
-                | TokenKind::Identifier => self.parse_stmt().map(|stmt| BlockItem::Stmt(stmt)),
+                | TokenKind::Identifier => self.parse_stmt().map(BlockItem::Stmt),
                 _ => {
-                    return Err(ParserError {
+                    Err(ParserError {
                         src: self.src.to_string(),
                         span: Span { start: 0, end: 0 },
                         msg: format!("encountered {:?} while trying to parse a block_item", token),
-                    });
+                    })
                 }
             },
             None => {
-                return Err(ParserError {
+                Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
                     msg: "Encountered the end of token stream".to_string(),
-                });
+                })
             }
         }
     }
@@ -139,11 +139,11 @@ impl<'src> Parser<'src> {
                 _ => unimplemented!(),
             },
             None => {
-                return Err(ParserError {
+                Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
                     msg: "Encountered the end of token stream".to_string(),
-                });
+                })
             }
         }
     }
@@ -173,19 +173,19 @@ impl<'src> Parser<'src> {
                 }
                 TokenKind::Identifier => self.parse_expr_stmt(),
                 _ => {
-                    return Err(ParserError {
+                    Err(ParserError {
                         src: self.src.to_string(),
                         span: Span { start: 0, end: 0 },
                         msg: format!("encountered {:?} while trying to parse a stmt", token),
-                    });
+                    })
                 }
             },
             None => {
-                return Err(ParserError {
+                Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
                     msg: "Encountered the end of token stream".to_string(),
-                });
+                })
             }
         }
     }
@@ -666,7 +666,7 @@ impl<'src> Parser<'src> {
         self.advance();
 
         Ok(Expression::Literal {
-            val: LiteralVal::Bool((token.kind != TokenKind::False).into()),
+            val: LiteralVal::Bool(token.kind != TokenKind::False),
             ty: Some(Type::Boolean),
             span: token.span,
         })
