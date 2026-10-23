@@ -56,7 +56,7 @@ impl<'src> Parser<'src> {
             }
             Some(token) => Err(ParserError {
                 src: self.src.to_string(),
-                msg: format!("Encountered unexpeced token: {:?}", token),
+                msg: format!("Encountered unexpected token: {:?}", token),
                 span: token.span,
             }),
             None => Err(ParserError {
@@ -121,9 +121,21 @@ impl<'src> Parser<'src> {
                 | TokenKind::Continue
                 | TokenKind::Goto
                 | TokenKind::Identifier => self.parse_stmt().map(|stmt| BlockItem::Stmt(stmt)),
-                _ => unreachable!("got: {:?}", token.kind),
+                _ => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: format!("encountered {:?} while trying to parse a block_item", token),
+                    });
+                }
             },
-            None => unreachable!(),
+            None => {
+                return Err(ParserError {
+                    src: self.src.to_string(),
+                    span: Span { start: 0, end: 0 },
+                    msg: "Encountered the end of token stream".to_string(),
+                });
+            }
         }
     }
 
@@ -133,7 +145,13 @@ impl<'src> Parser<'src> {
                 TokenKind::Fn => self.parse_fn(),
                 _ => unimplemented!(),
             },
-            None => unreachable!(),
+            None => {
+                return Err(ParserError {
+                    src: self.src.to_string(),
+                    span: Span { start: 0, end: 0 },
+                    msg: "Encountered the end of token stream".to_string(),
+                });
+            }
         }
     }
 
@@ -173,7 +191,7 @@ impl<'src> Parser<'src> {
                 return Err(ParserError {
                     src: self.src.to_string(),
                     span: Span { start: 0, end: 0 },
-                    msg: "end of token stream".to_string(),
+                    msg: "Encountered the end of token stream".to_string(),
                 });
             }
         }
@@ -207,7 +225,7 @@ impl<'src> Parser<'src> {
             let param_ty = self.consume_primitive()?.into();
 
             params.push(Param {
-                name: self.src[param_name.span.start..param_name.span.end].to_string(),
+                name: self.src_from_span(param_name.span),
                 ty: param_ty,
             });
 
@@ -235,7 +253,7 @@ impl<'src> Parser<'src> {
         self.curr_ret_ty = None;
 
         Ok(Declaration::Fn {
-            name: self.src[name.span.start..name.span.end].to_string(),
+            name: self.src_from_span(name.span),
             ret: ret_ty,
             params,
             body: Statement::Block { body },
@@ -297,7 +315,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Let {
-            name: self.src[name.span.start..name.span.end].to_string(),
+            name: self.src_from_span(name.span),
             init,
             ty,
         })
@@ -435,7 +453,7 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Goto {
-            label: self.src[label.span.start..label.span.end].to_string(),
+            label: self.src_from_span(label.span),
         })
     }
 
@@ -447,7 +465,7 @@ impl<'src> Parser<'src> {
         let stmt = self.parse_stmt()?;
 
         Ok(Statement::Labeled {
-            name: self.src[name.span.start..name.span.end].to_string(),
+            name: self.src_from_span(name.span),
             stmt: stmt.into(),
         })
     }
@@ -493,7 +511,13 @@ impl<'src> Parser<'src> {
                     TokenKind::Minus => BinaryExpressionKind::Sub,
                     _ => unreachable!(),
                 },
-                None => unreachable!(),
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: "Encountered the end of the token stream (prev: None)".to_string(),
+                    });
+                }
             };
 
             let right = self.factor()?;
@@ -522,7 +546,13 @@ impl<'src> Parser<'src> {
                     TokenKind::Slash => BinaryExpressionKind::Div,
                     _ => unreachable!(),
                 },
-                None => unreachable!(),
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: "Encountered the end of the token stream (prev: None)".to_string(),
+                    });
+                }
             };
 
             let right = self.call()?;
@@ -542,6 +572,7 @@ impl<'src> Parser<'src> {
 
     fn call(&mut self) -> Result<Expression, ParserError> {
         let mut expr = self.primary()?;
+        let begin = expr.span();
 
         loop {
             if self.check(TokenKind::LParen) {
@@ -554,7 +585,7 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 };
 
-                expr = self.finish_call(&target)?;
+                expr = self.finish_call(&target, begin)?;
             } else {
                 break;
             }
@@ -563,7 +594,7 @@ impl<'src> Parser<'src> {
         Ok(expr)
     }
 
-    fn finish_call(&mut self, target: &str) -> Result<Expression, ParserError> {
+    fn finish_call(&mut self, target: &str, begin_span: Span) -> Result<Expression, ParserError> {
         self.consume(TokenKind::LParen)?;
 
         let mut args = vec![];
@@ -584,7 +615,7 @@ impl<'src> Parser<'src> {
             target: target.to_owned(),
             args,
             ty: None,
-            span: rparen.span,
+            span: begin_span + rparen.span,
         })
     }
 
@@ -602,9 +633,13 @@ impl<'src> Parser<'src> {
                     })
                 }
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
-                _ => unreachable!("got: {:?}", token),
+                _ => unreachable!(),
             },
-            None => unreachable!(),
+            None => Err(ParserError {
+                src: self.src.to_string(),
+                msg: "Encountered the end of the token stream.".to_string(),
+                span: Span { start: 0, end: 0 },
+            }),
         }
     }
 
@@ -612,14 +647,14 @@ impl<'src> Parser<'src> {
         let token = self.consume(TokenKind::Identifier)?;
 
         Ok(Expression::Variable {
-            name: self.src[token.span.start..token.span.end].to_string(),
+            name: self.src_from_span(token.span),
             ty: None,
             span: token.span,
         })
     }
 
     fn parse_numeric_val(&mut self, token: &NumberToken) -> Result<LiteralVal, ParserError> {
-        let raw = &self.src[token.value_span.start..token.value_span.end];
+        let raw = self.src_from_span(token.value_span);
 
         /* Remove separators.  */
         let cleaned = raw.replace('_', "");
@@ -649,13 +684,13 @@ impl<'src> Parser<'src> {
         self.advance();
 
         Ok(Expression::Literal {
-            val: LiteralVal::Bool(match token.kind {
-                TokenKind::True => true,
-                TokenKind::False => false,
-                _ => unreachable!(),
-            }),
+            val: LiteralVal::Bool((token.kind != TokenKind::False).into()),
             ty: Some(Type::Boolean),
             span: token.span,
         })
+    }
+
+    fn src_from_span(&self, span: Span) -> String {
+        self.src[span.start..span.end].to_string()
     }
 }
