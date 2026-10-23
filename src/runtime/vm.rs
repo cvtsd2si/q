@@ -9,11 +9,13 @@ use crate::{
     },
 };
 
-#[derive(Debug)]
-struct Frame {
-    func: usize,
-    pc: usize,
-    ptr: usize,
+macro_rules! binop_arithmetic {
+    ($stack:expr, $op:tt) => {
+        let b = $stack.pop().unwrap();
+        let a = $stack.pop().unwrap();
+
+        $stack.push(a $op b);
+    };
 }
 
 pub struct Vm {
@@ -430,17 +432,11 @@ impl Vm {
     }
 
     fn handle_op_add(&mut self) {
-        let b = self.stack.pop().unwrap();
-        let a = self.stack.pop().unwrap();
-
-        self.stack.push(a + b);
+        binop_arithmetic!(self.stack, +);
     }
 
     fn handle_op_sub(&mut self) {
-        let b = self.stack.pop().unwrap();
-        let a = self.stack.pop().unwrap();
-
-        self.stack.push(a - b);
+        binop_arithmetic!(self.stack, -);
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {
@@ -499,6 +495,13 @@ impl Vm {
             None => Some(v),
         }
     }
+}
+
+#[derive(Debug)]
+struct Frame {
+    func: usize,
+    pc: usize,
+    ptr: usize,
 }
 
 #[derive(Debug)]
