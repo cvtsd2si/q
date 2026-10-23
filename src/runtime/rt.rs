@@ -83,7 +83,9 @@ pub unsafe extern "C" fn jit_call(
     // and the generated code must uphold their alignment and
     // aliasing requirements.
     unsafe {
-        /* Ensure retval is properly inited.  */
+        /* The native caller reads the `out` variable before
+         * checking the runtime status.  Init it so that the
+         * error path doesn't read an uninited value.  */
         out.write(Value {
             payload: 0,
             tag: ValueTag::Void,
