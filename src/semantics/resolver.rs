@@ -118,7 +118,7 @@ impl Resolve for Statement {
                 stmt: stmt.resolve(resolver)?.into(),
             }),
             Statement::Expr { expr } => Ok(Statement::Expr {
-                expr: resolve_expr(resolver, expr)?.into(),
+                expr: resolve_expr(resolver, expr)?,
             }),
             _ => Ok(self),
         }

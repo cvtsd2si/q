@@ -460,23 +460,22 @@ fn typecheck_expr(
             /* Ensure lhs is assignable.  */
             if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
                 return Err(TypecheckerError {
-                    msg: format!("lhs must be assignable"),
+                    msg: "lhs must be assignable".to_string(),
                 });
             }
 
             let lhs = typecheck_expr(typechecker, *lhs, None)?;
 
             let lhs_ty = lhs.ty().ok_or_else(|| TypecheckerError {
-                msg: format!("cannot assign to a var with unknown ty"),
+                msg: "cannot assign to a var with unknown ty".to_string(),
             })?;
 
-            if let Some(expected) = expected_ty {
-                if expected != lhs_ty {
+            if let Some(expected) = expected_ty
+                && expected != lhs_ty {
                     return Err(TypecheckerError {
                         msg: format!("expected assignment of type {expected:?}, got {lhs_ty:?}"),
                     });
                 }
-            }
 
             /* The rhs must have the same type as lhs.  */
             let rhs = typecheck_expr(typechecker, *rhs, Some(lhs_ty))?;
@@ -610,7 +609,7 @@ fn known_ty(
         Expression::Assign { lhs, .. } => {
             if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
                 return Err(TypecheckerError {
-                    msg: format!("lhs of assign expr must be a var"),
+                    msg: "lhs of assign expr must be a var".to_string(),
                 });
             }
 

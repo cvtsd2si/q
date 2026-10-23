@@ -244,7 +244,7 @@ impl Vm {
 
                     JitExit::Error(code) => {
                         return Err(VmError {
-                            msg: format!("native code errored out"),
+                            msg: "native code errored out".to_string(),
                             code,
                         });
                     }
@@ -457,7 +457,7 @@ impl Vm {
     fn handle_op_print(&mut self) -> Result<(), VmError> {
         let obj = self.stack.pop().unwrap();
         print_value(obj).map_err(|_| VmError {
-            msg: format!("print_value failed"),
+            msg: "print_value failed".to_string(),
             code: RtResult::Io as u32,
         })
     }
