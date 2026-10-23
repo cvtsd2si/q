@@ -417,28 +417,18 @@ impl Drop for JitBlock {
     }
 }
 
+pub const JIT_CONTINUE: u64 = 0;
+pub const JIT_RET: u64 = 1;
+pub const JIT_ERROR: u64 = 2;
+
 /// ABI-facing result
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct JitResult {
-    /* Two `kind`s so far:
-     *  - 0: "I have finished executing the native code,
-     *        but the vm code is still running.
-     *  - 1: "I have finished executing the native code,
-     *        and encountered the language-level `return`.  */
     pub kind: u64,
-
-    /* `next_pc` tells `VM::exec()` where to continue after
-     * getting back from executing the native code.  */
     pub next_pc: u64,
-
-    /* The `Value` brought from the other side.  */
     pub value: Value,
 }
-
-pub const JIT_CONTINUE: u64 = 0;
-pub const JIT_RET: u64 = 1;
-pub const JIT_ERROR: u64 = 2;
 
 /// VM-facing result
 #[derive(Debug, Clone, Copy)]
