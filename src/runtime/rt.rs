@@ -98,7 +98,8 @@ pub unsafe extern "C" fn jit_call(
 
         match vm.invoke_from_jit(target, args) {
             Ok(v) => {
-                *out = v;
+                out.write(v);
+
                 0
             }
             Err(VmError::Runtime(code)) => code,
