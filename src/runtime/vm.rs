@@ -314,7 +314,10 @@ impl Vm {
         let old_depth = self.fp_stack.len();
 
         let params = &self.ir.funcs[target].params;
-        assert_eq!(params.len(), payloads.len()); // FIXME:  Error out from here
+
+        if params.len() != payloads.len() {
+            return Err(VmError::Runtime(RtResult::Err as u32));
+        }
 
         let values = params
             .iter()
@@ -441,7 +444,7 @@ impl Vm {
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {
         let obj = self.stack.pop().unwrap();
-        print_value(obj).map_err(|_| VmError::Runtime(RtResult::Io as u32))
+        print_value(obj).map_err(|_| VmError::Runtime(RtResult::Err as u32))
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {

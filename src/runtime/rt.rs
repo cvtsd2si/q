@@ -24,7 +24,7 @@ pub struct Rt {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RtResult {
     Ok = 0,
-    Io = 1,
+    Err = 1,
 }
 
 pub static RT: Rt = Rt {
@@ -42,7 +42,7 @@ pub extern "C" fn jit_print(_vm: *mut Vm, tag: u64, payload: u64) -> u32 {
 
     match print_value(v) {
         Ok(()) => RtResult::Ok as u32,
-        Err(_) => RtResult::Io as u32,
+        Err(_) => RtResult::Err as u32,
     }
 }
 
