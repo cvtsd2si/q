@@ -4,6 +4,7 @@ use crate::{
     parser::ast::{BinaryExpressionKind, Literal, Type},
     runtime::{
         jit::JIT_RET,
+        rt::Rt,
         value::{Value, ValueTag},
     },
 };
@@ -64,10 +65,9 @@ pub enum RtFn {
 
 impl RtFn {
     pub fn offset(self) -> usize {
-        // FIXME: Don't harcode offsets.
         match self {
-            Self::Print => 0,
-            Self::Call => 8,
+            RtFn::Print => std::mem::offset_of!(Rt, print),
+            RtFn::Call => std::mem::offset_of!(Rt, call),
         }
     }
 }
