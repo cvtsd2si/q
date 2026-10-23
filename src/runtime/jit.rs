@@ -309,20 +309,31 @@ impl JitCompiler {
         body.extend(vec![
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
-                dst: AsmOp::Mem(AsmReg::R12, 0),
-            }, // kind
+                dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
+            },
             AsmInstr::Mov {
                 src: AsmOp::Imm(end_pc as i64),
-                dst: AsmOp::Mem(AsmReg::R12, 8),
-            }, // next_pc
+                dst: AsmOp::Mem(
+                    AsmReg::R12,
+                    std::mem::offset_of!(JitResult, next_pc) as isize,
+                ),
+            },
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
-                dst: AsmOp::Mem(AsmReg::R12, 16),
-            }, // value tag
+                dst: AsmOp::Mem(
+                    AsmReg::R12,
+                    (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, tag))
+                        as isize,
+                ),
+            },
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Ax),
-                dst: AsmOp::Mem(AsmReg::R12, 24),
-            }, // payload
+                dst: AsmOp::Mem(
+                    AsmReg::R12,
+                    (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, payload))
+                        as isize,
+                ),
+            },
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R12),
                 dst: AsmOp::Reg(AsmReg::Ax),
