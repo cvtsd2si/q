@@ -3,6 +3,7 @@ use q::ir::r#gen::{Codegen, CodegenContext, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use q::runtime::vm::Vm;
+use q::semantics::label_collector::{LabelCollect, LabelCollector};
 use q::semantics::loop_labeler::{LoopLabel, LoopLabeler};
 use q::semantics::resolver::{Resolve, Resolver};
 use q::semantics::typechecker::{Typecheck, Typechecker};
@@ -37,6 +38,9 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         println!("{:#?}", ast);
         return Ok(0);
     }
+
+    let mut label_collector = LabelCollector::new();
+    let ast = ast.label_collect(&mut label_collector)?;
 
     let mut loop_labeler = LoopLabeler::new();
     let labeled_ast = ast.loop_label(&mut loop_labeler)?;

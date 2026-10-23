@@ -69,6 +69,7 @@ impl<'src> Iterator for Tokenizer<'src> {
                         "for" => TokenKind::For,
                         "break" => TokenKind::Break,
                         "continue" => TokenKind::Continue,
+                        "goto" => TokenKind::Goto,
                         "print" => TokenKind::Print,
                         "ret" => TokenKind::Ret,
                         "let" => TokenKind::Let,

@@ -96,7 +96,6 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
         }
 
         for (pc, name) in &fixups {
-            dbg!(name);
             let dst = labels.get(name).unwrap();
 
             match f.body[*pc] {

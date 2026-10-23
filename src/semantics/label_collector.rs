@@ -1,10 +1,18 @@
+use std::collections::HashSet;
+
 use crate::parser::ast::{BlockItem, Declaration, Param, Program, Statement, Type};
 
-pub struct LabelCollector {}
+pub struct LabelCollector {
+    defined: HashSet<String>,
+    referenced: Vec<String>,
+}
 
 impl LabelCollector {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            defined: HashSet::new(),
+            referenced: Vec::new(),
+        }
     }
 }
 
@@ -94,7 +102,52 @@ impl LabelCollect for Statement {
                     .map(|stmt| stmt.label_collect(collector))
                     .collect::<Result<Vec<_>, _>>()?,
             }),
-            _ => unimplemented!(),
+            Statement::While { cond, body, label } => Ok(Statement::While {
+                cond,
+                body: body.label_collect(collector)?.into(),
+                label,
+            }),
+            Statement::DoWhile { cond, body, label } => Ok(Statement::DoWhile {
+                cond,
+                body: body.label_collect(collector)?.into(),
+                label,
+            }),
+            Statement::For {
+                init,
+                cond,
+                advancement,
+                body,
+                label,
+            } => Ok(Statement::For {
+                init,
+                cond,
+                advancement,
+                body: body.label_collect(collector)?.into(),
+                label,
+            }),
+            Statement::Loop { body, label } => Ok(Statement::Loop {
+                body: body.label_collect(collector)?.into(),
+                label,
+            }),
+            Statement::Break { label } => Ok(Statement::Break { label }),
+            Statement::Continue { label } => Ok(Statement::Continue { label }),
+            Statement::Labeled { name, stmt } => {
+                if !collector.defined.insert(name.clone()) {
+                    return Err(LabelCollectError {
+                        msg: format!("duplicate label: '{name}'"),
+                    });
+                }
+
+                Ok(Statement::Labeled {
+                    name,
+                    stmt: stmt.label_collect(collector)?.into(),
+                })
+            }
+            Statement::Goto { label } => {
+                collector.referenced.push(label.clone());
+
+                Ok(Statement::Goto { label })
+            }
         }
     }
 }
@@ -106,6 +159,20 @@ fn label_collect_fn(
     params: Vec<Param>,
     body: Statement,
 ) -> Result<Declaration, LabelCollectError> {
+    collector.defined.clear();
+    collector.referenced.clear();
+
+    let body = body.label_collect(collector)?;
+
+    /* each goto target must exist  */
+    for target in &collector.referenced {
+        if !collector.defined.contains(target) {
+            return Err(LabelCollectError {
+                msg: format!("undefined label '{target}' in function '{name}'"),
+            });
+        }
+    }
+
     Ok(Declaration::Fn {
         name,
         ret,

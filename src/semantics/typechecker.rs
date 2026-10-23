@@ -123,6 +123,12 @@ impl Typecheck for Statement {
             } => typecheck_for(typechecker, init, cond, advancement, body, label),
 
             Statement::Loop { body, label } => typecheck_loop(typechecker, body, label),
+
+            Statement::Labeled { name, stmt } => Ok(Statement::Labeled {
+                name,
+                stmt: stmt.typecheck(typechecker)?.into(),
+            }),
+
             _ => Ok(self),
         }
     }
@@ -574,6 +580,8 @@ fn always_returns(stmt: &Statement) -> bool {
             else_block: Some(else_block),
             ..
         } => always_returns(then_block) && always_returns(else_block),
+
+        Statement::Labeled { stmt, .. } => always_returns(stmt),
 
         _ => false,
     }

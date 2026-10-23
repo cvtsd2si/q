@@ -376,7 +376,16 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             });
         }
 
-        _ => unimplemented!(),
+        Statement::Goto { label } => {
+            instrs.push(IRInstr::Jmp {
+                target: format!("goto.{label}"),
+            });
+        }
+
+        Statement::Labeled { name, stmt } => {
+            instrs.push(IRInstr::Label(format!("goto.{name}")));
+            irfy_stmt(instrs, stmt);
+        }
     }
 }
 

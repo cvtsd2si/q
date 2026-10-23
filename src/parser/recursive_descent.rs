@@ -115,8 +115,11 @@ impl<'src> Parser<'src> {
                 | TokenKind::Print
                 | TokenKind::If
                 | TokenKind::While
+                | TokenKind::Do
+                | TokenKind::For
                 | TokenKind::Break
-                | TokenKind::Continue => Ok(BlockItem::Stmt(self.parse_stmt()?)),
+                | TokenKind::Continue
+                | TokenKind::Goto => Ok(BlockItem::Stmt(self.parse_stmt()?)),
                 _ => unreachable!("got: {:?}", token.kind),
             },
             None => unreachable!(),
@@ -146,9 +149,18 @@ impl<'src> Parser<'src> {
                 TokenKind::Loop => Ok(self.parse_loop()?),
                 TokenKind::Break => Ok(self.parse_break()?),
                 TokenKind::Continue => Ok(self.parse_continue()?),
+                TokenKind::Goto => Ok(self.parse_goto()?),
                 TokenKind::LBrace => Ok(Statement::Block {
                     body: self.parse_block()?,
                 }),
+                TokenKind::Identifier
+                    if self
+                        .tokens
+                        .front()
+                        .is_some_and(|t| t.kind == TokenKind::Colon) =>
+                {
+                    Ok(self.parse_labeled()?)
+                }
                 _ => unimplemented!("got: {:?}", self.curr),
             },
             None => unreachable!(),
@@ -402,6 +414,32 @@ impl<'src> Parser<'src> {
 
         Ok(Statement::Continue { label: None })
     }
+
+    fn parse_goto(&mut self) -> Result<Statement, ParserError> {
+        self.consume(TokenKind::Goto)?;
+
+        let label = self.consume(TokenKind::Identifier)?;
+
+        self.consume(TokenKind::Semicolon)?;
+
+        Ok(Statement::Goto {
+            label: self.src[label.span.start..label.span.end].to_string(),
+        })
+    }
+
+    fn parse_labeled(&mut self) -> Result<Statement, ParserError> {
+        let name = self.consume(TokenKind::Identifier)?;
+
+        self.consume(TokenKind::Colon)?;
+
+        let stmt = self.parse_stmt()?;
+
+        Ok(Statement::Labeled {
+            name: self.src[name.span.start..name.span.end].to_string(),
+            stmt: stmt.into(),
+        })
+    }
+
     fn parse_expr(&mut self) -> Result<Expression, ParserError> {
         self.term()
     }

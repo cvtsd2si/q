@@ -187,7 +187,11 @@ impl LoopLabel for Statement {
 
                 Ok(Statement::Continue { label: Some(label) })
             }
-            _ => unreachable!(),
+            Statement::Goto { label } => Ok(Statement::Goto { label }),
+            Statement::Labeled { name, stmt } => Ok(Statement::Labeled {
+                name,
+                stmt: stmt.loop_label(labeler)?.into(),
+            }),
         }
     }
 }

@@ -107,6 +107,10 @@ impl Resolve for Statement {
                 label,
             } => resolve_for(resolver, init, cond, advancement, body, label),
             Statement::Loop { body, label } => resolve_loop(resolver, body, label),
+            Statement::Labeled { name, stmt } => Ok(Statement::Labeled {
+                name,
+                stmt: stmt.resolve(resolver)?.into(),
+            }),
             _ => Ok(self),
         }
     }

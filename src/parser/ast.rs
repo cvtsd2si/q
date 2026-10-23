@@ -70,6 +70,13 @@ pub enum Statement {
     Continue {
         label: Option<String>,
     },
+    Goto {
+        label: String,
+    },
+    Labeled {
+        name: String,
+        stmt: Box<Statement>,
+    },
 }
 
 #[derive(Debug, Clone)]

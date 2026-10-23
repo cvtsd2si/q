@@ -45,6 +45,7 @@ pub enum TokenKind {
     For,
     Break,
     Continue,
+    Goto,
     Print,
     Identifier,
     LParen,
