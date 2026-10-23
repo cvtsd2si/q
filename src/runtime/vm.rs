@@ -242,7 +242,12 @@ impl Vm {
                         continue;
                     }
 
-                    JitExit::Error(code) => return Err(VmError::Runtime(code)),
+                    JitExit::Error(code) => {
+                        return Err(VmError {
+                            msg: format!("native code errored out"),
+                            code,
+                        });
+                    }
                 }
             }
 
@@ -316,7 +321,14 @@ impl Vm {
         let params = &self.ir.funcs[target].params;
 
         if params.len() != payloads.len() {
-            return Err(VmError::Runtime(RtResult::Err as u32));
+            return Err(VmError {
+                msg: format!(
+                    "argcount mismatch (got {}, expected {}",
+                    payloads.len(),
+                    params.len()
+                ),
+                code: RtResult::Internal as u32,
+            });
         }
 
         let values = params
@@ -444,7 +456,10 @@ impl Vm {
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {
         let obj = self.stack.pop().unwrap();
-        print_value(obj).map_err(|_| VmError::Runtime(RtResult::Err as u32))
+        print_value(obj).map_err(|_| VmError {
+            msg: format!("print_value failed"),
+            code: RtResult::Io as u32,
+        })
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {
@@ -508,16 +523,15 @@ struct Frame {
 }
 
 #[derive(Debug)]
-pub enum VmError {
-    Runtime(u32),
+pub struct VmError {
+    pub msg: String,
+    pub code: u32,
 }
 
 impl std::error::Error for VmError {}
 
 impl std::fmt::Display for VmError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Runtime(code) => write!(f, "runtime err: {code}"),
-        }
+        write!(f, "vm: {} (code: {})", self.msg, self.code)
     }
 }
