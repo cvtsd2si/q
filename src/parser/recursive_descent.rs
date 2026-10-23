@@ -29,7 +29,6 @@ impl<'src> Parser<'src> {
         self.advance();
 
         let mut block_items = vec![];
-
         while self.curr.is_some() {
             block_items.push(self.parse_block_item()?);
         }
@@ -62,10 +61,7 @@ impl<'src> Parser<'src> {
             None => Err(ParserError {
                 src: self.src.to_string(),
                 msg: "Encountered the end of the token stream.".to_string(),
-                span: Span {
-                    start: self.src.len(),
-                    end: self.src.len(),
-                },
+                span: Span { start: 0, end: 0 },
             }),
         }
     }
@@ -98,10 +94,7 @@ impl<'src> Parser<'src> {
             None => Err(ParserError {
                 src: self.src.to_string(),
                 msg: "Encountered the end of the token stream.".to_string(),
-                span: Span {
-                    start: self.src.len(),
-                    end: self.src.len(),
-                },
+                span: Span { start: 0, end: 0 },
             }),
         }
     }
@@ -248,7 +241,7 @@ impl<'src> Parser<'src> {
 
         self.curr_ret_ty = ret_ty;
 
-        let body = self.parse_block()?;
+        let body = self.parse_stmt()?;
 
         self.curr_ret_ty = None;
 
@@ -256,7 +249,7 @@ impl<'src> Parser<'src> {
             name: self.src_from_span(name.span),
             ret: ret_ty,
             params,
-            body: Statement::Block { body },
+            body,
         })
     }
 
@@ -264,7 +257,6 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::LBrace)?;
 
         let mut body = vec![];
-
         while !self.check(TokenKind::RBrace) {
             body.push(self.parse_stmt()?);
         }
@@ -332,12 +324,7 @@ impl<'src> Parser<'src> {
 
         let else_block = if self.check(TokenKind::Else) {
             self.consume(TokenKind::Else)?;
-            Some(
-                Statement::Block {
-                    body: self.parse_block()?,
-                }
-                .into(),
-            )
+            Some(self.parse_stmt()?.into())
         } else {
             None
         };
@@ -525,7 +512,7 @@ impl<'src> Parser<'src> {
 
             result = Expression::Binary {
                 kind,
-                lhs: result.clone().into(),
+                lhs: result.into(),
                 rhs: right.into(),
                 ty: None,
                 span: begin + end,
@@ -560,7 +547,7 @@ impl<'src> Parser<'src> {
 
             result = Expression::Binary {
                 kind,
-                lhs: result.clone().into(),
+                lhs: result.into(),
                 rhs: right.into(),
                 ty: None,
                 span: begin + end,
@@ -577,11 +564,7 @@ impl<'src> Parser<'src> {
         loop {
             if self.check(TokenKind::LParen) {
                 let target = match expr {
-                    Expression::Variable {
-                        name,
-                        ty: _,
-                        span: _,
-                    } => name,
+                    Expression::Variable { name, .. } => name,
                     _ => unreachable!(),
                 };
 
@@ -598,7 +581,6 @@ impl<'src> Parser<'src> {
         self.consume(TokenKind::LParen)?;
 
         let mut args = vec![];
-
         while !self.check(TokenKind::RParen) {
             args.push(self.parse_expr()?);
 
@@ -644,12 +626,12 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_var(&mut self) -> Result<Expression, ParserError> {
-        let token = self.consume(TokenKind::Identifier)?;
+        let name = self.consume(TokenKind::Identifier)?;
 
         Ok(Expression::Variable {
-            name: self.src_from_span(token.span),
+            name: self.src_from_span(name.span),
             ty: None,
-            span: token.span,
+            span: name.span,
         })
     }
 
