@@ -481,7 +481,7 @@ impl<'src> Parser<'src> {
         let mut result = self.relational()?;
         let begin = result.span();
 
-        while self.check_many_greedy(&[TokenKind::Equal, TokenKind::NotEqual]) {
+        while self.check_many_greedy(&[TokenKind::DoubleEqual, TokenKind::NotEqual]) {
             let neg = match self.prev.as_ref() {
                 Some(token) => match token.kind {
                     TokenKind::NotEqual => true,
