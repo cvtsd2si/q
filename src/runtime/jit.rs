@@ -129,7 +129,7 @@ impl JitCompiler {
     }
 
     fn asm_exe(&mut self, asm_txt: &str) -> Result<ExecutableMem, JitError> {
-        self.assembler.assemble_str("", &asm_txt);
+        self.assembler.assemble_str("", asm_txt);
 
         if !self.assembler.finish() {
             eprintln!(
