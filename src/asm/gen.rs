@@ -173,7 +173,10 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
             let offset = (idx * std::mem::size_of::<Value>() + std::mem::offset_of!(Value, payload))
                 as isize;
 
-            body.push(AsmInstr::Comment(format!("Put {offset}(%rdi) into {}", param.name)));
+            body.push(AsmInstr::Comment(format!(
+                "Put {offset}(%rdi) into {}",
+                param.name
+            )));
             body.push(AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Di, offset),
                 dst: AsmOp::Pseudo(param.name.clone()),
@@ -319,42 +322,55 @@ impl IRInstr {
                 let tag = ValueTag::from(*ty) as u64;
 
                 Ok(vec![
+                    AsmInstr::Comment("Preserve caller-saved regs.".into()),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Align the stack after the three pushes.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
-                    // *mut Vm
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("%rdi = *mut Vm".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R13),
                         dst: AsmOp::Reg(AsmReg::Di),
                     },
-                    // ValueTag
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("%rsi = ValueTag".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(tag as i64),
                         dst: AsmOp::Reg(AsmReg::Si),
                     },
-                    // payload
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("%rdx = payload".into()),
                     AsmInstr::Mov {
                         src: payload,
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::CallRt {
                         target: RtFn::Print,
                     },
-                    // restore stack
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Restore stack alignment.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Restore caller-saved regs.".into()),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
-                    // check for error
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Check for status.  If %rax != 0, jmp to err handler.".into(),
+                    ),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
@@ -363,6 +379,7 @@ impl IRInstr {
                         cc: ConditionCode::Ne,
                         target: format!("{}_rt_err", func_name),
                     },
+                    AsmInstr::Newline,
                 ])
             }
 
