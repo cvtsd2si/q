@@ -22,8 +22,6 @@ impl Emit for AsmFunc {
 
         self.body.emit(f)?;
 
-        writeln!(f)?;
-
         Ok(())
     }
 }
@@ -80,6 +78,8 @@ impl std::fmt::Display for AsmInstr {
                 writeln!(f, "\tmovl %eax, %eax")
             }
             AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target),
+            AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
+            AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),
         }
     }

@@ -60,6 +60,8 @@ pub enum AsmInstr {
     CallRt {
         target: RtFn,
     },
+    Comment(String),
+    Newline,
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -387,27 +389,49 @@ impl IRInstr {
                 let frame_space = (native_args_offset + native_args_space).div_ceil(16) * 16;
 
                 let mut body = vec![
+                    AsmInstr::Comment(format!("Call `{target}`.")),
+                    AsmInstr::Comment("Preserve caller saved registers.".to_string()),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
+                    AsmInstr::Newline,
                     /* FIXME: don't hardcode this */
-                    /* Fix alignment after the three pushes. */
+                    AsmInstr::Comment("Fix alignment after the three pushes.".to_string()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
-                    /* Alloc args and retval space.  */
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!(
+                        "Reserve {frame_space} bytes for call args ({argc} args) and retval."
+                    )),
+                    AsmInstr::Comment("Layout:".into()),
+                    AsmInstr::Comment(format!("- {args_space} bytes of raw arguments,")),
+                    AsmInstr::Comment(format!(
+                        "- {} bytes for the runtime return Value,",
+                        std::mem::size_of::<Value>()
+                    )),
+                    AsmInstr::Comment(format!(
+                        "- {native_args_space} bytes of native Value arguments"
+                    )),
+                    AsmInstr::Comment("All this space is rounded up to 16-byte alignment".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(frame_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
+                    AsmInstr::Newline,
                 ];
+
+                body.extend([AsmInstr::Comment(
+                    "Prepare raw u64 args and tagged Value args.".into(),
+                )]);
 
                 /* Materialize each arg on the native stack.  */
                 for (idx, arg) in args.iter().enumerate() {
                     body.extend([
+                        AsmInstr::Comment(format!("Materializing arg {idx} on the native stack.")),
                         AsmInstr::Mov {
                             src: arg.codegen(ctx)?,
                             dst: AsmOp::Reg(AsmReg::R9),
@@ -416,12 +440,16 @@ impl IRInstr {
                             src: AsmOp::Reg(AsmReg::R9),
                             dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
                         },
+                        AsmInstr::Newline,
                     ]);
 
                     let base = native_args_offset + idx * std::mem::size_of::<Value>();
                     let tag = ValueTag::from(arg_tys[idx]);
 
                     body.extend([
+                        AsmInstr::Comment(format!(
+                            "Construct Value for arg {idx}: tag={tag:?}, payload follows."
+                        )),
                         AsmInstr::Mov {
                             src: AsmOp::Imm(tag as i64),
                             dst: AsmOp::Mem(
@@ -436,6 +464,7 @@ impl IRInstr {
                                 (base + std::mem::offset_of!(Value, payload)) as isize,
                             ),
                         },
+                        AsmInstr::Newline,
                     ]);
                 }
 
@@ -445,6 +474,22 @@ impl IRInstr {
                 let done_label = format!(".L{func_name}_call_done_{id}");
 
                 body.extend([
+                    AsmInstr::Comment(format!(
+                        "Determine whether `{target}` has already been jitted." 
+                    )),
+                    AsmInstr::Comment(
+                        "%r15 = `native_entrypoints`".into()
+                    ),
+                    AsmInstr::Comment(format!(
+                        "Load `native_entrypoints[{func}]` from offset {} into %r9.",
+                        func * std::mem::size_of::<usize>()
+                    )),
+                    AsmInstr::Comment(
+                        "A zero entry means the function has not been jitted.".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "A nonzero entry is its code address.".into()
+                    ),
                     AsmInstr::Mov {
                         src: AsmOp::Mem(
                             AsmReg::R15,
@@ -452,17 +497,43 @@ impl IRInstr {
                         ),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Compare the entrypoint against zero.".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "cmp updates the cpu flags with no changes to %r9.".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "If %r9 == 0, the Zero Flag (ZF) is set.".into()
+                    ),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "If ZF is set, jump to the Vm fallback and exec the uncompiled function.".into()
+                    ),
+                    AsmInstr::Comment(
+                        "Otherwise, fall through to the native call path, with %r9 holding the fn addr.".into()
+                    ),
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::E,
                         target: fallback_label.clone(),
                     },
+                    AsmInstr::Newline,
                 ]);
 
                 body.extend([
+                    AsmInstr::Comment(
+                        "The internal ABI expects %rdi to point to an array of Value objects."
+                            .into(),
+                    ),
+                    AsmInstr::Comment(format!(
+                        "This array has already been constructed on the stack, starting at {native_args_offset}(%rsp)."
+                    )),
+                    AsmInstr::Comment("Compute its address and pass that pointer in %rdi.".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::Di),
@@ -472,11 +543,38 @@ impl IRInstr {
                         lhs: AsmOp::Imm(native_args_offset as i64),
                         rhs: AsmOp::Reg(AsmReg::Di),
                     },
-                ]);
-
-                body.push(AsmInstr::CallIndirect { target: AsmReg::R9 });
-
-                body.extend([
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!(
+                        "Call the native implementation of `{target}` directly."
+                    )),
+                    AsmInstr::Comment(
+                        "%r9 holds the entrypoint address loaded from `native_entrypoints`.".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "The callee receives its arguments through %rdi and inherits the".into()
+                    ),
+                    AsmInstr::Comment(
+                        "JIT context in %r13 (Vm), %r14 (Rt), and %r15 (`native entrypoints`)."
+                            .into(),
+                    ),
+                    AsmInstr::Comment(
+                        "On return: %rax = payload or err code, %rdx = ValueTag, %rcx = JIT exit kind."
+                            .into(),
+                    ),
+                    AsmInstr::CallIndirect { target: AsmReg::R9 },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Check whether the callee returned JIT_ERROR.".into()),
+                    AsmInstr::Comment(
+                        "cmp sets ZF if %rcx == JIT_ERROR; je then branches to our error handler."
+                            .into(),
+                    ),
+                    AsmInstr::Comment(
+                        "On error, %rax still contains the error code.  The handler propagates".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "it to our caller and restores the stack frame."
+                            .into(),
+                    ),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(JIT_ERROR as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
@@ -485,81 +583,103 @@ impl IRInstr {
                         cc: ConditionCode::E,
                         target: format!("{func_name}_rt_err"),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "The native call succeeded.  The return payload is currently in %rax."
+                            .into(),
+                    ),
+                    AsmInstr::Comment(
+                        "The shared continuation expects the result in %r9 and a runtime".into(),
+                    ),
+                    AsmInstr::Comment(
+                        "status code in %rax, because that is how jit_call() returns."
+                            .into(),
+                    ),
+                    AsmInstr::Comment(
+                        "Move the payload into %r9 before overwriting %rax with 0 (success)."
+                            .into(),
+                    ),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Ax),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Skip the Vm fallback and continue at the shared stack-cleanup code."
+                            .into(),
+                    ),
+                    AsmInstr::Jmp {
+                        target: done_label.clone(),
+                    },
+                    AsmInstr::Newline,
                 ]);
 
-                body.push(AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Ax),
-                    dst: AsmOp::Reg(AsmReg::R9),
-                });
-
-                body.push(AsmInstr::Mov {
-                    src: AsmOp::Imm(0),
-                    dst: AsmOp::Reg(AsmReg::Ax),
-                });
-
-                body.push(AsmInstr::Jmp {
-                    target: done_label.clone(),
-                });
-
                 body.push(AsmInstr::Label(fallback_label));
-
+                body.push(AsmInstr::Comment(
+                    "Native entrypoint unavailable; call through the Vm".into(),
+                ));
                 body.extend([
-                    /* %rdi = *mut Vm,  */
+                    AsmInstr::Comment("%rdi = *mut Vm".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R13),
                         dst: AsmOp::Reg(AsmReg::Di),
                     },
-                    /* %rsi = fn idx  */
+                    AsmInstr::Comment("%rsi = fn idx".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(func as i64),
                         dst: AsmOp::Reg(AsmReg::Si),
                     },
-                    /* %rdx = *const u64 (ptr to args)  */
+                    AsmInstr::Comment("%rdx = *const u64 (ptr to args)".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
-                    /* %rcx = argc  */
+                    AsmInstr::Comment("%rcx = argc".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(argc as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
                     },
-                    /* %r8 = ptr to retval  */
+                    AsmInstr::Comment("%r8 = ptr to retval".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::R8),
                     },
+                    AsmInstr::Comment("Reserve space for the args.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(args_space as i64),
                         rhs: AsmOp::Reg(AsmReg::R8),
                     },
-                    /* invoke the rt trampoline  */
+                    AsmInstr::Comment("Invoke the rt trampoline".into()),
                     AsmInstr::CallRt { target: RtFn::Call },
-                    /* read in Value.payload into %r9 scratch  */
+                    AsmInstr::Comment("Read in Value.payload into %r9 scratch.".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Mem(AsmReg::Sp, (args_space + 8) as isize),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
-                    /* both native and fallback calls keep on going here  */
+                    AsmInstr::Comment("Both native and fallback calls keep on going here.".into()),
                     AsmInstr::Label(done_label),
-                    /* release tmp space  */
+                    AsmInstr::Comment("Release tmp space.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(frame_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
-                    /* rm alignment padding */
+                    AsmInstr::Comment("Release alignment padding.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
-                    /* restore caller-saved regs  */
+                    AsmInstr::Comment("Restore caller-saved regs.".into()),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
-                    /* check rt status  */
+                    AsmInstr::Comment("Check status.".into()),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
@@ -570,11 +690,13 @@ impl IRInstr {
                     },
                 ]);
 
-                /* store the result into IR dst  */
-                body.push(AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
-                    dst: dst.codegen(ctx)?,
-                });
+                body.extend([
+                    AsmInstr::Comment("Store the result into IR dst.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R9),
+                        dst: dst.codegen(ctx)?,
+                    },
+                ]);
 
                 Ok(body)
             }
@@ -622,25 +744,33 @@ pub fn insert_prologue<T>(body: &mut T)
 where
     T: AsmSink,
 {
+    body.sink(AsmInstr::Comment("Establish a stack frame".to_string()));
     body.sink(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
         dst: AsmOp::Reg(AsmReg::Bp),
     });
+    body.sink(AsmInstr::Newline);
+    body.sink(AsmInstr::Comment("Reserve the stack space.".to_string()));
     body.sink(AsmInstr::Bin {
         kind: AsmInstrBinKind::Sub,
         lhs: AsmOp::Imm(0),
         rhs: AsmOp::Reg(AsmReg::Sp),
     });
+    body.sink(AsmInstr::Newline);
 }
 
 pub fn insert_epilogue<T>(body: &mut T)
 where
     T: AsmSink,
 {
+    body.sink(AsmInstr::Comment(
+        "Restore the previous stack frame".to_string(),
+    ));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
     });
     body.sink(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
+    body.sink(AsmInstr::Newline);
 }

@@ -86,7 +86,12 @@ impl JitCompiler {
         let mut asm_func = asm_func.regalloc().fixup();
 
         /* Backpatch the amount of stack space required.  */
-        if let Some(instr) = asm_func.body.get_mut(2) {
+        if let Some(instr) = asm_func
+            .body
+            .iter_mut()
+            .filter(|instr| !matches!(instr, AsmInstr::Comment(_) | AsmInstr::Newline))
+            .nth(2)
+        {
             match instr {
                 AsmInstr::Bin {
                     kind: AsmInstrBinKind::Sub,
@@ -139,6 +144,10 @@ impl JitCompiler {
             });
         }
 
+        for f in self.assembler.source_map().files() {
+            println!("{}", f.src);
+        }
+
         let bytes = self.assembler.section_bytes(SectionId(0));
 
         ExecutableMem::new(&bytes)
@@ -169,24 +178,6 @@ impl JitCompiler {
 
         insert_prologue(&mut body);
 
-        /* Preserve callee-saved registers we use in our ABI.  */
-        body.extend(vec![
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R15)),
-            /* %r9 contains `end_pc` which must survive the call.
-             * This push also aligns the stack.  */
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
-        ]);
-
-        /* FIXME: maintain 16-byte stack alignment before calls.  */
-        body.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Sub,
-            lhs: AsmOp::Imm(8),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-        });
-
         /*
          * %rdi = hidden *mut JitResult ptr
          * %rsi = *mut Vm
@@ -194,54 +185,122 @@ impl JitCompiler {
          * %rcx = *const Value (args)
          * %r8  = *const u8 (compiled fn addr)
          * %r9 = usize (end_pc)
-         *
-         * Internal ABI:
+         * 16(%rbp) = usize (ptr to `native_entrypoints`)
+         */
+
+        /* Internal ABI:
          * %r12 = *mut JitResult
          * %r13 = *mut Vm
          * %r14 = *const Rt
          * %rdx = *const Value (args)
          */
-        body.extend(vec![
+        body.push(AsmInstr::Comment(
+            "As a callee (from Rust Vm's perspective), preserve callee-saved".to_string(),
+        ));
+        body.push(AsmInstr::Comment(
+            "registers used in the internal ABI.".to_string(),
+        ));
+        body.extend([
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R15)),
+        ]);
+
+        body.extend([
+            AsmInstr::Newline,
+            AsmInstr::Comment(
+                "As a caller (from the perspective of the natively compiled function)".to_string(),
+            ),
+            AsmInstr::Comment(
+                "preserve caller-saved registers which must survive the call to the".to_string(),
+            ),
+            AsmInstr::Comment("aforementioned natively compiled function.".to_string()),
+            AsmInstr::Newline,
+            AsmInstr::Comment("%r9 contains `end_pc`.".to_string()),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
+        ]);
+
+        body.push(AsmInstr::Newline);
+
+        /* FIXME: maintain 16-byte stack alignment before calls.  */
+        body.push(AsmInstr::Comment(
+            "After the five pushes, the stack is misaligned by 8,".to_string(),
+        ));
+        body.push(AsmInstr::Comment(
+            "so its 16-byte alignment needs restored.".to_string(),
+        ));
+        body.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Sub,
+            lhs: AsmOp::Imm(8),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+        });
+
+        body.push(AsmInstr::Newline);
+
+        body.extend([
+            AsmInstr::Comment("%rdi = *mut JitResult".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Di),
                 dst: AsmOp::Reg(AsmReg::R12),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rsi = *mut Vm".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Si),
                 dst: AsmOp::Reg(AsmReg::R13),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rsi = *const Rt".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Reg(AsmReg::R14),
             },
-            AsmInstr::Mov {
-                src: AsmOp::Stack(16),
-                dst: AsmOp::Reg(AsmReg::R15),
-            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rcx = *const Value (args)".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Reg(AsmReg::Di),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".to_string()),
+            AsmInstr::Mov {
+                src: AsmOp::Stack(16),
+                dst: AsmOp::Reg(AsmReg::R15),
+            },
         ]);
 
-        /* Execute the compiled region.  */
-        body.push(AsmInstr::CallIndirect { target: AsmReg::R8 });
+        body.push(AsmInstr::Newline);
 
-        /* According to the internal ABI, after the call instr,
-         * %rcx will have contained the exit kind (one of CONTINUE,
-         * RET, ERROR), while %rdx will have contained the ValueTag,
-         * and %rax will have contained the payload or the err code.  */
+        body.extend([
+            AsmInstr::Comment("%r8 = *const u8 (compiled fn addr)".to_string()),
+            AsmInstr::CallIndirect { target: AsmReg::R8 },
+        ]);
 
-        /* The ptr to `JitResult` struct is in %r12.  */
-        body.extend(vec![
+        body.push(AsmInstr::Newline);
+
+        body.extend([
+            AsmInstr::Comment("According to the internal ABI, after the call instr".to_string()),
+            AsmInstr::Comment("%rax, %rcx, %rdx, ??? will have contained the result,".to_string()),
+            AsmInstr::Comment("while, remember, %r12 contains *mut JitResult.".to_string()),
+        ]);
+
+        body.push(AsmInstr::Newline);
+
+        body.extend([
+            AsmInstr::Comment("%rcx = JIT_CONTINUE | JIT_RET | JIT_ERROR".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("8(%rsp) = `next_pc`".to_string()),
             AsmInstr::Mov {
-                src: AsmOp::Mem(AsmReg::Sp, 8), // alignment padding
+                src: AsmOp::Mem(AsmReg::Sp, 8),
                 dst: AsmOp::Reg(AsmReg::R10),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%r10 = `next_pc`".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R10),
                 dst: AsmOp::Mem(
@@ -249,6 +308,8 @@ impl JitCompiler {
                     std::mem::offset_of!(JitResult, next_pc) as isize,
                 ),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rdx = ValueTag".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Mem(
@@ -257,6 +318,8 @@ impl JitCompiler {
                         as isize,
                 ),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rax = payload | err code".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Ax),
                 dst: AsmOp::Mem(
@@ -265,31 +328,40 @@ impl JitCompiler {
                         as isize,
                 ),
             },
-            /* Return the JitResult ptr according to the SystemV AMD64 ABI.  */
+            AsmInstr::Newline,
+            AsmInstr::Comment(
+                "Return the JitResult ptr according to the SystemV AMD64 ABI.".to_string(),
+            ),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R12),
                 dst: AsmOp::Reg(AsmReg::Ax),
             },
         ]);
 
-        /* Discard the saved end_pc.  */
-        body.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Add,
-            lhs: AsmOp::Imm(8),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-        });
+        body.push(AsmInstr::Newline);
 
-        /* Restore callee-saved registers and return to VM.  */
-        body.extend(vec![
+        body.extend([
+            AsmInstr::Comment("Release the alignment padding.".to_string()),
+            AsmInstr::Bin {
+                kind: AsmInstrBinKind::Add,
+                lhs: AsmOp::Imm(8),
+                rhs: AsmOp::Reg(AsmReg::Sp),
+            },
+            AsmInstr::Newline,
+        ]);
+
+        /*   */
+        body.extend([
+            AsmInstr::Comment("Restore registers and return to VM.".to_string()),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R9)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R15)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R13)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R12)),
+            AsmInstr::Newline,
         ]);
 
         insert_epilogue(&mut body);
-
         body.push(AsmInstr::Ret);
 
         body
