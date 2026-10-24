@@ -104,12 +104,13 @@ impl JitCompiler {
         })?;
 
         /* Runtime error handler emission.  */
-        let rt_err_handler = AsmFunc {
+        AsmFunc {
             name: format!("{}_rt_err", region_func.name),
             body: self.mk_rt_err(),
             space: 0,
-        };
-        rt_err_handler.emit(&mut asm_txt).map_err(|_| JitError {
+        }
+        .emit(&mut asm_txt)
+        .map_err(|_| JitError {
             msg: "jit entry emission failed".to_string(),
         })?;
 
@@ -217,22 +218,9 @@ impl JitCompiler {
         /* According to the internal ABI, after the call instr,
          * %rcx will have contained the exit kind (one of CONTINUE,
          * RET, ERROR), while %rdx will have contained the ValueTag,
-         * and %rax will have contained the payload or the err code.
-         */
+         * and %rax will have contained the payload or the err code.  */
 
         /* The ptr to `JitResult` struct is in %r12.  */
-
-        /* #[repr(C)]
-         * pub struct JitResult {
-         *     pub kind: u64,     // offset 0
-         *     pub next_pc: u64,  // offset 8
-         *     pub value: Value,  // offset 16
-         * }
-         *
-         * ...and `Value` is:
-         *      offset 16: tag
-         *      offset 24: payload
-         */
         body.extend(vec![
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
