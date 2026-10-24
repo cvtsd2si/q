@@ -173,6 +173,8 @@ impl JitCompiler {
             AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
+            /* %r9 contains `end_pc` which must survive the call.
+             * This push also aligns the stack.  */
             AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
         ]);
 
@@ -181,6 +183,14 @@ impl JitCompiler {
          * %rsi = *mut Vm
          * %rdx = *const Rt
          * %rcx = *const Value (args)
+         * %r8  = *const u8 (compiled fn addr)
+         * %r9 = usize (end_pc)
+         *
+         * Internal ABI:
+         * %r12 = *mut JitResult
+         * %r13 = *mut Vm
+         * %r14 = *const Rt
+         * %rdx = *const Value (args)
          */
         body.extend(vec![
             AsmInstr::Mov {
@@ -255,20 +265,21 @@ impl JitCompiler {
                         as isize,
                 ),
             },
+            /* Return the JitResult ptr according to the SystemV AMD64 ABI.  */
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R12),
                 dst: AsmOp::Reg(AsmReg::Ax),
             },
         ]);
 
-        /* Stack alignment for now.  */
+        /* Discard the saved end_pc.  */
         body.push(AsmInstr::Bin {
             kind: AsmInstrBinKind::Add,
             lhs: AsmOp::Imm(8),
             rhs: AsmOp::Reg(AsmReg::Sp),
         });
 
-        /* Restore the native stack/register state and return to VM.  */
+        /* Restore callee-saved registers and return to VM.  */
         body.extend(vec![
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R13)),
