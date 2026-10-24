@@ -127,6 +127,7 @@ impl std::fmt::Display for AsmReg {
             AsmReg::R12 => write!(f, "%r12"),
             AsmReg::R13 => write!(f, "%r13"),
             AsmReg::R14 => write!(f, "%r14"),
+            AsmReg::R15 => write!(f, "%r15"),
             AsmReg::Cx => write!(f, "%rcx"),
             AsmReg::Dx => write!(f, "%rdx"),
             AsmReg::Si => write!(f, "%rsi"),

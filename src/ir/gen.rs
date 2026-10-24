@@ -100,6 +100,7 @@ pub enum IRInstr {
     Call {
         target: String,
         args: Vec<IRVal>,
+        arg_tys: Vec<Type>,
         dst: IRVal,
     },
 }
@@ -453,6 +454,8 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             ty: _,
             span: _,
         } => {
+            let arg_tys = args.iter().map(|arg| arg.ty().unwrap()).collect();
+
             let ir_args = args
                 .iter()
                 .map(|arg| irfy_expr_and_cvt(instrs, arg))
@@ -463,6 +466,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             instrs.push(IRInstr::Call {
                 target: target.to_owned(),
                 args: ir_args,
+                arg_tys,
                 dst: dst.clone(),
             });
 

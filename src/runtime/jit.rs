@@ -174,10 +174,18 @@ impl JitCompiler {
             AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R15)),
             /* %r9 contains `end_pc` which must survive the call.
              * This push also aligns the stack.  */
             AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
         ]);
+
+        /* FIXME: maintain 16-byte stack alignment before calls.  */
+        body.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Sub,
+            lhs: AsmOp::Imm(8),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+        });
 
         /*
          * %rdi = hidden *mut JitResult ptr
@@ -207,6 +215,10 @@ impl JitCompiler {
                 dst: AsmOp::Reg(AsmReg::R14),
             },
             AsmInstr::Mov {
+                src: AsmOp::Stack(16),
+                dst: AsmOp::Reg(AsmReg::R15),
+            },
+            AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Reg(AsmReg::Di),
             },
@@ -227,7 +239,7 @@ impl JitCompiler {
                 dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
             },
             AsmInstr::Mov {
-                src: AsmOp::Mem(AsmReg::Sp, 0),
+                src: AsmOp::Mem(AsmReg::Sp, 8), // alignment padding
                 dst: AsmOp::Reg(AsmReg::R10),
             },
             AsmInstr::Mov {
@@ -269,6 +281,8 @@ impl JitCompiler {
 
         /* Restore callee-saved registers and return to VM.  */
         body.extend(vec![
+            AsmInstr::Pop(AsmOp::Reg(AsmReg::R9)),
+            AsmInstr::Pop(AsmOp::Reg(AsmReg::R15)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R13)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R12)),
@@ -383,6 +397,7 @@ pub type JitEntry = unsafe extern "C" fn(
     *const Value, /* parameters  */
     *const u8,    /* body  */
     usize,        /* next_pc  */
+    *const usize, /* native entry point table  */
 ) -> JitResult;
 
 pub const JIT_THRESHOLD: u32 = 1;

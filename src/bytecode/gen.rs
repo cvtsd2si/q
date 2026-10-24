@@ -180,7 +180,9 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
             IRInstr::Label(_target) => Ok(vec![]),
 
-            IRInstr::Call { target, args, dst } => {
+            IRInstr::Call {
+                target, args, dst, ..
+            } => {
                 let mut ops = vec![];
 
                 for arg in args {

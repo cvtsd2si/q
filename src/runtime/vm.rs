@@ -29,6 +29,7 @@ pub struct Vm {
     pc: usize,
     hotness: Vec<Vec<u32>>,
     jit_code: Vec<Vec<Option<JitBlock>>>,
+    native_entrypoints: Box<[usize]>,
     bytecode: BytecodeProg,
     fp: usize,
     shared_entry: JitTrampoline,
@@ -57,6 +58,7 @@ impl Vm {
                 .iter()
                 .map(|f| std::iter::repeat_with(|| None).take(f.body.len()).collect())
                 .collect(),
+            native_entrypoints: vec![0usize; bytecode.funcs.len()].into_boxed_slice(),
             bytecode,
             fp: 0,
             shared_entry: JitCompiler::new().compile_entry().map_err(|e| VmError {
@@ -114,7 +116,12 @@ impl Vm {
             if self.hotness[self.func][self.pc] == JIT_THRESHOLD
                 && let Some(block) = self.compile_region(self.func, self.pc)
             {
+                if self.pc == 0 {
+                    self.native_entrypoints[self.func] = block.code.as_ptr() as usize;
+                }
+
                 self.jit_code[self.func][self.pc] = Some(block);
+
                 continue;
             }
 
@@ -262,7 +269,8 @@ impl Vm {
         // );
 
         let args = self.stack[self.fp..].as_ptr();
-        let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc) };
+        let native_entrypoints = self.native_entrypoints.as_ptr();
+        let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc, native_entrypoints) };
 
         // eprintln!("[JIT] native returned {:?}", r);
 

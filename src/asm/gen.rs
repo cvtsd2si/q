@@ -1,9 +1,9 @@
 use crate::{
     bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, mktmp},
     parser::ast::{BinaryExpressionKind, Literal, Type},
     runtime::{
-        jit::JIT_RET,
+        jit::{JIT_ERROR, JIT_RET},
         rt::Rt,
         value::{Value, ValueTag},
     },
@@ -139,6 +139,7 @@ pub enum AsmReg {
     R12,
     R13,
     R14,
+    R15,
     Cx,
     Dx,
     Di,
@@ -369,13 +370,21 @@ impl IRInstr {
                 Ok(vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))])
             }
 
-            IRInstr::Call { target, args, dst } => {
+            IRInstr::Call {
+                target,
+                args,
+                arg_tys,
+                dst,
+            } => {
                 let func = ctx.get::<BytecodeFunc>(target).unwrap();
 
                 let argc = args.len();
                 let args_space = argc * 8;
 
-                let frame_space = (args_space + 16).div_ceil(16) * 16;
+                let native_args_offset = args_space + std::mem::size_of::<Value>();
+                let native_args_space = argc * std::mem::size_of::<Value>();
+
+                let frame_space = (native_args_offset + native_args_space).div_ceil(16) * 16;
 
                 let mut body = vec![
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
@@ -408,7 +417,91 @@ impl IRInstr {
                             dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
                         },
                     ]);
+
+                    let base = native_args_offset + idx * std::mem::size_of::<Value>();
+                    let tag = ValueTag::from(arg_tys[idx]);
+
+                    body.extend([
+                        AsmInstr::Mov {
+                            src: AsmOp::Imm(tag as i64),
+                            dst: AsmOp::Mem(
+                                AsmReg::Sp,
+                                (base + std::mem::offset_of!(Value, tag)) as isize,
+                            ),
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::R9),
+                            dst: AsmOp::Mem(
+                                AsmReg::Sp,
+                                (base + std::mem::offset_of!(Value, payload)) as isize,
+                            ),
+                        },
+                    ]);
                 }
+
+                let id = mktmp();
+
+                let fallback_label = format!(".L{func_name}_call_fallback_{id}");
+                let done_label = format!(".L{func_name}_call_done_{id}");
+
+                body.extend([
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(
+                            AsmReg::R15,
+                            (func * std::mem::size_of::<usize>()) as isize,
+                        ),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    AsmInstr::Cmp {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                    },
+                    AsmInstr::Jmpcc {
+                        cc: ConditionCode::E,
+                        target: fallback_label.clone(),
+                    },
+                ]);
+
+                body.extend([
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Sp),
+                        dst: AsmOp::Reg(AsmReg::Di),
+                    },
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(native_args_offset as i64),
+                        rhs: AsmOp::Reg(AsmReg::Di),
+                    },
+                ]);
+
+                body.push(AsmInstr::CallIndirect { target: AsmReg::R9 });
+
+                body.extend([
+                    AsmInstr::Cmp {
+                        src: AsmOp::Imm(JIT_ERROR as i64),
+                        dst: AsmOp::Reg(AsmReg::Cx),
+                    },
+                    AsmInstr::Jmpcc {
+                        cc: ConditionCode::E,
+                        target: format!("{func_name}_rt_err"),
+                    },
+                ]);
+
+                body.push(AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Ax),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                });
+
+                body.push(AsmInstr::Mov {
+                    src: AsmOp::Imm(0),
+                    dst: AsmOp::Reg(AsmReg::Ax),
+                });
+
+                body.push(AsmInstr::Jmp {
+                    target: done_label.clone(),
+                });
+
+                body.push(AsmInstr::Label(fallback_label));
 
                 body.extend([
                     /* %rdi = *mut Vm,  */
@@ -448,6 +541,8 @@ impl IRInstr {
                         src: AsmOp::Mem(AsmReg::Sp, (args_space + 8) as isize),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
+                    /* both native and fallback calls keep on going here  */
+                    AsmInstr::Label(done_label),
                     /* release tmp space  */
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,

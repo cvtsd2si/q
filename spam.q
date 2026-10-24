@@ -1,6 +1,7 @@
 fn main() -> i64 {
-   let n: i64 = 40;
-   ret fib(n);
+   let n: i64 = fib(40);
+   print n;
+   ret 0;
 }
 
 fn fib(n: i64) -> i64 {
