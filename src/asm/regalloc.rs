@@ -49,6 +49,10 @@ impl RegAllocator {
                 dst: self.replace_pseudo(dst),
             },
 
+            AsmInstr::Setcc { cc, dst } => AsmInstr::Setcc {
+                cc: *cc,
+                dst: self.replace_pseudo(dst),
+            },
             _ => instr.clone(),
         }
     }

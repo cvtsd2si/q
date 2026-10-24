@@ -39,11 +39,13 @@ pub enum AsmInstr {
         src: AsmOp,
         dst: AsmOp,
     },
-    Jz {
+    Jmpcc {
+        cc: ConditionCode,
         target: String,
     },
-    Jnz {
-        target: String,
+    Setcc {
+        cc: ConditionCode,
+        dst: AsmOp,
     },
     Jmp {
         target: String,
@@ -58,6 +60,41 @@ pub enum AsmInstr {
     CallRt {
         target: RtFn,
     },
+}
+
+#[derive(Debug, Copy, Clone, Eq, PartialEq)]
+pub enum ConditionCode {
+    E,
+    Ne,
+
+    // signed
+    L,
+    Le,
+    G,
+    Ge,
+
+    // unsigned
+    B,
+    Be,
+    A,
+    Ae,
+}
+
+impl std::fmt::Display for ConditionCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ConditionCode::E => write!(f, "e"),
+            ConditionCode::Ne => write!(f, "ne"),
+            ConditionCode::L => write!(f, "l"),
+            ConditionCode::Le => write!(f, "le"),
+            ConditionCode::G => write!(f, "g"),
+            ConditionCode::Ge => write!(f, "ge"),
+            ConditionCode::B => write!(f, "b"),
+            ConditionCode::Be => write!(f, "be"),
+            ConditionCode::A => write!(f, "a"),
+            ConditionCode::Ae => write!(f, "ae"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -193,7 +230,8 @@ impl IRInstr {
                 lhs,
                 rhs,
                 dst,
-            } => {
+                operand_ty,
+            } if matches!(kind, BinaryExpressionKind::Add | BinaryExpressionKind::Sub) => {
                 let kind = match kind {
                     BinaryExpressionKind::Add => AsmInstrBinKind::Add,
                     BinaryExpressionKind::Sub => AsmInstrBinKind::Sub,
@@ -209,6 +247,50 @@ impl IRInstr {
                         kind,
                         lhs: rhs.codegen(ctx)?,
                         rhs: dst.codegen(ctx)?,
+                    },
+                ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } => {
+                let is_unsigned = matches!(
+                    *operand_ty,
+                    Type::UInt8 | Type::UInt16 | Type::UInt32 | Type::UInt64
+                );
+
+                let cc = match (*kind, is_unsigned) {
+                    (BinaryExpressionKind::Equal, _) => ConditionCode::E,
+                    (BinaryExpressionKind::NotEqual, _) => ConditionCode::Ne,
+                    (BinaryExpressionKind::Less, false) => ConditionCode::L,
+                    (BinaryExpressionKind::LessEqual, false) => ConditionCode::Le,
+                    (BinaryExpressionKind::Greater, false) => ConditionCode::G,
+                    (BinaryExpressionKind::GreaterEqual, false) => ConditionCode::Ge,
+                    (BinaryExpressionKind::Less, true) => ConditionCode::B,
+                    (BinaryExpressionKind::LessEqual, true) => ConditionCode::Be,
+                    (BinaryExpressionKind::Greater, true) => ConditionCode::A,
+                    (BinaryExpressionKind::GreaterEqual, true) => ConditionCode::Ae,
+                    _ => unreachable!("got: {kind:?} {is_unsigned:?}"),
+                };
+
+                let instrs = vec![
+                    AsmInstr::Cmp {
+                        src: rhs.codegen(ctx)?,
+                        dst: lhs.codegen(ctx)?,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(0),
+                        dst: dst.codegen(ctx)?,
+                    },
+                    AsmInstr::Setcc {
+                        cc,
+                        dst: dst.codegen(ctx)?,
                     },
                 ];
 
@@ -261,7 +343,8 @@ impl IRInstr {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
-                    AsmInstr::Jnz {
+                    AsmInstr::Jmpcc {
+                        cc: ConditionCode::Ne,
                         target: format!("{}_rt_err", func_name),
                     },
                 ])
@@ -272,7 +355,8 @@ impl IRInstr {
                     src: cond.codegen(ctx)?,
                     dst: AsmOp::Imm(0),
                 },
-                AsmInstr::Jz {
+                AsmInstr::Jmpcc {
+                    cc: ConditionCode::E,
                     target: format!(".L{}_{}", func_name, target),
                 },
             ]),
@@ -385,7 +469,8 @@ impl IRInstr {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
-                    AsmInstr::Jnz {
+                    AsmInstr::Jmpcc {
+                        cc: ConditionCode::Ne,
                         target: format!("{}_rt_err", func_name),
                     },
                 ]);

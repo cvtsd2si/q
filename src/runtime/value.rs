@@ -3,14 +3,14 @@ use std::io::Write;
 use crate::parser::ast::{Literal, Type};
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Value {
     pub tag: ValueTag,
     pub payload: u64,
 }
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueTag {
     UInt8 = 0,
     Int8 = 1,
@@ -91,6 +91,32 @@ impl std::ops::Sub for Value {
             },
 
             _ => unimplemented!(),
+        }
+    }
+}
+
+impl std::cmp::PartialOrd for Value {
+    fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
+        match (self.tag, rhs.tag) {
+            (ValueTag::Int64, ValueTag::Int64) => {
+                (self.payload as i64).partial_cmp(&(rhs.payload as i64))
+            }
+            _ => unimplemented!(),
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        match value {
+            true => Value {
+                tag: ValueTag::Bool,
+                payload: 1,
+            },
+            false => Value {
+                tag: ValueTag::Bool,
+                payload: 0,
+            },
         }
     }
 }

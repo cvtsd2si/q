@@ -29,6 +29,8 @@ impl Token {
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
             '=' => TokenKind::Equal,
+            '<' => TokenKind::Less,
+            '>' => TokenKind::Greater,
             _ => panic!("Cannot find TokenKind for {}", ch),
         }
     }
@@ -59,6 +61,12 @@ pub enum TokenKind {
     Star,
     Slash,
     Equal,
+    DoubleEqual,
+    NotEqual,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
     Arrow,
     Ret,
     Let,

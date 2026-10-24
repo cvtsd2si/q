@@ -62,8 +62,12 @@ impl std::fmt::Display for AsmInstr {
                 AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs),
             },
             AsmInstr::Cmp { src, dst } => writeln!(f, "cmpq {}, {}", src, dst),
-            AsmInstr::Jz { target } => writeln!(f, "je {}", target),
-            AsmInstr::Jnz { target } => writeln!(f, "jne {}", target),
+            AsmInstr::Setcc { cc, dst } => match dst {
+                AsmOp::Reg(reg) => writeln!(f, "set{cc} {}", reg.as_byte()),
+                AsmOp::Stack(_) | AsmOp::Mem(_, _) => writeln!(f, "set{cc} {dst}"),
+                _ => unreachable!("got: {dst:?}"),
+            },
+            AsmInstr::Jmpcc { cc, target } => writeln!(f, "j{cc} {target}"),
             AsmInstr::Jmp { target } => writeln!(f, "jmp {}", target),
             AsmInstr::Call { target } => writeln!(f, "call {}", target),
             AsmInstr::CallRt { target } => {
@@ -89,6 +93,23 @@ impl std::fmt::Display for AsmOp {
             AsmOp::Stack(offset) => write!(f, "{}(%rbp)", offset),
             AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg),
             _ => unreachable!("got: {:?}", self),
+        }
+    }
+}
+
+impl AsmReg {
+    fn as_byte(self) -> &'static str {
+        match self {
+            AsmReg::R8 => "%r8b",
+            AsmReg::R9 => "%r9b",
+            AsmReg::R10 => "%r10b",
+            AsmReg::R11 => "%r11b",
+
+            AsmReg::Ax => "%al",
+            AsmReg::Cx => "%cl",
+            AsmReg::Dx => "%dl",
+
+            _ => unimplemented!(),
         }
     }
 }

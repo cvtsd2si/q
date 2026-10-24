@@ -18,6 +18,12 @@ pub enum Op {
     Jz(usize),
     Jmp(usize),
     Call { target: usize, argc: usize },
+    L,
+    G,
+    Le,
+    Ge,
+    E,
+    Ne,
 }
 
 pub type Bytecode = Vec<Op>;
@@ -134,10 +140,17 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 lhs,
                 rhs,
                 dst,
+                ..
             } => {
                 let op = match kind {
                     BinaryExpressionKind::Add => Op::Add,
                     BinaryExpressionKind::Sub => Op::Sub,
+                    BinaryExpressionKind::Less => Op::L,
+                    BinaryExpressionKind::Greater => Op::G,
+                    BinaryExpressionKind::LessEqual => Op::Le,
+                    BinaryExpressionKind::GreaterEqual => Op::Ge,
+                    BinaryExpressionKind::Equal => Op::E,
+                    BinaryExpressionKind::NotEqual => Op::Ne,
                     _ => unreachable!(),
                 };
 

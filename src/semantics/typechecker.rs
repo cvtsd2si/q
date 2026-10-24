@@ -2,7 +2,8 @@ use std::collections::HashMap;
 
 use crate::lexer::token::Span;
 use crate::parser::ast::{
-    BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program, Statement, Type,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
+    Statement, Type,
 };
 
 pub struct Typechecker {
@@ -365,30 +366,49 @@ fn typecheck_expr(
 
             let op_hint = merge_types(lhs_hint, rhs_hint)?;
 
-            let resolved = merge_types(expected_ty, op_hint)?;
+            let is_comparison = matches!(
+                kind,
+                BinaryExpressionKind::Less
+                    | BinaryExpressionKind::Greater
+                    | BinaryExpressionKind::LessEqual
+                    | BinaryExpressionKind::GreaterEqual
+                    | BinaryExpressionKind::Equal
+                    | BinaryExpressionKind::NotEqual
+            );
 
-            let ty = resolved.unwrap_or_else(|| default_numeric_ty(&lhs));
+            let operand_ty = if is_comparison {
+                op_hint
+            } else {
+                merge_types(expected_ty, op_hint)?
+            }
+            .unwrap_or_else(|| default_numeric_ty(&lhs));
 
-            if !ty.is_numeric() {
+            if !operand_ty.is_numeric() {
                 return Err(TypecheckerError {
-                    msg: format!("Arithmetic requires numeric operands, got {ty:?}"),
+                    msg: format!("Arithmetic requires numeric operands, got {operand_ty:?}"),
                 });
             }
 
-            let lhs = typecheck_expr(typechecker, *lhs, Some(ty))?;
-            let rhs = typecheck_expr(typechecker, *rhs, Some(ty))?;
+            let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
+            let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 
-            if lhs.ty() != Some(ty) || rhs.ty() != Some(ty) {
+            if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
                 return Err(TypecheckerError {
                     msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
                 });
             }
 
+            let result_ty = if is_comparison {
+                Type::Boolean
+            } else {
+                operand_ty
+            };
+
             Ok(Expression::Binary {
                 kind,
                 lhs: lhs.into(),
                 rhs: rhs.into(),
-                ty: Some(ty),
+                ty: Some(result_ty),
                 span,
             })
         }
@@ -603,8 +623,20 @@ fn known_ty(
                 msg: format!("Unknown fn: {target}"),
             }),
 
-        Expression::Binary { lhs, rhs, .. } => {
-            merge_types(known_ty(typechecker, lhs)?, known_ty(typechecker, rhs)?)
+        Expression::Binary { kind, lhs, rhs, .. } => {
+            if matches!(
+                kind,
+                BinaryExpressionKind::Less
+                    | BinaryExpressionKind::Greater
+                    | BinaryExpressionKind::LessEqual
+                    | BinaryExpressionKind::GreaterEqual
+                    | BinaryExpressionKind::Equal
+                    | BinaryExpressionKind::NotEqual
+            ) {
+                Ok(Some(Type::Boolean))
+            } else {
+                merge_types(known_ty(typechecker, lhs)?, known_ty(typechecker, rhs)?)
+            }
         }
 
         Expression::Assign { lhs, .. } => {

@@ -459,7 +459,7 @@ impl<'src> Parser<'src> {
     }
 
     fn assignment(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.term()?;
+        let mut result = self.equality()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[TokenKind::Equal]) {
@@ -468,6 +468,87 @@ impl<'src> Parser<'src> {
 
             result = Expression::Assign {
                 lhs: result.clone().into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn equality(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.relational()?;
+        let begin = result.span();
+
+        while self.check_many_greedy(&[TokenKind::Equal, TokenKind::NotEqual]) {
+            let neg = match self.prev.as_ref() {
+                Some(token) => match token.kind {
+                    TokenKind::NotEqual => true,
+                    TokenKind::DoubleEqual => false,
+                    _ => unreachable!(),
+                },
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: "Encountered the end of token stream (prev: None)".to_string(),
+                    });
+                }
+            };
+
+            let right = self.relational()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: if neg {
+                    BinaryExpressionKind::NotEqual
+                } else {
+                    BinaryExpressionKind::Equal
+                },
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn relational(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.term()?;
+        let begin = result.span();
+
+        while self.check_many_greedy(&[
+            TokenKind::Less,
+            TokenKind::LessEqual,
+            TokenKind::Greater,
+            TokenKind::GreaterEqual,
+        ]) {
+            let kind = match self.prev.as_ref() {
+                Some(token) => match token.kind {
+                    TokenKind::Less => BinaryExpressionKind::Less,
+                    TokenKind::Greater => BinaryExpressionKind::Greater,
+                    TokenKind::LessEqual => BinaryExpressionKind::LessEqual,
+                    TokenKind::GreaterEqual => BinaryExpressionKind::GreaterEqual,
+                    _ => unreachable!(),
+                },
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: "Encountered the end of token stream (prev: None)".to_string(),
+                    });
+                }
+            };
+
+            let right = self.term()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind,
+                lhs: result.into(),
                 rhs: right.into(),
                 ty: None,
                 span: begin + end,

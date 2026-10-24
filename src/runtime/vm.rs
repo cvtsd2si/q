@@ -12,12 +12,12 @@ use crate::{
     },
 };
 
-macro_rules! binop_arithmetic {
+macro_rules! binop {
     ($stack:expr, $op:tt) => {
         let b = $stack.pop().unwrap();
         let a = $stack.pop().unwrap();
 
-        $stack.push(a $op b);
+        $stack.push((a $op b).into());
     };
 }
 
@@ -125,6 +125,12 @@ impl Vm {
                 Op::Const(konst) => self.handle_op_const(konst),
                 Op::Add => self.handle_op_add(),
                 Op::Sub => self.handle_op_sub(),
+                Op::L => self.handle_op_l(),
+                Op::G => self.handle_op_g(),
+                Op::Le => self.handle_op_le(),
+                Op::Ge => self.handle_op_ge(),
+                Op::E => self.handle_op_e(),
+                Op::Ne => self.handle_op_ne(),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -185,16 +191,11 @@ impl Vm {
             });
         }
 
-        let values = params
-            .iter()
-            .zip(payloads)
-            .map(|(param, payload)| Value {
+        self.stack
+            .extend(params.iter().zip(payloads).map(|(param, payload)| Value {
                 tag: ValueTag::from(param.ty),
                 payload: *payload,
-            })
-            .collect::<Vec<Value>>();
-
-        self.stack.extend(values);
+            }));
 
         self.handle_op_call(target, payloads.len());
 
@@ -222,10 +223,10 @@ impl Vm {
             .position(|&ir_idx| ir_idx >= end_ir)
             .unwrap_or(bytecode_func.body.len());
 
-        eprintln!(
-            "[JIT] compiling func={} pc={} ir={}..{}",
-            func, start_pc, start_ir, end_ir,
-        );
+        // eprintln!(
+        //     "[JIT] compiling func={} pc={} ir={}..{}",
+        //     func, start_pc, start_ir, end_ir,
+        // );
 
         let mut jit = JitCompiler::new();
 
@@ -255,15 +256,15 @@ impl Vm {
         let body = block.code.as_ptr();
         let end_pc = block.end_pc;
 
-        eprintln!(
-            "[JIT] EXECUTING {:p}, pc={}..{}",
-            block.code.mem, block.start_pc, block.end_pc,
-        );
+        // eprintln!(
+        //     "[JIT] EXECUTING {:p}, pc={}..{}",
+        //     block.code.mem, block.start_pc, block.end_pc,
+        // );
 
         let args = self.stack[self.fp..].as_ptr();
         let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc) };
 
-        eprintln!("[JIT] native returned {:?}", r);
+        // eprintln!("[JIT] native returned {:?}", r);
 
         match r.kind {
             JIT_CONTINUE => JitExit::Continue(r.next_pc as usize),
@@ -292,11 +293,35 @@ impl Vm {
     }
 
     fn handle_op_add(&mut self) {
-        binop_arithmetic!(self.stack, +);
+        binop!(self.stack, +);
     }
 
     fn handle_op_sub(&mut self) {
-        binop_arithmetic!(self.stack, -);
+        binop!(self.stack, -);
+    }
+
+    fn handle_op_l(&mut self) {
+        binop!(self.stack, <);
+    }
+
+    fn handle_op_g(&mut self) {
+        binop!(self.stack, >);
+    }
+
+    fn handle_op_le(&mut self) {
+        binop!(self.stack, <=);
+    }
+
+    fn handle_op_ge(&mut self) {
+        binop!(self.stack, >=);
+    }
+
+    fn handle_op_e(&mut self) {
+        binop!(self.stack, ==);
+    }
+
+    fn handle_op_ne(&mut self) {
+        binop!(self.stack, !=);
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {

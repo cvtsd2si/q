@@ -143,6 +143,12 @@ pub enum BinaryExpressionKind {
     Sub,
     Mul,
     Div,
+    Less,
+    Greater,
+    LessEqual,
+    GreaterEqual,
+    Equal,
+    NotEqual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

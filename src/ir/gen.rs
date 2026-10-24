@@ -83,6 +83,7 @@ pub enum IRInstr {
         lhs: IRVal,
         rhs: IRVal,
         dst: IRVal,
+        operand_ty: Type,
     },
     Print {
         val: IRVal,
@@ -428,6 +429,8 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             ty: _,
             span: _,
         } => {
+            let operand_ty = lhs.ty().unwrap();
+
             let lhs = irfy_expr_and_cvt(instrs, lhs);
             let rhs = irfy_expr_and_cvt(instrs, rhs);
 
@@ -438,6 +441,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                 lhs,
                 rhs,
                 dst: dst.clone(),
+                operand_ty,
             });
 
             ExpRes::Plain(dst)

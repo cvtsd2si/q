@@ -27,8 +27,51 @@ impl<'src> Iterator for Tokenizer<'src> {
             }
 
             let token = match ch {
-                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' | '=' => {
+                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' => {
                     Ok(Token::single(ch, idx))
+                }
+                '<' | '>' => {
+                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                        Ok(Token {
+                            kind: if ch == '<' {
+                                TokenKind::LessEqual
+                            } else {
+                                TokenKind::GreaterEqual
+                            },
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        })
+                    } else {
+                        Ok(Token::single(ch, idx))
+                    }
+                }
+                '!' => {
+                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                        Ok(Token {
+                            kind: TokenKind::NotEqual,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        })
+                    } else {
+                        Ok(Token::single(ch, idx))
+                    }
+                }
+                '=' => {
+                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                        Ok(Token {
+                            kind: TokenKind::DoubleEqual,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        })
+                    } else {
+                        Ok(Token::single(ch, idx))
+                    }
                 }
                 '-' => {
                     if self.chars.next_if(|(_, ch)| *ch == '>').is_some() {
