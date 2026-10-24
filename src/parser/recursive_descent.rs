@@ -405,6 +405,7 @@ impl<'src> Parser<'src> {
     fn parse_loop(&mut self) -> Result<Statement, ParserError> {
         self.consume(TokenKind::Loop)?;
         let body = self.parse_stmt()?.into();
+
         Ok(Statement::Loop { body, label: None })
     }
 
