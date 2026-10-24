@@ -13,10 +13,10 @@ pub struct Rt {
 
     pub call: unsafe extern "C" fn(
         *mut Vm,
-        usize,      // fn idx
-        *const u64, // payloads
-        usize,      // argc
-        *mut Value, // retval
+        usize,        // fn idx
+        *const Value, // args
+        usize,        // argc
+        *mut Value,   // retval
     ) -> u32,
 }
 
@@ -68,7 +68,7 @@ pub extern "C" fn jit_print(_vm: *mut Vm, tag: u64, payload: u64) -> u32 {
 pub unsafe extern "C" fn jit_call(
     vm: *mut Vm,
     target: usize,
-    args: *const u64,
+    args: *const Value,
     argc: usize,
     out: *mut Value,
 ) -> u32 {

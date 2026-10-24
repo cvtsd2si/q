@@ -60,6 +60,10 @@ pub enum AsmInstr {
     CallRt {
         target: RtFn,
     },
+    Lea {
+        src: AsmOp,
+        dst: AsmOp,
+    },
     Comment(String),
     Newline,
 }
@@ -411,12 +415,13 @@ impl IRInstr {
                 let func = ctx.get::<BytecodeFunc>(target).unwrap();
 
                 let argc = args.len();
-                let args_space = argc * 8;
+                let args_space = argc * std::mem::size_of::<Value>();
+                let args_offset = std::mem::size_of::<Value>();
 
-                let native_args_offset = args_space + std::mem::size_of::<Value>();
-                let native_args_space = argc * std::mem::size_of::<Value>();
+                let retval_offset = 0;
+                let retval_space = std::mem::size_of::<Value>();
 
-                let frame_space = (native_args_offset + native_args_space).div_ceil(16) * 16;
+                let frame_space = (args_space + retval_space).div_ceil(16) * 16;
 
                 let mut body = vec![
                     AsmInstr::Comment(format!("Call `{target}`.")),
@@ -437,13 +442,9 @@ impl IRInstr {
                         "Reserve {frame_space} bytes for call args ({argc} args) and retval."
                     )),
                     AsmInstr::Comment("Layout:".into()),
-                    AsmInstr::Comment(format!("- {args_space} bytes of raw arguments,")),
+                    AsmInstr::Comment(format!("- {args_space} bytes of native Value arguments,")),
                     AsmInstr::Comment(format!(
-                        "- {} bytes for the runtime return Value,",
-                        std::mem::size_of::<Value>()
-                    )),
-                    AsmInstr::Comment(format!(
-                        "- {native_args_space} bytes of native Value arguments"
+                        "- {retval_space} bytes for the runtime return Value,",
                     )),
                     AsmInstr::Comment("All this space is rounded up to 16-byte alignment".into()),
                     AsmInstr::Bin {
@@ -454,27 +455,20 @@ impl IRInstr {
                     AsmInstr::Newline,
                 ];
 
-                body.extend([AsmInstr::Comment(
-                    "Prepare raw u64 args and tagged Value args.".into(),
-                )]);
+                body.extend([AsmInstr::Comment("Prepare Value args.".into())]);
 
-                /* Materialize each arg on the native stack.  */
                 for (idx, arg) in args.iter().enumerate() {
+                    let base = args_offset + idx * std::mem::size_of::<Value>();
+                    let tag = ValueTag::from(arg_tys[idx]);
+
                     body.extend([
-                        AsmInstr::Comment(format!("Materializing arg {idx} on the native stack.")),
+                        AsmInstr::Comment(format!("Put arg {idx} into tmp scratch.")),
                         AsmInstr::Mov {
                             src: arg.codegen(ctx)?,
                             dst: AsmOp::Reg(AsmReg::R9),
                         },
-                        AsmInstr::Mov {
-                            src: AsmOp::Reg(AsmReg::R9),
-                            dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
-                        },
                         AsmInstr::Newline,
                     ]);
-
-                    let base = native_args_offset + idx * std::mem::size_of::<Value>();
-                    let tag = ValueTag::from(arg_tys[idx]);
 
                     body.extend([
                         AsmInstr::Comment(format!(
@@ -561,7 +555,7 @@ impl IRInstr {
                             .into(),
                     ),
                     AsmInstr::Comment(format!(
-                        "This array has already been constructed on the stack, starting at {native_args_offset}(%rsp)."
+                        "This array has already been constructed on the stack, starting at {retval_space}(%rsp)."
                     )),
                     AsmInstr::Comment("Compute its address and pass that pointer in %rdi.".into()),
                     AsmInstr::Mov {
@@ -570,7 +564,7 @@ impl IRInstr {
                     },
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(native_args_offset as i64),
+                        lhs: AsmOp::Imm(retval_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Di),
                     },
                     AsmInstr::Newline,
@@ -665,9 +659,9 @@ impl IRInstr {
                         dst: AsmOp::Reg(AsmReg::Si),
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rdx = *const u64 (ptr to args)".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Sp),
+                    AsmInstr::Comment("%rdx = *const Value (ptr to args)".into()),
+                    AsmInstr::Lea {
+                        src: AsmOp::Mem(AsmReg::Sp, args_offset as isize),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
                     AsmInstr::Newline,
@@ -683,19 +677,12 @@ impl IRInstr {
                         dst: AsmOp::Reg(AsmReg::R8),
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("Reserve space for the args.".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(args_space as i64),
-                        rhs: AsmOp::Reg(AsmReg::R8),
-                    },
-                    AsmInstr::Newline,
                     AsmInstr::Comment("Invoke the rt trampoline".into()),
                     AsmInstr::CallRt { target: RtFn::Call },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Read in Value.payload into %r9 scratch.".into()),
                     AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, (args_space + 8) as isize),
+                        src: AsmOp::Mem(AsmReg::Sp, (retval_offset + 8) as isize),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
                     AsmInstr::Newline,

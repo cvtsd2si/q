@@ -177,7 +177,7 @@ impl Vm {
         }
     }
 
-    pub fn invoke_from_jit(&mut self, target: usize, payloads: &[u64]) -> Result<Value, VmError> {
+    pub fn invoke_from_jit(&mut self, target: usize, args: &[Value]) -> Result<Value, VmError> {
         let old_func = self.func;
         let old_pc = self.pc;
         let old_fp = self.fp;
@@ -187,24 +187,20 @@ impl Vm {
 
         let params = &self.ir.funcs[target].params;
 
-        if params.len() != payloads.len() {
+        if params.len() != args.len() {
             return Err(VmError {
                 msg: format!(
                     "argcount mismatch (got {}, expected {}",
-                    payloads.len(),
+                    args.len(),
                     params.len()
                 ),
                 code: RtResult::Internal as u32,
             });
         }
 
-        self.stack
-            .extend(params.iter().zip(payloads).map(|(param, payload)| Value {
-                tag: ValueTag::from(param.ty),
-                payload: *payload,
-            }));
+        self.stack.extend(args);
 
-        self.handle_op_call(target, payloads.len());
+        self.handle_op_call(target, args.len());
 
         let r = self.exec_until(Some(old_depth));
 

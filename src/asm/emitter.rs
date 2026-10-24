@@ -79,6 +79,7 @@ impl std::fmt::Display for AsmInstr {
                 writeln!(f, "\tmovl %eax, %eax")
             }
             AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target),
+            AsmInstr::Lea { src, dst } => writeln!(f, "leaq {}, {}", src, dst),
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),
