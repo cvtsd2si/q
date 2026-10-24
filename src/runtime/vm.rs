@@ -3,7 +3,10 @@ use crate::{
     ir::r#gen::{IRInstr, IRProg},
     parser::ast::Literal,
     runtime::{
-        jit::{JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit},
+        jit::{
+            JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit,
+            JitTrampoline,
+        },
         rt::{RT, RtResult},
         value::{Value, ValueTag, print_value},
     },
@@ -28,16 +31,17 @@ pub struct Vm {
     jit_code: Vec<Vec<Option<JitBlock>>>,
     bytecode: BytecodeProg,
     fp: usize,
+    shared_entry: JitTrampoline,
 }
 
 impl Vm {
-    pub fn new(bytecode: BytecodeProg, ir: IRProg) -> Self {
+    pub fn new(bytecode: BytecodeProg, ir: IRProg) -> Result<Self, VmError> {
         let entrypoint = match bytecode.funcs.iter().position(|f| f.name == "main") {
             Some(entrypoint) => entrypoint,
             None => panic!("no main fn"),
         };
 
-        Vm {
+        Ok(Vm {
             stack: Vec::new(),
             fp_stack: Vec::new(),
             ir,
@@ -55,7 +59,11 @@ impl Vm {
                 .collect(),
             bytecode,
             fp: 0,
-        }
+            shared_entry: JitCompiler::new().compile_entry().map_err(|e| VmError {
+                msg: e.msg,
+                code: RtResult::Internal as u32,
+            })?, // FIXME: this disallows full interpretation
+        })
     }
 
     pub fn exec(&mut self) -> Result<Value, VmError> {
@@ -240,17 +248,20 @@ impl Vm {
     }
 
     fn run_jitted(&mut self) -> JitExit {
+        let entry = self.shared_entry.entry;
+
         let block = self.jit_code[self.func][self.pc].as_ref().unwrap();
 
-        let entry = block.entry;
+        let body = block.code.as_ptr();
+        let end_pc = block.end_pc;
 
         eprintln!(
             "[JIT] EXECUTING {:p}, pc={}..{}",
-            block.mem, block.start_pc, block.end_pc,
+            block.code.mem, block.start_pc, block.end_pc,
         );
 
         let args = self.stack[self.fp..].as_ptr();
-        let r = unsafe { entry(self as *mut Vm, &RT, args) };
+        let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc) };
 
         eprintln!("[JIT] native returned {:?}", r);
 
