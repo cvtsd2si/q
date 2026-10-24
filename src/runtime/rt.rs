@@ -56,7 +56,7 @@ pub extern "C" fn jit_print(_vm: *mut Vm, tag: u64, payload: u64) -> u32 {
 /// - `vm` is non-null, properly aligned, and points to a valid,
 ///   initialized `Vm` that is exclusively accessible for the
 ///   duration of this call.
-/// - `args` points to `argc` initialized `u64` values in a valid,
+/// - `args` points to `argc` initialized `Value` values in a valid,
 ///   properly aligned allocation.  The memory must remain readable
 ///   and unchanged for the duration of the call.
 /// - `out` is non-null, properly aligned, and writable for one `Value`.
