@@ -1,8 +1,7 @@
 fn main() -> i64 { 
-   ret fib(40);
+   ret add(1, 2);
 }
 
-fn fib(n: i64) -> i64 {
-   if (n < 2) ret n;
-   ret fib(n-1) + fib(n-2);
+fn add(a: i64, b: i64) -> i64 {
+    ret a + b;
 }

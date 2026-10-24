@@ -166,15 +166,19 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
 
         insert_prologue(&mut body);
 
-        /* %rdi = *const Value  */
+        body.push(AsmInstr::Comment("%rdi = *const Value (args)".into()));
+        body.push(AsmInstr::Newline);
+
         for (idx, param) in self.params.iter().enumerate() {
             let offset = (idx * std::mem::size_of::<Value>() + std::mem::offset_of!(Value, payload))
                 as isize;
 
+            body.push(AsmInstr::Comment(format!("Put {offset}(%rdi) into {}", param.name)));
             body.push(AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Di, offset),
                 dst: AsmOp::Pseudo(param.name.clone()),
             });
+            body.push(AsmInstr::Newline);
         }
 
         for instr in &self.body {
@@ -204,6 +208,7 @@ impl IRInstr {
 
             IRInstr::Ret { val } => {
                 let mut instrs = vec![
+                    AsmInstr::Comment("%rax = retval".into()),
                     AsmInstr::Mov {
                         src: val
                             .as_ref()
@@ -212,18 +217,24 @@ impl IRInstr {
                             .unwrap_or(AsmOp::Imm(0)),
                         dst: AsmOp::Reg(AsmReg::Ax),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("%rdx = ValueTag".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(ret_ty.map(ValueTag::from).unwrap_or(ValueTag::Void) as i64),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("%rcx = JIT_RET".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(JIT_RET as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
                     },
+                    AsmInstr::Newline,
                 ];
 
                 insert_epilogue(&mut instrs);
                 instrs.push(AsmInstr::Ret);
+                instrs.push(AsmInstr::Newline);
 
                 Ok(instrs)
             }
@@ -242,6 +253,7 @@ impl IRInstr {
                 };
 
                 let instrs = vec![
+                    AsmInstr::Comment(format!("Binary ({kind:?})")),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: dst.codegen(ctx)?,
@@ -251,6 +263,7 @@ impl IRInstr {
                         lhs: rhs.codegen(ctx)?,
                         rhs: dst.codegen(ctx)?,
                     },
+                    AsmInstr::Newline,
                 ];
 
                 Ok(instrs)
@@ -628,39 +641,47 @@ impl IRInstr {
                         src: AsmOp::Reg(AsmReg::R13),
                         dst: AsmOp::Reg(AsmReg::Di),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("%rsi = fn idx".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(func as i64),
                         dst: AsmOp::Reg(AsmReg::Si),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("%rdx = *const u64 (ptr to args)".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::Dx),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("%rcx = argc".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(argc as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("%r8 = ptr to retval".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::R8),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Reserve space for the args.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(args_space as i64),
                         rhs: AsmOp::Reg(AsmReg::R8),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Invoke the rt trampoline".into()),
                     AsmInstr::CallRt { target: RtFn::Call },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Read in Value.payload into %r9 scratch.".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Mem(AsmReg::Sp, (args_space + 8) as isize),
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Both native and fallback calls keep on going here.".into()),
                     AsmInstr::Label(done_label),
                     AsmInstr::Comment("Release tmp space.".into()),
@@ -669,16 +690,19 @@ impl IRInstr {
                         lhs: AsmOp::Imm(frame_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Release alignment padding.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Restore caller-saved regs.".into()),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Check status.".into()),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
@@ -688,6 +712,7 @@ impl IRInstr {
                         cc: ConditionCode::Ne,
                         target: format!("{}_rt_err", func_name),
                     },
+                    AsmInstr::Newline,
                 ]);
 
                 body.extend([
@@ -696,6 +721,7 @@ impl IRInstr {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst: dst.codegen(ctx)?,
                     },
+                    AsmInstr::Newline,
                 ]);
 
                 Ok(body)

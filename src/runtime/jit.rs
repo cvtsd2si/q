@@ -281,7 +281,7 @@ impl JitCompiler {
 
         body.extend([
             AsmInstr::Comment("According to the internal ABI, after the call instr".to_string()),
-            AsmInstr::Comment("%rax, %rcx, %rdx, ??? will have contained the result,".to_string()),
+            AsmInstr::Comment("%rax, %rcx, %rdx, will have contained the result,".to_string()),
             AsmInstr::Comment("while, remember, %r12 contains *mut JitResult.".to_string()),
         ]);
 
@@ -378,14 +378,19 @@ impl JitCompiler {
          *      %rax = rt err code
          *      %rdx = ValueTag::Void  */
         let mut body = vec![
+            AsmInstr::Comment("Shared rt err handler.".into()),
+            AsmInstr::Comment("%rcx = JIT_ERROR".into()),
             AsmInstr::Mov {
                 src: AsmOp::Imm(JIT_ERROR as i64),
                 dst: AsmOp::Reg(AsmReg::Cx),
             },
+            AsmInstr::Newline,
+            AsmInstr::Comment("%rdx = ValueTag".into()),
             AsmInstr::Mov {
                 src: AsmOp::Imm(ValueTag::Void as u64 as i64),
                 dst: AsmOp::Reg(AsmReg::Dx),
             },
+            AsmInstr::Newline,
         ];
 
         insert_epilogue(&mut body);

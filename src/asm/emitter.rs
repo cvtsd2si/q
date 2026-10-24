@@ -71,10 +71,11 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::CallRt { target } => {
                 let offset = target.offset();
 
-                writeln!(f, "movq {offset}(%r14), %rax")?;
+                writeln!(f, "# Load up {target:?} from %r14 into %rax and call it.")?;
+                writeln!(f, "\tmovq {offset}(%r14), %rax")?;
                 writeln!(f, "\tcall *%rax")?;
-
-                // Zero-extend the retval
+                writeln!(f)?;
+                writeln!(f, "\t# Zero-extend the retval.")?;
                 writeln!(f, "\tmovl %eax, %eax")
             }
             AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target),
