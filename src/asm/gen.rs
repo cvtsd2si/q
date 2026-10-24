@@ -52,6 +52,9 @@ pub enum AsmInstr {
     Call {
         target: String,
     },
+    CallIndirect {
+        target: AsmReg,
+    },
     CallRt {
         target: RtFn,
     },

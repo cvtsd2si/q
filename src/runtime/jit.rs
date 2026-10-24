@@ -74,18 +74,7 @@ impl JitCompiler {
 
         let mut asm_txt = String::new();
 
-        /* JIT entry emission.  */
-        let entry = AsmFunc {
-            name: format!("{}_entry", region_func.name),
-            body: self.mk_entry(&region_func.name, end_pc),
-            space: 0,
-        };
-        entry.emit(&mut asm_txt).map_err(|_| JitError {
-            msg: "jit entry emission failed".to_string(),
-        })?;
-
         let mut ctx = CodegenContext::new();
-
         for func in ir.funcs.iter() {
             ctx.register::<BytecodeFunc>(&func.name);
         }
@@ -124,6 +113,16 @@ impl JitCompiler {
             msg: "jit entry emission failed".to_string(),
         })?;
 
+        let code = self.asm_exe(&asm_txt)?;
+
+        Ok(Some(JitBlock {
+            start_pc,
+            end_pc,
+            code,
+        }))
+    }
+
+    fn asm_exe(&mut self, asm_txt: &str) -> Result<ExecutableMem, JitError> {
         self.assembler.assemble_str("", &asm_txt);
 
         if !self.assembler.finish() {
@@ -139,52 +138,32 @@ impl JitCompiler {
             });
         }
 
-        self.assembler
-            .source_map()
-            .files()
-            .iter()
-            .for_each(|f| println!("{}", f.src));
+        let bytes = self.assembler.section_bytes(SectionId(0));
 
-        let raw_bytes = self.assembler.section_bytes(SectionId(0));
-
-        unsafe {
-            let len = raw_bytes.len();
-
-            let ptr = mmap(
-                std::ptr::null_mut(),
-                len,
-                PROT_READ | PROT_WRITE,
-                MAP_PRIVATE | MAP_ANON,
-                -1,
-                0,
-            );
-
-            if ptr == MAP_FAILED {
-                panic!("mmap failed");
-            }
-
-            std::ptr::copy_nonoverlapping(raw_bytes.as_ptr(), ptr.cast::<u8>(), len);
-
-            if mprotect(ptr, len, PROT_READ | PROT_EXEC) != 0 {
-                munmap(ptr, len);
-                panic!("mprotect failed");
-            }
-
-            let mem = ptr.cast::<u8>();
-
-            let entry = std::mem::transmute::<*mut u8, JitEntry>(mem);
-
-            Ok(Some(JitBlock {
-                entry,
-                start_pc,
-                end_pc,
-                mem,
-                len,
-            }))
-        }
+        ExecutableMem::new(&bytes)
     }
 
-    fn mk_entry(&mut self, body_name: &str, end_pc: usize) -> Vec<AsmInstr> {
+    pub fn compile_entry(&mut self) -> Result<JitTrampoline, JitError> {
+        let entry = AsmFunc {
+            name: "jit_shared_entry".to_string(),
+            body: self.mk_entry(),
+            space: 0,
+        };
+
+        let mut asm_txt = String::new();
+
+        entry.emit(&mut asm_txt).map_err(|_| JitError {
+            msg: "jit entry emission failed".to_string(),
+        })?;
+
+        let code = self.asm_exe(&asm_txt)?;
+
+        let entry = unsafe { std::mem::transmute::<*const u8, JitEntry>(code.as_ptr()) };
+
+        Ok(JitTrampoline { entry, _code: code })
+    }
+
+    fn mk_entry(&mut self) -> Vec<AsmInstr> {
         let mut body = vec![];
 
         insert_prologue(&mut body);
@@ -194,14 +173,8 @@ impl JitCompiler {
             AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
+            AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
         ]);
-
-        /* Stack alignment for now.  */
-        body.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Sub,
-            lhs: AsmOp::Imm(8),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-        });
 
         /*
          * %rdi = hidden *mut JitResult ptr
@@ -229,9 +202,7 @@ impl JitCompiler {
         ]);
 
         /* Execute the compiled region.  */
-        body.push(AsmInstr::Call {
-            target: body_name.to_owned(),
-        });
+        body.push(AsmInstr::CallIndirect { target: AsmReg::R8 });
 
         /* According to the internal ABI, after the call instr,
          * %rcx will have contained the exit kind (one of CONTINUE,
@@ -258,7 +229,11 @@ impl JitCompiler {
                 dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
             },
             AsmInstr::Mov {
-                src: AsmOp::Imm(end_pc as i64),
+                src: AsmOp::Mem(AsmReg::Sp, 0),
+                dst: AsmOp::Reg(AsmReg::R10),
+            },
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::R10),
                 dst: AsmOp::Mem(
                     AsmReg::R12,
                     std::mem::offset_of!(JitResult, next_pc) as isize,
@@ -342,25 +317,86 @@ impl Default for JitCompiler {
     }
 }
 
-pub type JitEntry =
-    unsafe extern "C" fn(*mut Vm, *const Rt, *const Value /* parameters  */) -> JitResult;
-
-pub const JIT_THRESHOLD: u32 = 1;
-
-pub struct JitBlock {
-    pub entry: JitEntry,
-    pub start_pc: usize,
-    pub end_pc: usize,
+pub struct ExecutableMem {
     pub mem: *mut u8,
     pub len: usize,
 }
 
-impl Drop for JitBlock {
+impl ExecutableMem {
+    pub fn new(bytes: &[u8]) -> Result<Self, JitError> {
+        if bytes.is_empty() {
+            return Err(JitError {
+                msg: "empty machine code".to_string(),
+            });
+        }
+
+        unsafe {
+            let len = bytes.len();
+
+            let ptr = mmap(
+                std::ptr::null_mut(),
+                len,
+                PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANON,
+                -1,
+                0,
+            );
+
+            if ptr == MAP_FAILED {
+                return Err(JitError {
+                    msg: format!("mmap failed: {}", std::io::Error::last_os_error()),
+                });
+            }
+
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), ptr.cast::<u8>(), len);
+
+            if mprotect(ptr, len, PROT_READ | PROT_EXEC) != 0 {
+                let err = std::io::Error::last_os_error();
+                munmap(ptr, len);
+                return Err(JitError {
+                    msg: format!("mprotect failed: {}", err),
+                });
+            }
+
+            Ok(Self {
+                mem: ptr.cast::<u8>(),
+                len,
+            })
+        }
+    }
+
+    pub fn as_ptr(&self) -> *const u8 {
+        self.mem.cast_const()
+    }
+}
+
+impl Drop for ExecutableMem {
     fn drop(&mut self) {
         unsafe {
             munmap(self.mem.cast(), self.len);
         }
     }
+}
+
+pub type JitEntry = unsafe extern "C" fn(
+    *mut Vm,
+    *const Rt,
+    *const Value, /* parameters  */
+    *const u8,    /* body  */
+    usize,        /* next_pc  */
+) -> JitResult;
+
+pub const JIT_THRESHOLD: u32 = 1;
+
+pub struct JitBlock {
+    pub start_pc: usize,
+    pub end_pc: usize,
+    pub code: ExecutableMem,
+}
+
+pub struct JitTrampoline {
+    pub entry: JitEntry,
+    _code: ExecutableMem,
 }
 
 pub const JIT_CONTINUE: u64 = 0;

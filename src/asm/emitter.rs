@@ -75,6 +75,7 @@ impl std::fmt::Display for AsmInstr {
                 // Zero-extend the retval
                 writeln!(f, "\tmovl %eax, %eax")
             }
+            AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target),
             _ => unreachable!(),
         }
     }
