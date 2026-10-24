@@ -4,9 +4,9 @@ fn main() -> i64 {
 
 fn add(a: i64, b: i64) -> i64 {
     let x: i64 = 0;
-    wh1le (x < 10) {
+    while (x < 10) {
         print x;
-	x = x + 1;
+        x = x + 1;
     }
     ret a + b;
 }
