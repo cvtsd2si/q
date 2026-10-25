@@ -357,7 +357,7 @@ fn typecheck_expr(
         Expression::Unary {
             kind,
             expr,
-            ty,
+            ty: _,
             span,
         } => {
             if matches!(kind, UnaryExpressionKind::Negate) {
@@ -616,7 +616,7 @@ fn typecheck_expr(
         Expression::Cast {
             expr,
             target_ty,
-            ty,
+            ty: _,
             span,
         } => {
             /* Determine the operand's own type independently of the destination type.  */
@@ -789,10 +789,8 @@ fn known_ty(
         }
 
         Expression::Cast {
-            expr,
             target_ty,
-            ty,
-            span,
+            ..
         } => Ok(Some(*target_ty)),
     }
 }

@@ -147,7 +147,7 @@ impl Vm {
                 Op::Ne => self.handle_op_ne(),
                 Op::Neg => self.handle_op_neg(),
                 Op::Not | Op::BitwiseNot => self.handle_op_not(),
-                Op::IntCast { from_ty, to_ty } => self.handle_op_int_cast(to_ty),
+                Op::IntCast { src_ty, dst_ty } => self.handle_op_int_cast(src_ty, dst_ty),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -346,9 +346,9 @@ impl Vm {
         unop!(self.stack, !);
     }
 
-    fn handle_op_int_cast(&mut self, to_ty: Type) {
+    fn handle_op_int_cast(&mut self, _src_ty: Type, dst_ty: Type) {
         let value = self.stack.pop().unwrap();
-        self.stack.push(value.cast_int(to_ty));
+        self.stack.push(value.cast_int(dst_ty));
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {

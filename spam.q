@@ -1,5 +1,5 @@
-fn main() -> u8 {
+fn main() -> u64 {
     let x: i8 = -1;
-    let y: u8 = x as u8;
+    let y: u64 = x as u64;
     ret y;
 }

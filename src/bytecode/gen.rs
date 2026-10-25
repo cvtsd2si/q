@@ -27,7 +27,7 @@ pub enum Op {
     Neg,
     Not,
     BitwiseNot,
-    IntCast { from_ty: Type, to_ty: Type },
+    IntCast { src_ty: Type, dst_ty: Type },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -123,7 +123,7 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
 impl Codegen<Bytecode, CodegenContext> for IRInstr {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
         match self {
-            IRInstr::Cpy { src, dst } => {
+            IRInstr::Cpy { src, dst, .. } => {
                 let src = src.load_op(ctx);
 
                 let name = match dst {
@@ -143,7 +143,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 kind,
                 src,
                 dst,
-                operand_ty,
+                operand_ty: _,
             } => {
                 let op = match kind {
                     UnaryExpressionKind::Negate => Op::Neg,
@@ -195,7 +195,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(vec![lhs, rhs, op])
             }
 
-            IRInstr::Ret { val } => match val {
+            IRInstr::Ret { val, ret_ty: _ } => match val {
                 Some(v) => Ok(vec![v.load_op(ctx), Op::Ret]),
                 None => Ok(vec![Op::RetVoid]),
             },
@@ -244,20 +244,20 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
             IRInstr::SignExtend {
                 src,
                 dst,
-                from_ty,
-                to_ty,
+                src_ty,
+                dst_ty,
             }
             | IRInstr::ZeroExtend {
                 src,
                 dst,
-                from_ty,
-                to_ty,
+                src_ty,
+                dst_ty,
             }
             | IRInstr::Truncate {
                 src,
                 dst,
-                from_ty,
-                to_ty,
+                src_ty,
+                dst_ty,
             } => {
                 let src = src.load_op(ctx);
 
@@ -271,8 +271,8 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(vec![
                     src,
                     Op::IntCast {
-                        from_ty: *from_ty,
-                        to_ty: *to_ty,
+                        src_ty: *src_ty,
+                        dst_ty: *dst_ty,
                     },
                 ])
             }

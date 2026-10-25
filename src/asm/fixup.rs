@@ -1,4 +1,4 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
 
 pub trait Fixup {
     type Output;
@@ -32,7 +32,7 @@ impl Fixup for AsmInstr {
 
     fn fixup(&self) -> Self::Output {
         match self {
-            AsmInstr::Mov { src, dst }
+            AsmInstr::Mov { src, dst, asm_ty }
                 if matches!(src, AsmOp::Stack(_) | AsmOp::Mem(_, _))
                     && matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
@@ -40,15 +40,17 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         src: src.clone(),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: *asm_ty,
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst: dst.clone(),
+                        asm_ty: *asm_ty,
                     },
                 ]
             }
 
-            AsmInstr::Bin { kind, lhs, rhs }
+            AsmInstr::Bin { kind, lhs, rhs, asm_ty }
                 if matches!(lhs, AsmOp::Stack(_) | AsmOp::Mem(_, _))
                     && matches!(rhs, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
@@ -56,41 +58,27 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         src: lhs.clone(),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: *asm_ty,
                     },
                     AsmInstr::Bin {
                         kind: *kind,
                         lhs: AsmOp::Reg(AsmReg::R9),
                         rhs: rhs.clone(),
+                        asm_ty: *asm_ty,
                     },
                 ]
             }
 
-            AsmInstr::Cmp { src, dst } if matches!(dst, AsmOp::Imm(_)) => vec![
+            AsmInstr::Cmp { src, dst, asm_ty } if matches!(dst, AsmOp::Imm(_)) => vec![
                 AsmInstr::Mov {
                     src: dst.clone(),
                     dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: *asm_ty,
                 },
                 AsmInstr::Cmp {
                     src: src.clone(),
                     dst: AsmOp::Reg(AsmReg::R9),
-                },
-            ],
-
-            AsmInstr::IntCast {
-                src,
-                src_ty,
-                dst,
-                dst_ty,
-            } if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) => vec![
-                AsmInstr::IntCast {
-                    src: src.clone(),
-                    src_ty: *src_ty,
-                    dst: AsmOp::Reg(AsmReg::R9),
-                    dst_ty: *dst_ty,
-                },
-                AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
-                    dst: dst.clone(),
+                    asm_ty: *asm_ty,
                 },
             ],
 

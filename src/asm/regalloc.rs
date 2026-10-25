@@ -33,25 +33,43 @@ impl RegAllocator {
 
     pub fn rewrite(&mut self, instr: &mut AsmInstr) -> AsmInstr {
         match instr {
-            AsmInstr::Mov { src, dst } => AsmInstr::Mov {
+            AsmInstr::Mov { src, dst, asm_ty } => AsmInstr::Mov {
                 src: self.replace_pseudo(src),
                 dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
             },
 
-            AsmInstr::Unary { kind, dst } => AsmInstr::Unary {
+            AsmInstr::Movsx { src, src_ty, dst, dst_ty } => AsmInstr::Movsx {
+                src: self.replace_pseudo(src),
+                src_ty: *src_ty,
+                dst: self.replace_pseudo(dst),
+                dst_ty: *dst_ty,
+            },
+
+            AsmInstr::Movzx { src, src_ty, dst, dst_ty } => AsmInstr::Movzx {
+                src: self.replace_pseudo(src),
+                src_ty: *src_ty,
+                dst: self.replace_pseudo(dst),
+                dst_ty: *dst_ty,
+            },
+
+            AsmInstr::Unary { kind, dst, asm_ty } => AsmInstr::Unary {
                 kind: *kind,
                 dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
             },
 
-            AsmInstr::Bin { kind, lhs, rhs } => AsmInstr::Bin {
+            AsmInstr::Bin { kind, lhs, rhs, asm_ty } => AsmInstr::Bin {
                 kind: kind.to_owned(),
                 lhs: self.replace_pseudo(lhs),
                 rhs: self.replace_pseudo(rhs),
+                asm_ty: *asm_ty,
             },
 
-            AsmInstr::Cmp { src, dst } => AsmInstr::Cmp {
+            AsmInstr::Cmp { src, dst, asm_ty } => AsmInstr::Cmp {
                 src: self.replace_pseudo(src),
                 dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
             },
 
             AsmInstr::Setcc { cc, dst } => AsmInstr::Setcc {
@@ -59,22 +77,11 @@ impl RegAllocator {
                 dst: self.replace_pseudo(dst),
             },
 
-            AsmInstr::Shift { kind, amount, dst } => AsmInstr::Shift {
+            AsmInstr::Shift { kind, amount, dst, asm_ty } => AsmInstr::Shift {
                 kind: *kind,
                 amount: *amount,
                 dst: self.replace_pseudo(dst),
-            },
-
-            AsmInstr::IntCast {
-                src,
-                src_ty,
-                dst,
-                dst_ty,
-            } => AsmInstr::IntCast {
-                src: self.replace_pseudo(src),
-                src_ty: *src_ty,
-                dst: self.replace_pseudo(dst),
-                dst_ty: *dst_ty,
+                asm_ty: *asm_ty,
             },
 
             _ => instr.clone(),
