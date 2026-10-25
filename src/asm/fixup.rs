@@ -76,6 +76,24 @@ impl Fixup for AsmInstr {
                 },
             ],
 
+            AsmInstr::IntCast {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) => vec![
+                AsmInstr::IntCast {
+                    src: src.clone(),
+                    src_ty: *src_ty,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst_ty: *dst_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst: dst.clone(),
+                },
+            ],
+
             _ => vec![self.clone()],
         }
     }

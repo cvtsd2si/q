@@ -294,6 +294,7 @@ fn resolve_block(
 fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression, ResolverError> {
     match expr {
         Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
+
         Expression::Variable { name, ty, span } => {
             let resolved_name = resolver.var_map.get(&name);
             if resolved_name.is_none() {
@@ -353,6 +354,18 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
         Expression::Assign { lhs, rhs, ty, span } => Ok(Expression::Assign {
             lhs: resolve_expr(resolver, *lhs)?.into(),
             rhs: resolve_expr(resolver, *rhs)?.into(),
+            ty,
+            span,
+        }),
+
+        Expression::Cast {
+            expr,
+            target_ty,
+            ty,
+            span,
+        } => Ok(Expression::Cast {
+            expr: resolve_expr(resolver, *expr)?.into(),
+            target_ty,
             ty,
             span,
         }),

@@ -65,6 +65,18 @@ impl RegAllocator {
                 dst: self.replace_pseudo(dst),
             },
 
+            AsmInstr::IntCast {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => AsmInstr::IntCast {
+                src: self.replace_pseudo(src),
+                src_ty: *src_ty,
+                dst: self.replace_pseudo(dst),
+                dst_ty: *dst_ty,
+            },
+
             _ => instr.clone(),
         }
     }

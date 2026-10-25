@@ -1,8 +1,8 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::collections::HashMap;
 
 use crate::{
     ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
-    parser::ast::{BinaryExpressionKind, Literal, UnaryExpressionKind},
+    parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -27,6 +27,7 @@ pub enum Op {
     Neg,
     Not,
     BitwiseNot,
+    IntCast { from_ty: Type, to_ty: Type },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -239,6 +240,43 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 Ok(ops)
             }
+
+            IRInstr::SignExtend {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            }
+            | IRInstr::ZeroExtend {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            }
+            | IRInstr::Truncate {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            } => {
+                let src = src.load_op(ctx);
+
+                let dst_name = match dst {
+                    IRVal::Var(name) => name,
+                    IRVal::Const(_) => unreachable!(),
+                };
+
+                ctx.register::<String>(dst_name);
+
+                Ok(vec![
+                    src,
+                    Op::IntCast {
+                        from_ty: *from_ty,
+                        to_ty: *to_ty,
+                    },
+                ])
+            }
+            _ => todo!(),
         }
     }
 }

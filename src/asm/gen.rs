@@ -73,6 +73,12 @@ pub enum AsmInstr {
         src: AsmOp,
         dst: AsmOp,
     },
+    IntCast {
+        src: AsmOp,
+        src_ty: Type,
+        dst: AsmOp,
+        dst_ty: Type,
+    },
     Comment(String),
     Newline,
 }
@@ -356,12 +362,10 @@ impl IRInstr {
                 let src = src.codegen(ctx)?;
                 let dst = dst.codegen(ctx)?;
 
-                instrs.extend([
-                    AsmInstr::Mov {
-                        src,
-                        dst: dst.clone(),
-                    },
-                ]);
+                instrs.extend([AsmInstr::Mov {
+                    src,
+                    dst: dst.clone(),
+                }]);
 
                 match kind {
                     UnaryExpressionKind::Negate if operand_ty.is_signed() => {
@@ -830,6 +834,32 @@ impl IRInstr {
 
                 Ok(body)
             }
+
+            IRInstr::SignExtend {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            }
+            | IRInstr::ZeroExtend {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            }
+            | IRInstr::Truncate {
+                src,
+                dst,
+                from_ty,
+                to_ty,
+            } => Ok(vec![AsmInstr::IntCast {
+                src: src.codegen(ctx)?,
+                src_ty: *from_ty,
+                dst: dst.codegen(ctx)?,
+                dst_ty: *to_ty,
+            }]),
+
+            _ => todo!(),
         }
     }
 }
@@ -933,9 +963,10 @@ fn normalize_int(dst: AsmOp, ty: Type) -> Vec<AsmInstr> {
     let shift = 64 - (ty.size_of() * 8) as u8;
 
     if shift == 0 {
-        return vec![
-            AsmInstr::Comment(format!("Since the operand is already {} wide, we do not need to shift.", ty.size_of())),
-        ];
+        return vec![AsmInstr::Comment(format!(
+            "Since the operand is already {} wide, we do not need to shift.",
+            ty.size_of()
+        ))];
     }
 
     let is_signed = if ty.is_signed() { "signed" } else { "unsigned" };

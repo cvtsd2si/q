@@ -119,6 +119,12 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    Cast {
+        expr: Box<Expression>,
+        target_ty: Type,
+        ty: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -130,6 +136,7 @@ impl Expression {
             Expression::Call { span, .. } => *span,
             Expression::Assign { span, .. } => *span,
             Expression::Unary { span, .. } => *span,
+            Expression::Cast { span, .. } => *span,
         }
     }
 
@@ -141,6 +148,7 @@ impl Expression {
             Expression::Call { ty, .. } => *ty,
             Expression::Assign { ty, .. } => *ty,
             Expression::Unary { ty, .. } => *ty,
+            Expression::Cast { ty, .. } => *ty,
         }
     }
 }
@@ -336,6 +344,10 @@ impl From<Suffix> for Type {
 
 impl Type {
     pub fn is_numeric(self) -> bool {
+        self.is_int() || self.is_float()
+    }
+
+    pub fn is_int(self) -> bool {
         matches!(
             self,
             Type::UInt8
@@ -346,9 +358,11 @@ impl Type {
                 | Type::Int32
                 | Type::UInt64
                 | Type::Int64
-                | Type::Float32
-                | Type::Float64
         )
+    }
+
+    pub fn is_float(self) -> bool {
+        matches!(self, Type::Float32 | Type::Float64)
     }
 
     pub fn is_signed(self) -> bool {

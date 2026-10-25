@@ -51,6 +51,7 @@ pub enum TokenKind {
     Continue,
     Goto,
     Print,
+    As,
     Identifier,
     LParen,
     RParen,

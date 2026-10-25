@@ -109,6 +109,85 @@ pub enum IRInstr {
         arg_tys: Vec<Type>,
         dst: IRVal,
     },
+    SignExtend {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    ZeroExtend {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    Truncate {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    DoubleToInt {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    IntToDouble {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    DoubleToUInt {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    UIntToDouble {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    DoubleToFloat {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    FloatToDouble {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+
+    FloatToInt {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    IntToFloat {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    FloatToUInt {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
+    UIntToFloat {
+        src: IRVal,
+        dst: IRVal,
+        from_ty: Type,
+        to_ty: Type,
+    },
 }
 
 #[derive(Debug)]
@@ -516,7 +595,144 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             /* Assignments evaluate to their rhs val.  */
             ExpRes::Plain(rhs)
         }
+
+        Expression::Cast {
+            expr, target_ty, ..
+        } => {
+            let from_ty = expr.ty().unwrap();
+
+            let src = irfy_expr_and_cvt(instrs, expr);
+
+            let dst = irfy_cast(instrs, src, from_ty, *target_ty);
+
+            ExpRes::Plain(dst)
+        }
     }
+}
+
+fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, from_ty: Type, to_ty: Type) -> IRVal {
+    /* Casting a val to its own type is a NOP.  */
+    if from_ty == to_ty {
+        return src;
+    }
+
+    let dst = mkirvar();
+
+    let instr = match (from_ty, to_ty) {
+        /* int -> int  */
+        (from, to) if from.is_int() && to.is_int() => {
+            if from.size_of() < to.size_of() {
+                if from.is_signed() {
+                    IRInstr::SignExtend {
+                        src,
+                        dst: dst.clone(),
+                        from_ty,
+                        to_ty,
+                    }
+                } else {
+                    IRInstr::ZeroExtend {
+                        src,
+                        dst: dst.clone(),
+                        from_ty,
+                        to_ty,
+                    }
+                }
+            } else {
+                IRInstr::Truncate {
+                    src,
+                    dst: dst.clone(),
+                    from_ty,
+                    to_ty,
+                }
+            }
+        }
+
+        /* double -> signed int  */
+        (Type::Float64, to) if to.is_int() && to.is_signed() => IRInstr::DoubleToInt {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* double -> unsigned int  */
+        (Type::Float64, to) if to.is_int() && !to.is_signed() => IRInstr::DoubleToUInt {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* signed int -> double  */
+        (from, Type::Float64) if from.is_int() && from.is_signed() => IRInstr::IntToDouble {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* unsigned int -> double  */
+        (from, Type::Float64) if from.is_int() && !from.is_signed() => IRInstr::UIntToDouble {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* double -> float  */
+        (Type::Float64, Type::Float32) => IRInstr::DoubleToFloat {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* float -> double */
+        (Type::Float32, Type::Float64) => IRInstr::FloatToDouble {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* float -> signed int  */
+        (Type::Float32, to) if to.is_int() && to.is_signed() => IRInstr::FloatToInt {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* float -> unsigned int  */
+        (Type::Float32, to) if to.is_int() && !to.is_signed() => IRInstr::FloatToUInt {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* signed int -> float  */
+        (from, Type::Float32) if from.is_int() && from.is_signed() => IRInstr::IntToFloat {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        /* unsigned int -> float  */
+        (from, Type::Float32) if from.is_int() && !from.is_signed() => IRInstr::UIntToFloat {
+            src,
+            dst: dst.clone(),
+            from_ty,
+            to_ty,
+        },
+
+        _ => unreachable!("Unsupported cast from {from_ty:?} to {to_ty:?}"),
+    };
+
+    instrs.push(instr);
+
+    dst
 }
 
 fn mkirvar() -> IRVal {

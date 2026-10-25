@@ -1,7 +1,5 @@
-fn main() -> i64 {
-    let x: i64 = 3;
-    print -x;
-    let z: bool = true;
-    print !z;
-    ret 0;
+fn main() -> u8 {
+    let x: i8 = -1;
+    let y: u8 = x as u8;
+    ret y;
 }
