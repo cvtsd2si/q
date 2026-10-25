@@ -309,6 +309,18 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             })
         }
 
+        Expression::Unary {
+            kind,
+            expr,
+            ty,
+            span,
+        } => Ok(Expression::Unary {
+            kind,
+            expr: resolve_expr(resolver, *expr)?.into(),
+            ty,
+            span,
+        }),
+
         Expression::Binary {
             kind,
             lhs,

@@ -1,4 +1,7 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmProg, AsmReg};
+use crate::asm::r#gen::{
+    AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
+    AsmReg,
+};
 use std::fmt::Write;
 
 pub trait Emit {
@@ -55,6 +58,10 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::Pop(val) => writeln!(f, "popq {}", val),
             AsmInstr::Push(val) => writeln!(f, "pushq {}", val),
             AsmInstr::Mov { src, dst } => writeln!(f, "movq {}, {}", src, dst),
+            AsmInstr::Unary { kind, dst } => match kind {
+                AsmInstrUnaryKind::Not => writeln!(f, "notq {dst}"),
+                AsmInstrUnaryKind::Neg => writeln!(f, "negq {dst}"),
+            },
             AsmInstr::Bin { kind, lhs, rhs } => match kind {
                 AsmInstrBinKind::Add => writeln!(f, "addq {}, {}", lhs, rhs),
                 AsmInstrBinKind::Sub => writeln!(f, "subq {}, {}", lhs, rhs),
@@ -80,6 +87,11 @@ impl std::fmt::Display for AsmInstr {
             }
             AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target),
             AsmInstr::Lea { src, dst } => writeln!(f, "leaq {}, {}", src, dst),
+            AsmInstr::Shift { kind, amount, dst } => match kind {
+                AsmInstrShiftKind::Shl => writeln!(f, "shlq ${amount}, {dst}"),
+                AsmInstrShiftKind::Shr => writeln!(f, "shrq ${amount}, {dst}"),
+                AsmInstrShiftKind::Sar => writeln!(f, "sarq ${amount}, {dst}"),
+            },
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),

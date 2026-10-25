@@ -2,7 +2,7 @@ use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
-    parser::ast::{BinaryExpressionKind, Literal},
+    parser::ast::{BinaryExpressionKind, Literal, UnaryExpressionKind},
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -24,6 +24,9 @@ pub enum Op {
     Ge,
     E,
     Ne,
+    Neg,
+    Not,
+    BitwiseNot,
 }
 
 pub type Bytecode = Vec<Op>;
@@ -133,6 +136,30 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     ctx.register::<String>(name);
                     Ok(vec![src])
                 }
+            }
+
+            IRInstr::Unary {
+                kind,
+                src,
+                dst,
+                operand_ty,
+            } => {
+                let op = match kind {
+                    UnaryExpressionKind::Negate => Op::Neg,
+                    UnaryExpressionKind::LogicalNot => Op::Not,
+                    UnaryExpressionKind::BitwiseNot => Op::BitwiseNot,
+                };
+
+                let src = src.load_op(ctx);
+
+                let name = match dst {
+                    IRVal::Var(name) => name,
+                    IRVal::Const(_) => unreachable!(),
+                };
+
+                ctx.register::<String>(name);
+
+                Ok(vec![src, op])
             }
 
             IRInstr::Bin {

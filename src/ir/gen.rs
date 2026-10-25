@@ -4,7 +4,7 @@ use crate::{
     bytecode::r#gen::BytecodeFunc,
     parser::ast::{
         BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program,
-        Statement, Type,
+        Statement, Type, UnaryExpressionKind,
     },
 };
 
@@ -82,6 +82,12 @@ pub enum IRInstr {
         kind: BinaryExpressionKind,
         lhs: IRVal,
         rhs: IRVal,
+        dst: IRVal,
+        operand_ty: Type,
+    },
+    Unary {
+        kind: UnaryExpressionKind,
+        src: IRVal,
         dst: IRVal,
         operand_ty: Type,
     },
@@ -423,6 +429,22 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             ty: _,
             span: _,
         } => ExpRes::Plain(IRVal::Var(name.to_owned())),
+        Expression::Unary { kind, expr, ty, .. } => {
+            let operand_ty = ty.unwrap();
+
+            let src = irfy_expr_and_cvt(instrs, expr);
+
+            let dst = mkirvar();
+
+            instrs.push(IRInstr::Unary {
+                kind: *kind,
+                src,
+                dst: dst.clone(),
+                operand_ty,
+            });
+
+            ExpRes::Plain(dst)
+        }
         Expression::Binary {
             kind,
             lhs,
