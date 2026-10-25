@@ -1789,8 +1789,8 @@ impl IRInstr {
                     AsmType::Quad => {
                         let tmp = mktmp();
 
-                        let l1 = format!(".L{func_name}_UIntToFloat_{tmp}");
-                        let l2 = format!(".L{func_name}_UIntToFloat_{tmp}");
+                        let l1 = format!(".L{func_name}_UIntToFloat1_{tmp}");
+                        let l2 = format!(".L{func_name}_UIntToFloat2_{tmp}");
 
                         Ok(vec![
                             AsmInstr::Comment("Convert UInt64 to Float32.".into()),        
