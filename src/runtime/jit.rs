@@ -5,8 +5,8 @@ use crate::{
         emitter::Emit,
         fixup::Fixup,
         r#gen::{
-            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmType, insert_epilogue,
-            insert_prologue,
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmStaticConst, AsmType,
+            insert_epilogue, insert_prologue,
         },
         regalloc::Regalloc,
     },
@@ -121,6 +121,19 @@ impl JitCompiler {
         .map_err(|_| JitError {
             msg: "jit entry emission failed".to_string(),
         })?;
+
+        for konst in &ctx.static_consts {
+            AsmStaticConst {
+                name: konst.name.clone(),
+                init: konst.init.clone(),
+                ty: konst.ty.clone(),
+                alignment: konst.alignment,
+            }
+            .emit(&mut asm_txt)
+            .map_err(|_| JitError {
+                msg: "JIT constant emission failed".into(),
+            })?;
+        }
 
         let code = self.asm_exe(&asm_txt)?;
 

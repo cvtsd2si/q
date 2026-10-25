@@ -12,6 +12,7 @@ impl Fixup for AsmProg {
     fn fixup(&self) -> Self::Output {
         AsmProg {
             funcs: self.funcs.iter().map(|f| f.fixup()).collect(),
+            static_consts: self.static_consts.clone(),
         }
     }
 }
@@ -53,7 +54,7 @@ impl Fixup for AsmInstr {
             }
 
             AsmInstr::Mov { src, dst, asm_ty }
-                if matches!(src, AsmOp::Stack(_) | AsmOp::Mem(_, _))
+                if matches!(src, AsmOp::Stack(_) | AsmOp::Mem(_, _) | AsmOp::Data(_, _))
                     && matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
                 let scratch = match asm_ty {
@@ -70,6 +71,34 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Reg(scratch),
                         dst: dst.clone(),
+                        asm_ty: *asm_ty,
+                    },
+                ]
+            }
+
+            AsmInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                asm_ty,
+            } if matches!(asm_ty, AsmType::Float | AsmType::Double)
+                && matches!(rhs, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Mov {
+                        src: rhs.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Bin {
+                        kind: *kind,
+                        lhs: lhs.clone(),
+                        rhs: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: rhs.clone(),
                         asm_ty: *asm_ty,
                     },
                 ]

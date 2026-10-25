@@ -1,6 +1,9 @@
 use crate::{
     bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, mktmp},
+    ir::r#gen::{
+        Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRStaticConst, IRVal, StaticInit,
+        mktmp,
+    },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
         jit::{JIT_ERROR, JIT_RET},
@@ -12,6 +15,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AsmProg {
     pub funcs: Vec<AsmFunc>,
+    pub static_consts: Vec<AsmStaticConst>,
 }
 
 #[derive(Debug)]
@@ -19,6 +23,39 @@ pub struct AsmFunc {
     pub name: String,
     pub body: Vec<AsmInstr>,
     pub space: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct AsmStaticConst {
+    pub name: String,
+    pub init: StaticInit,
+    pub ty: Type,
+    pub alignment: usize,
+}
+
+impl CodegenContext {
+    pub fn intern_float(&mut self, literal: Literal) -> String {
+        let (key, ty, init) = match literal {
+            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
+            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
+            _ => unreachable!(),
+        };
+
+        if let Some(name) = self.float_pool.get(&key) {
+            return name.clone();
+        }
+
+        let name = format!(".LC{}", mktmp());
+
+        self.static_consts.push(IRStaticConst {
+            name: name.clone(),
+            ty,
+            init,
+            alignment: ty.alignment(),
+        });
+
+        name
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -259,6 +296,7 @@ pub enum AsmOp {
     Imm(i64),
     Stack(isize),
     Mem(AsmReg, isize),
+    Data(String, isize),
 }
 
 impl AsmOp {
@@ -282,6 +320,11 @@ impl std::fmt::Display for AsmOp {
             AsmOp::Stack(offset) => write!(f, "{offset}(%rbp)"),
             AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg.as_width(AsmType::Quad)),
             AsmOp::Pseudo { .. } => unreachable!(),
+            AsmOp::Data(ident, offset) => match offset {
+                0 => write!(f, "{ident}(%rip)"),
+                n if *n > 0 => write!(f, "{ident}+{n}(%rip)"),
+                n => write!(f, "{ident}{n}(%rip)"),
+            },
         }
     }
 }
@@ -352,7 +395,6 @@ impl AsmReg {
                     AsmType::Word => names[1],
                     AsmType::Long | AsmType::Float => names[2],
                     AsmType::Quad | AsmType::Double => names[3],
-                    _ => unreachable!(),
                 }
             }
         }
@@ -382,6 +424,16 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
                 .iter()
                 .map(|f| f.codegen(ctx))
                 .collect::<Result<Vec<AsmFunc>, _>>()?,
+            static_consts: ctx
+                .static_consts
+                .iter()
+                .map(|konst| AsmStaticConst {
+                    name: konst.name.clone(),
+                    init: konst.init.clone(),
+                    ty: konst.ty.clone(),
+                    alignment: konst.alignment.clone(),
+                })
+                .collect(),
         })
     }
 }
@@ -466,6 +518,12 @@ impl IRInstr {
                     let src_ty = AsmType::from(*ty);
 
                     match (src_ty, ty.is_signed()) {
+                        (AsmType::Float | AsmType::Double, _) => {
+                            /* Float32 payload bits are already in %eax.  */
+                            /* Float64 payload bits are already in %rax.  */
+                            /* No additional extension is needed.  */
+                        }
+
                         /* already 64 bits  */
                         (AsmType::Quad, _) => {
                             instrs.push(AsmInstr::Comment(
@@ -1599,7 +1657,68 @@ impl IRInstr {
                             asm_ty: AsmType::Long,
                         },
                     ]),
-                    AsmType::Quad => todo!(),
+                    AsmType::Quad => {
+                        let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
+                        let i64_ceil_as_f64 = i64_ceil_as_u64 as f64;
+
+                        let static_const = IRStaticConst {
+                            name: format!("static_const.{}", mktmp()),
+                            init: StaticInit::Double(i64_ceil_as_f64),
+                            ty: Type::Float64,
+                            alignment: Type::alignment(Type::Float64),
+                        };
+
+                        ctx.static_consts.push(static_const.clone());
+
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_DoubleToUInt1_{tmp}");
+                        let l2 = format!(".L{func_name}_DoubleToUInt2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert Double to UInt64.".into()),        
+                            AsmInstr::Cmp {
+                                src: AsmOp::Data(static_const.name.clone(), 0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Double,
+                            },
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::Ae,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Cvttsd2si {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Sub,
+                                lhs: AsmOp::Data(static_const.name.clone(), 0),
+                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Double,
+                            },
+                            AsmInstr::Cvttsd2si {
+                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    },
                     _ => unreachable!(),
                 }
             }
@@ -1717,7 +1836,68 @@ impl IRInstr {
                             asm_ty: AsmType::Long,
                         },
                     ]),
-                    AsmType::Quad => todo!(),
+                    AsmType::Quad => {
+                        let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
+                        let i64_ceil_as_f32 = i64_ceil_as_u64 as f32;
+
+                        let static_const = IRStaticConst {
+                            name: format!("static_const.{}", mktmp()),
+                            init: StaticInit::Float(i64_ceil_as_f32),
+                            ty: Type::Float32,
+                            alignment: 4,
+                        };
+
+                        ctx.static_consts.push(static_const.clone());
+                        
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_FloatToUInt1_{tmp}");
+                        let l2 = format!(".L{func_name}_FloatToUInt2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert Float to UInt64.".into()),        
+                            AsmInstr::Cmp {
+                                src: AsmOp::Data(static_const.name.clone(), 0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::Ae,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Cvttss2si {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Sub,
+                                lhs: AsmOp::Data(static_const.name.clone(), 0),
+                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Cvttss2si {
+                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    },
                     _ => unreachable!(),
                 }
             }
@@ -1901,8 +2081,11 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
                 Literal::UInt64(uint64) => Ok(AsmOp::Imm(*uint64 as i64)),
                 Literal::Int64(int64) => Ok(AsmOp::Imm(*int64)),
                 Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
-                Literal::Float32(float32) => Ok(AsmOp::Imm(float32.to_bits() as i64)),
-                Literal::Float64(float64) => Ok(AsmOp::Imm(float64.to_bits() as i64)),
+                Literal::Float32(_) | Literal::Float64(_) => {
+                    let name = ctx.intern_float(*konst);
+
+                    Ok(AsmOp::Data(name, 0))
+                }
             },
             IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
                 name: name.into(),

@@ -16,6 +16,8 @@ pub trait Codegen<T, U> {
 pub struct CodegenContext {
     pub locals: HashMap<String, usize>,
     pub funcs: HashMap<String, usize>,
+    pub static_consts: Vec<IRStaticConst>,
+    pub float_pool: HashMap<(u8, u64), String>,
 }
 
 impl CodegenContext {
@@ -23,6 +25,8 @@ impl CodegenContext {
         Self {
             locals: HashMap::new(),
             funcs: HashMap::new(),
+            static_consts: Vec::new(),
+            float_pool: HashMap::new(),
         }
     }
 }
@@ -187,6 +191,7 @@ pub enum IRInstr {
 #[derive(Debug)]
 pub struct IRProg {
     pub funcs: Vec<IRFunc>,
+    pub static_consts: Vec<IRStaticConst>,
 }
 
 #[derive(Debug, Clone)]
@@ -197,8 +202,25 @@ pub struct IRFunc {
     pub ret_ty: Option<Type>,
 }
 
+#[derive(Debug, Clone)]
+pub struct IRStaticConst {
+    pub name: String,
+    pub ty: Type,
+    pub init: StaticInit,
+    pub alignment: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StaticInit {
+    Float(f32),
+    Double(f64),
+}
+
 pub fn irfy(ast: &Program) -> IRProg {
-    let mut ir_prog = IRProg { funcs: vec![] };
+    let mut ir_prog = IRProg {
+        funcs: vec![],
+        static_consts: vec![],
+    };
 
     for block_item in &ast.block_items {
         irfy_block_item(&mut ir_prog, block_item);

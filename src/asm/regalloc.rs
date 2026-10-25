@@ -181,6 +181,7 @@ impl Regalloc for AsmProg {
     fn regalloc(&mut self) -> Self::Output {
         AsmProg {
             funcs: self.funcs.iter_mut().map(|f| f.regalloc()).collect(),
+            static_consts: self.static_consts.clone(),
         }
     }
 }

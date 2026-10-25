@@ -1,6 +1,9 @@
-use crate::asm::r#gen::{
-    AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
-    AsmType,
+use crate::{
+    asm::r#gen::{
+        AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
+        AsmStaticConst, AsmType,
+    },
+    ir::r#gen::StaticInit,
 };
 use std::fmt::Write;
 
@@ -12,6 +15,10 @@ impl Emit for AsmProg {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         for func in &self.funcs {
             func.emit(f)?;
+        }
+
+        for konst in &self.static_consts {
+            konst.emit(f)?;
         }
 
         Ok(())
@@ -26,6 +33,17 @@ impl Emit for AsmFunc {
         self.body.emit(f)?;
 
         Ok(())
+    }
+}
+
+impl Emit for AsmStaticConst {
+    fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
+        writeln!(f, "{}:", self.name)?;
+
+        match self.init {
+            StaticInit::Float(value) => writeln!(f, "\t.long 0x{:08x}", value.to_bits()),
+            StaticInit::Double(value) => writeln!(f, "\t.quad 0x{:016x}", value.to_bits()),
+        }
     }
 }
 

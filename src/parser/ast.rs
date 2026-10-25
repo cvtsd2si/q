@@ -369,6 +369,16 @@ impl Type {
         matches!(self, Type::Int8 | Type::Int16 | Type::Int32 | Type::Int64)
     }
 
+    pub fn alignment(self) -> usize {
+        match self {
+            Type::UInt8 | Type::Int8 => 1,
+            Type::UInt16 | Type::Int16 => 2,
+            Type::Int32 | Type::UInt32 | Type::Float32 => 4,
+            Type::UInt64 | Type::Int64 | Type::Float64 => 8,
+            _ => unreachable!(),
+        }
+    }
+
     pub fn size_of(self) -> usize {
         match self {
             Type::UInt8 => std::mem::size_of::<u8>(),
