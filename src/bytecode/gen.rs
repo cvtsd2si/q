@@ -27,7 +27,10 @@ pub enum Op {
     Neg,
     Not,
     BitwiseNot,
-    IntCast { src_ty: Type, dst_ty: Type },
+    Trunc { src_ty: Type, dst_ty: Type },
+    Sx { src_ty: Type, dst_ty: Type },
+    Zx { src_ty: Type, dst_ty: Type },
+    UIntToDouble { src_ty: Type },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -127,7 +130,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 let src = src.load_op(ctx);
 
                 let name = match dst {
-                    IRVal::Var(name) => name,
+                    IRVal::Var { name, .. } => name,
                     IRVal::Const(_) => unreachable!(),
                 };
 
@@ -154,7 +157,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 let src = src.load_op(ctx);
 
                 let name = match dst {
-                    IRVal::Var(name) => name,
+                    IRVal::Var { name, .. } => name,
                     IRVal::Const(_) => unreachable!(),
                 };
 
@@ -186,7 +189,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 let rhs = rhs.load_op(ctx);
 
                 let name = match dst {
-                    IRVal::Var(name) => name,
+                    IRVal::Var { name, .. } => name,
                     IRVal::Const(_) => unreachable!(),
                 };
 
@@ -232,7 +235,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 });
 
                 let dst_name = match dst {
-                    IRVal::Var(name) => name,
+                    IRVal::Var { name, .. } => name,
                     IRVal::Const(_) => unreachable!(),
                 };
 
@@ -241,19 +244,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(ops)
             }
 
-            IRInstr::SignExtend {
-                src,
-                dst,
-                src_ty,
-                dst_ty,
-            }
-            | IRInstr::ZeroExtend {
-                src,
-                dst,
-                src_ty,
-                dst_ty,
-            }
-            | IRInstr::Truncate {
+            IRInstr::Truncate {
                 src,
                 dst,
                 src_ty,
@@ -261,21 +252,80 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
             } => {
                 let src = src.load_op(ctx);
 
-                let dst_name = match dst {
-                    IRVal::Var(name) => name,
-                    IRVal::Const(_) => unreachable!(),
+                let IRVal::Var { name, .. } = dst else {
+                    unreachable!()
                 };
 
-                ctx.register::<String>(dst_name);
+                ctx.register::<String>(name);
 
                 Ok(vec![
                     src,
-                    Op::IntCast {
+                    Op::Trunc {
                         src_ty: *src_ty,
                         dst_ty: *dst_ty,
                     },
                 ])
             }
+            IRInstr::SignExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let src = src.load_op(ctx);
+
+                let IRVal::Var { name, .. } = dst else {
+                    unreachable!();
+                };
+
+                ctx.register::<String>(name);
+
+                Ok(vec![
+                    src,
+                    Op::Sx {
+                        src_ty: *src_ty,
+                        dst_ty: *dst_ty,
+                    },
+                ])
+            }
+
+            IRInstr::ZeroExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let src = src.load_op(ctx);
+
+                let IRVal::Var { name, .. } = dst else {
+                    unreachable!();
+                };
+
+                ctx.register::<String>(name);
+
+                Ok(vec![
+                    src,
+                    Op::Zx {
+                        src_ty: *src_ty,
+                        dst_ty: *dst_ty,
+                    },
+                ])
+            }
+
+            IRInstr::UIntToDouble {
+                src, dst, src_ty, ..
+            } => {
+                let src = src.load_op(ctx);
+
+                let IRVal::Var { name, .. } = dst else {
+                    unreachable!();
+                };
+
+                ctx.register::<String>(name);
+
+                Ok(vec![src, Op::UIntToDouble { src_ty: *src_ty }])
+            }
+
             _ => todo!(),
         }
     }
@@ -285,8 +335,8 @@ impl IRVal {
     fn load_op<U: Ctx>(&self, ctx: &mut U) -> Op {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
-            IRVal::Var(var) => {
-                if let Some(idx) = ctx.get::<String>(var) {
+            IRVal::Var { name, .. } => {
+                if let Some(idx) = ctx.get::<String>(name) {
                     Op::Deepget(idx)
                 } else {
                     unreachable!();
@@ -298,8 +348,8 @@ impl IRVal {
     fn store_op<U: Ctx>(&self, ctx: &U) -> Op {
         match self {
             IRVal::Const(_konst) => unreachable!(),
-            IRVal::Var(var) => {
-                if let Some(idx) = ctx.get::<String>(var) {
+            IRVal::Var { name, .. } => {
+                if let Some(idx) = ctx.get::<String>(name) {
                     Op::Deepset(idx)
                 } else {
                     unreachable!();

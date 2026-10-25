@@ -203,6 +203,20 @@ impl std::fmt::Display for AsmInstr {
                     dst.as_width(*dst_ty)
                 )
             }
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty } => {
+                let suffix = match asm_ty {
+                    AsmType::Long => "l",
+                    AsmType::Quad => "q",
+                    _ => unreachable!("got: {asm_ty:?}"),
+                };
+
+                writeln!(
+                    f,
+                    "cvtsi2sd{suffix} {}, {}",
+                    src.as_width(*asm_ty),
+                    dst.as_width(*asm_ty)
+                )
+            }
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),

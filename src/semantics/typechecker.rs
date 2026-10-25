@@ -823,7 +823,7 @@ fn always_returns(stmt: &Statement) -> bool {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
     pub ty: Option<Type>,

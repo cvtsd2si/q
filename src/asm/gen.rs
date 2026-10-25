@@ -90,6 +90,11 @@ pub enum AsmInstr {
         dst: AsmOp,
         dst_ty: AsmType,
     },
+    Cvtsi2sd {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
     Comment(String),
     Newline,
 }
@@ -100,6 +105,8 @@ pub enum AsmType {
     Word,
     Long,
     Quad,
+    Float,
+    Double,
 }
 
 impl From<usize> for AsmType {
@@ -121,6 +128,8 @@ impl AsmType {
             AsmType::Word => "w",
             AsmType::Long => "l",
             AsmType::Quad => "q",
+            AsmType::Float => "ss",
+            AsmType::Double => "sd",
         }
     }
 
@@ -128,8 +137,8 @@ impl AsmType {
         match self {
             AsmType::Byte => 1,
             AsmType::Word => 2,
-            AsmType::Long => 4,
-            AsmType::Quad => 8,
+            AsmType::Long | AsmType::Float => 4,
+            AsmType::Quad | AsmType::Double => 8,
         }
     }
 }
@@ -141,7 +150,9 @@ impl From<Type> for AsmType {
             Type::Int16 | Type::UInt16 => AsmType::Word,
             Type::Int32 | Type::UInt32 => AsmType::Long,
             Type::Int64 | Type::UInt64 => AsmType::Quad,
-            _ => unreachable!("Not a supported integer type: {value:?}"),
+            Type::Float32 => AsmType::Float,
+            Type::Float64 => AsmType::Double,
+            _ => unreachable!("Not a supported type: {value:?}"),
         }
     }
 }
@@ -217,7 +228,7 @@ pub enum AsmInstrBinKind {
 
 #[derive(Debug, Clone)]
 pub enum AsmOp {
-    Pseudo(String),
+    Pseudo { name: String, ty: Type },
     Reg(AsmReg),
     Imm(i64),
     Stack(isize),
@@ -240,7 +251,7 @@ impl std::fmt::Display for AsmOp {
             AsmOp::Imm(n) => write!(f, "${n}"),
             AsmOp::Stack(offset) => write!(f, "{offset}(%rbp)"),
             AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg.as_width(AsmType::Quad)),
-            AsmOp::Pseudo(_) => unreachable!(),
+            AsmOp::Pseudo { .. } => unreachable!(),
         }
     }
 }
@@ -262,36 +273,58 @@ pub enum AsmReg {
     Dx,
     Di,
     Si,
+    Xmm0,
+    Xmm1,
+    Xmm2,
+    Xmm3,
+    Xmm4,
+    Xmm5,
+    Xmm6,
+    Xmm7,
+    Xmm15,
 }
 
 impl AsmReg {
     pub fn as_width(self, ty: AsmType) -> &'static str {
-        let names = match self {
-            Self::Ax => ["%al", "%ax", "%eax", "%rax"],
-            Self::Cx => ["%cl", "%cx", "%ecx", "%rcx"],
-            Self::Dx => ["%dl", "%dx", "%edx", "%rdx"],
+        match self {
+            Self::Xmm0 => "%xmm0",
+            Self::Xmm1 => "%xmm1",
+            Self::Xmm2 => "%xmm2",
+            Self::Xmm3 => "%xmm3",
+            Self::Xmm4 => "%xmm4",
+            Self::Xmm5 => "%xmm5",
+            Self::Xmm6 => "%xmm6",
+            Self::Xmm7 => "%xmm7",
+            Self::Xmm15 => "%xmm15",
 
-            Self::Si => ["%sil", "%si", "%esi", "%rsi"],
-            Self::Di => ["%dil", "%di", "%edi", "%rdi"],
+            _ => {
+                let names = match self {
+                    Self::Ax => ["%al", "%ax", "%eax", "%rax"],
+                    Self::Cx => ["%cl", "%cx", "%ecx", "%rcx"],
+                    Self::Dx => ["%dl", "%dx", "%edx", "%rdx"],
+                    Self::Si => ["%sil", "%si", "%esi", "%rsi"],
+                    Self::Di => ["%dil", "%di", "%edi", "%rdi"],
+                    Self::Bp => ["%bpl", "%bp", "%ebp", "%rbp"],
+                    Self::Sp => ["%spl", "%sp", "%esp", "%rsp"],
+                    Self::R8 => ["%r8b", "%r8w", "%r8d", "%r8"],
+                    Self::R9 => ["%r9b", "%r9w", "%r9d", "%r9"],
+                    Self::R10 => ["%r10b", "%r10w", "%r10d", "%r10"],
+                    Self::R11 => ["%r11b", "%r11w", "%r11d", "%r11"],
+                    Self::R12 => ["%r12b", "%r12w", "%r12d", "%r12"],
+                    Self::R13 => ["%r13b", "%r13w", "%r13d", "%r13"],
+                    Self::R14 => ["%r14b", "%r14w", "%r14d", "%r14"],
+                    Self::R15 => ["%r15b", "%r15w", "%r15d", "%r15"],
+                    _ => unreachable!(),
+                };
 
-            Self::Bp => ["%bpl", "%bp", "%ebp", "%rbp"],
-            Self::Sp => ["%spl", "%sp", "%esp", "%rsp"],
-
-            Self::R8 => ["%r8b", "%r8w", "%r8d", "%r8"],
-            Self::R9 => ["%r9b", "%r9w", "%r9d", "%r9"],
-            Self::R10 => ["%r10b", "%r10w", "%r10d", "%r10"],
-            Self::R11 => ["%r11b", "%r11w", "%r11d", "%r11"],
-            Self::R12 => ["%r12b", "%r12w", "%r12d", "%r12"],
-            Self::R13 => ["%r13b", "%r13w", "%r13d", "%r13"],
-            Self::R14 => ["%r14b", "%r14w", "%r14d", "%r14"],
-            Self::R15 => ["%r15b", "%r15w", "%r15d", "%r15"],
-        };
-
-        match ty {
-            AsmType::Byte => names[0],
-            AsmType::Word => names[1],
-            AsmType::Long => names[2],
-            AsmType::Quad => names[3],
+                match ty {
+                    AsmType::Byte => names[0],
+                    AsmType::Word => names[1],
+                    AsmType::Long => names[2],
+                    AsmType::Quad => names[3],
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
@@ -327,7 +360,10 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
             )));
             body.push(AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Di, offset),
-                dst: AsmOp::Pseudo(param.name.clone()),
+                dst: AsmOp::Pseudo {
+                    name: param.name.clone(),
+                    ty: param.ty.clone(),
+                },
                 asm_ty: AsmType::Quad,
             });
             body.push(AsmInstr::Newline);
@@ -643,6 +679,56 @@ impl IRInstr {
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
+                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm0),
+                        dst: AsmOp::Mem(AsmReg::Sp, 0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm1),
+                        dst: AsmOp::Mem(AsmReg::Sp, 8),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm2),
+                        dst: AsmOp::Mem(AsmReg::Sp, 16),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm3),
+                        dst: AsmOp::Mem(AsmReg::Sp, 24),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm4),
+                        dst: AsmOp::Mem(AsmReg::Sp, 32),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm5),
+                        dst: AsmOp::Mem(AsmReg::Sp, 40),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm6),
+                        dst: AsmOp::Mem(AsmReg::Sp, 48),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm7),
+                        dst: AsmOp::Mem(AsmReg::Sp, 56),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("%rdi = *mut Vm".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R13),
@@ -666,6 +752,58 @@ impl IRInstr {
                     AsmInstr::Newline,
                     AsmInstr::CallRt {
                         target: RtFn::Print,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 0),
+                        dst: AsmOp::Reg(AsmReg::Xmm0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 8),
+                        dst: AsmOp::Reg(AsmReg::Xmm1),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 16),
+                        dst: AsmOp::Reg(AsmReg::Xmm2),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 24),
+                        dst: AsmOp::Reg(AsmReg::Xmm3),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 32),
+                        dst: AsmOp::Reg(AsmReg::Xmm4),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 40),
+                        dst: AsmOp::Reg(AsmReg::Xmm5),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 48),
+                        dst: AsmOp::Reg(AsmReg::Xmm6),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 56),
+                        dst: AsmOp::Reg(AsmReg::Xmm7),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Restore space reserverd for the caller-saved SSE regs.".into(),
+                    ),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Restore stack alignment.".into()),
@@ -747,6 +885,56 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm0),
+                        dst: AsmOp::Mem(AsmReg::Sp, 0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm1),
+                        dst: AsmOp::Mem(AsmReg::Sp, 8),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm2),
+                        dst: AsmOp::Mem(AsmReg::Sp, 16),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm3),
+                        dst: AsmOp::Mem(AsmReg::Sp, 24),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm4),
+                        dst: AsmOp::Mem(AsmReg::Sp, 32),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm5),
+                        dst: AsmOp::Mem(AsmReg::Sp, 40),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm6),
+                        dst: AsmOp::Mem(AsmReg::Sp, 48),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm7),
+                        dst: AsmOp::Mem(AsmReg::Sp, 56),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1024,6 +1212,58 @@ impl IRInstr {
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
+                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 0),
+                        dst: AsmOp::Reg(AsmReg::Xmm0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 8),
+                        dst: AsmOp::Reg(AsmReg::Xmm1),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 16),
+                        dst: AsmOp::Reg(AsmReg::Xmm2),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 24),
+                        dst: AsmOp::Reg(AsmReg::Xmm3),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 32),
+                        dst: AsmOp::Reg(AsmReg::Xmm4),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 40),
+                        dst: AsmOp::Reg(AsmReg::Xmm5),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 48),
+                        dst: AsmOp::Reg(AsmReg::Xmm6),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 56),
+                        dst: AsmOp::Reg(AsmReg::Xmm7),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Restore space reserverd for the caller-saved SSE regs.".into(),
+                    ),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
                     AsmInstr::Comment("Release alignment padding.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
@@ -1066,25 +1306,33 @@ impl IRInstr {
             IRInstr::Truncate {
                 src,
                 dst,
-                src_ty: _,
+                src_ty,
                 dst_ty,
-            } => Ok(vec![AsmInstr::Mov {
-                src: src.codegen(ctx)?,
-                dst: dst.codegen(ctx)?,
-                asm_ty: AsmType::from(*dst_ty),
-            }]),
+            } => Ok(vec![
+                AsmInstr::Comment(format!("Truncating {src_ty:?} into {dst_ty:?}")),
+                AsmInstr::Mov {
+                    src: src.codegen(ctx)?,
+                    dst: dst.codegen(ctx)?,
+                    asm_ty: AsmType::from(*dst_ty),
+                },
+                AsmInstr::Newline,
+            ]),
 
             IRInstr::ZeroExtend {
                 src,
                 dst,
                 src_ty,
                 dst_ty,
-            } => Ok(vec![AsmInstr::Movzx {
-                src: src.codegen(ctx)?,
-                src_ty: AsmType::from(*src_ty),
-                dst: dst.codegen(ctx)?,
-                dst_ty: AsmType::from(*dst_ty),
-            }]),
+            } => Ok(vec![
+                AsmInstr::Comment(format!("Zero-extending {src_ty:?} into {dst_ty:?}")),
+                AsmInstr::Movzx {
+                    src: src.codegen(ctx)?,
+                    src_ty: AsmType::from(*src_ty),
+                    dst: dst.codegen(ctx)?,
+                    dst_ty: AsmType::from(*dst_ty),
+                },
+                AsmInstr::Newline,
+            ]),
 
             IRInstr::SignExtend {
                 src,
@@ -1101,13 +1349,55 @@ impl IRInstr {
                 },
                 AsmInstr::Newline,
             ]),
+
+            IRInstr::UIntToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movzx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty.clone(),
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Movzx {
+                            src: src.codegen(ctx)?,
+                            src_ty: AsmType::Long,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    AsmType::Quad => {
+                        todo!()
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
             _ => todo!(),
         }
     }
 }
 
 impl Codegen<AsmOp, CodegenContext> for IRVal {
-    fn codegen(&self, _ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
         match self {
             IRVal::Const(konst) => match konst {
                 Literal::UInt8(uint8) => Ok(AsmOp::Imm(*uint8 as i64)),
@@ -1121,7 +1411,10 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
                 Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
                 _ => unimplemented!(),
             },
-            IRVal::Var(var) => Ok(AsmOp::Pseudo(var.to_owned())),
+            IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
+                name: name.into(),
+                ty: ty.clone(),
+            }),
         }
     }
 }

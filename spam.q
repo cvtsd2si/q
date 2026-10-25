@@ -1,5 +1,6 @@
 fn main() -> u64 {
-    let x: i8 = -1;
-    let y: u64 = x as u64;
-    ret y;
+    let x: u8 = 3;
+    let y: f64 = x as f64;
+    print x;
+    ret 0;
 }

@@ -1,30 +1,31 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg};
+use crate::{
+    asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg},
+    parser::ast::Type,
+};
 use std::collections::HashMap;
 
 pub struct RegAllocator {
-    allocatable_regs: Vec<AllocatableReg>,
-    map: HashMap<String, AsmReg>,
+    allocatable_gp_regs: Vec<AsmReg>,
+    allocatable_sse_regs: Vec<AsmReg>,
+    map: HashMap<String, AsmOp>,
     stack_offsets: HashMap<String, isize>,
     current_offset: isize,
-}
-
-#[derive(Debug, Clone, Copy)]
-struct AllocatableReg {
-    reg: AsmReg,
-    occupied: bool,
 }
 
 impl RegAllocator {
     pub fn new() -> Self {
         Self {
-            allocatable_regs:
-                [AsmReg::R8, AsmReg::R10, AsmReg::R11] /* R9 reserved for fixup scratch */
-                    .iter()
-                    .map(|r| AllocatableReg {
-                        reg: r.to_owned(),
-                        occupied: false,
-                    })
-                    .collect(),
+            allocatable_gp_regs: vec![AsmReg::R8, AsmReg::R10, AsmReg::R11], /* R9 reserved for fixup scratch */
+            allocatable_sse_regs: vec![
+                AsmReg::Xmm0,
+                AsmReg::Xmm1,
+                AsmReg::Xmm2,
+                AsmReg::Xmm3,
+                AsmReg::Xmm4,
+                AsmReg::Xmm5,
+                AsmReg::Xmm6,
+                AsmReg::Xmm7,
+            ],
             map: HashMap::new(),
             stack_offsets: HashMap::new(),
             current_offset: 0,
@@ -104,35 +105,38 @@ impl RegAllocator {
                 asm_ty: *asm_ty,
             },
 
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty } => AsmInstr::Cvtsi2sd {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
+            },
+
             _ => instr.clone(),
         }
     }
 
     fn replace_pseudo(&mut self, op: &mut AsmOp) -> AsmOp {
         match op {
-            AsmOp::Pseudo(pseudo) => self.alloc(pseudo),
+            AsmOp::Pseudo { name, ty } => self.alloc(name, ty.to_owned()),
             _ => op.clone(),
         }
     }
 
-    fn alloc(&mut self, pseudo: &str) -> AsmOp {
-        if let Some(reg) = self.map.get(pseudo) {
-            return AsmOp::Reg(reg.to_owned());
+    fn alloc(&mut self, pseudo: &str, ty: Type) -> AsmOp {
+        if let Some(op) = self.map.get(pseudo) {
+            return op.clone();
         }
 
-        let slot = self.allocatable_regs.iter_mut().find(|reg| !reg.occupied);
+        let reg = match ty {
+            Type::Float32 | Type::Float64 => self.allocatable_sse_regs.pop().map(AsmOp::Reg),
+            _ => self.allocatable_gp_regs.pop().map(AsmOp::Reg),
+        };
 
-        if slot.is_none() {
-            return AsmOp::Stack(self.get_stack_offset(pseudo));
-        }
+        let op = reg.unwrap_or_else(|| AsmOp::Stack(self.get_stack_offset(pseudo)));
 
-        let slot = slot.unwrap();
+        self.map.insert(pseudo.to_owned(), op.clone());
 
-        slot.occupied = true;
-
-        self.map.insert(pseudo.to_owned(), slot.reg.to_owned());
-
-        AsmOp::Reg(slot.reg)
+        op
     }
 
     fn get_stack_offset(&mut self, pseudo: &str) -> isize {

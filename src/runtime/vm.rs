@@ -147,7 +147,10 @@ impl Vm {
                 Op::Ne => self.handle_op_ne(),
                 Op::Neg => self.handle_op_neg(),
                 Op::Not | Op::BitwiseNot => self.handle_op_not(),
-                Op::IntCast { src_ty, dst_ty } => self.handle_op_int_cast(src_ty, dst_ty),
+                Op::Trunc { src_ty, dst_ty } => self.handle_op_trunc(src_ty, dst_ty),
+                Op::Sx { src_ty, dst_ty } => self.handle_op_sx(src_ty, dst_ty),
+                Op::Zx { src_ty, dst_ty } => self.handle_op_zx(src_ty, dst_ty),
+                Op::UIntToDouble { src_ty } => self.handle_op_uint_to_double(src_ty),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -346,9 +349,38 @@ impl Vm {
         unop!(self.stack, !);
     }
 
-    fn handle_op_int_cast(&mut self, _src_ty: Type, dst_ty: Type) {
+    fn handle_op_trunc(&mut self, _src_ty: Type, dst_ty: Type) {
         let value = self.stack.pop().unwrap();
         self.stack.push(value.cast_int(dst_ty));
+    }
+
+    fn handle_op_sx(&mut self, _src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+        self.stack.push(value.cast_int(dst_ty));
+    }
+    fn handle_op_zx(&mut self, _src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+        self.stack.push(value.cast_int(dst_ty));
+    }
+
+    fn handle_op_uint_to_double(&mut self, src_ty: Type) {
+        /* pop the unsigned int  */
+        let value = self.stack.pop().unwrap();
+
+        /* interpret the payload according to `src_ty`  */
+        let r = match src_ty {
+            Type::UInt8 => value.payload as u8 as f64,
+            Type::UInt16 => value.payload as u16 as f64,
+            Type::UInt32 => value.payload as u32 as f64,
+            Type::UInt64 => value.payload as f64,
+            _ => unreachable!("Invalid unsigned source type: {src_ty:?}"),
+        };
+
+        /* push a new value tagged as `Float64`  */
+        self.stack.push(Value {
+            tag: ValueTag::Float64,
+            payload: r.to_bits(),
+        });
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {
