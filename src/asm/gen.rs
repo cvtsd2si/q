@@ -1,7 +1,7 @@
 use crate::{
     bytecode::r#gen::BytecodeFunc,
     ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, mktmp},
-    parser::ast::{BinaryExpressionKind, Literal, Type},
+    parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
         jit::{JIT_ERROR, JIT_RET},
         rt::Rt,
@@ -30,6 +30,15 @@ pub enum AsmInstr {
     Ret,
     Push(AsmOp),
     Pop(AsmOp),
+    Unary {
+        kind: AsmInstrUnaryKind,
+        dst: AsmOp,
+    },
+    Shift {
+        kind: AsmInstrShiftKind,
+        amount: u8,
+        dst: AsmOp,
+    },
     Bin {
         kind: AsmInstrBinKind,
         lhs: AsmOp,
@@ -84,6 +93,19 @@ pub enum ConditionCode {
     Be,
     A,
     Ae,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AsmInstrUnaryKind {
+    Not,
+    Neg,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum AsmInstrShiftKind {
+    Shl,
+    Shr,
+    Sar,
 }
 
 impl std::fmt::Display for ConditionCode {
@@ -316,6 +338,84 @@ impl IRInstr {
                         dst: dst.codegen(ctx)?,
                     },
                 ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Unary {
+                kind,
+                src,
+                dst,
+                operand_ty,
+            } => {
+                let mut instrs = vec![
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!("Unary {kind:?}")),
+                ];
+
+                let src = src.codegen(ctx)?;
+                let dst = dst.codegen(ctx)?;
+
+                instrs.extend([
+                    AsmInstr::Mov {
+                        src,
+                        dst: dst.clone(),
+                    },
+                ]);
+
+                match kind {
+                    UnaryExpressionKind::Negate if operand_ty.is_signed() => {
+                        instrs.push(AsmInstr::Unary {
+                            kind: AsmInstrUnaryKind::Neg,
+                            dst: dst.clone(),
+                        });
+                        instrs.push(AsmInstr::Newline);
+                        instrs.extend(normalize_int(dst, *operand_ty));
+                    }
+                    UnaryExpressionKind::LogicalNot if *operand_ty == Type::Boolean => {
+                        instrs.extend([
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Compare the operand against 0.".into()),
+                            AsmInstr::Comment("If dst == 0, the Zero Flag (ZF) is set.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Imm(0),
+                                dst: dst.clone(),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment(
+                                "Clear the dst before sete, which only writes the lowest 8 bits,"
+                                    .into(),
+                            ),
+                            AsmInstr::Comment(
+                                "meaning we must ensure the upper 56 bits are zero.".into(),
+                            ),
+                            AsmInstr::Mov {
+                                src: AsmOp::Imm(0),
+                                dst: dst.clone(),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment(
+                                "If ZF is set (dst was zero), set the lowest byte to 1, else 0."
+                                    .into(),
+                            ),
+                            AsmInstr::Setcc {
+                                cc: ConditionCode::E,
+                                dst,
+                            },
+                        ]);
+                    }
+                    UnaryExpressionKind::BitwiseNot if operand_ty.is_numeric() => {
+                        instrs.push(AsmInstr::Unary {
+                            kind: AsmInstrUnaryKind::Not,
+                            dst: dst.clone(),
+                        });
+                        instrs.push(AsmInstr::Newline);
+                        instrs.extend(normalize_int(dst, *operand_ty));
+                    }
+                    _ => panic!("Unsupported unary op {kind:?} on {operand_ty:?}"), // FIXME: don't panic
+                }
+
+                instrs.push(AsmInstr::Newline);
 
                 Ok(instrs)
             }
@@ -803,4 +903,72 @@ where
     });
     body.sink(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Newline);
+}
+
+/// Truncate a 64-bit val to its actual int width, then sign-extend it or zero-extend it
+/// back to 64 bits.
+///
+/// e.g.:
+///
+/// ```
+/// let x: u8 = 0;
+/// let y: u8 = ~x;
+/// ```
+/// We expect:
+///
+/// `~0000_0000 = 1111_1111`
+///
+/// However, currently (FIXME), the compiler uses `notq` which operates on 64-bit vals,
+/// so the result would have been `0xFFFFFFFFFFFFFFFF`, which is `u64::MAX`, not `255`,
+/// which means we need to discard the upper 56 bits.
+///
+/// This means that we first shift left filling up the right side with zeroes:
+///
+/// `0xFF00000000000000`
+///
+/// Then we need to shift right, but the actual instruction depends on signedness.
+/// If the int is unsigned, we need to zero-extend it with `shrq`, otherwise we need
+/// to sign-extend it with `sarq` (wrapping arithmetic (FIXME)).
+fn normalize_int(dst: AsmOp, ty: Type) -> Vec<AsmInstr> {
+    let shift = 64 - (ty.size_of() * 8) as u8;
+
+    if shift == 0 {
+        return vec![
+            AsmInstr::Comment(format!("Since the operand is already {} wide, we do not need to shift.", ty.size_of())),
+        ];
+    }
+
+    let is_signed = if ty.is_signed() { "signed" } else { "unsigned" };
+
+    vec![
+        AsmInstr::Comment("Normalize int (truncate then zero-extend or sign-extend).".into()),
+        AsmInstr::Comment(format!(
+            "Since the int is {is_signed} ({} bytes wide), we shift left by {shift}.",
+            ty.size_of()
+        )),
+        AsmInstr::Shift {
+            kind: AsmInstrShiftKind::Shl,
+            amount: shift,
+            dst: dst.clone(),
+        },
+        AsmInstr::Newline,
+        AsmInstr::Comment(format!(
+            "The int is {is_signed}, we use {:?} to shift it {shift} bits right and {}-extend it.",
+            if ty.is_signed() {
+                AsmInstrShiftKind::Sar
+            } else {
+                AsmInstrShiftKind::Shr
+            },
+            if ty.is_signed() { "sign" } else { "zero" },
+        )),
+        AsmInstr::Shift {
+            kind: if ty.is_signed() {
+                AsmInstrShiftKind::Sar
+            } else {
+                AsmInstrShiftKind::Shr
+            },
+            amount: shift,
+            dst: dst,
+        },
+    ]
 }

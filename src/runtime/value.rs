@@ -95,6 +95,49 @@ impl std::ops::Sub for Value {
     }
 }
 
+impl std::ops::Not for Value {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        let payload = match self.tag {
+            ValueTag::Bool => (self.payload == 0) as u64,
+            ValueTag::UInt8 => (!(self.payload as u8)) as u64,
+            ValueTag::Int8 => (!(self.payload as i8)) as u64,
+            ValueTag::UInt16 => (!(self.payload as u16)) as u64,
+            ValueTag::Int16 => (!(self.payload as i16)) as u64,
+            ValueTag::UInt32 => (!(self.payload as u32)) as u64,
+            ValueTag::Int32 => (!(self.payload as i32)) as u64,
+            ValueTag::UInt64 => !self.payload,
+            ValueTag::Int64 => !self.payload,
+            _ => unreachable!("Cannot apply NOT to {:?}", self.tag),
+        };
+
+        Self {
+            tag: self.tag,
+            payload,
+        }
+    }
+}
+
+impl std::ops::Neg for Value {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        let payload = match self.tag {
+            ValueTag::Int8 => (self.payload as i8).wrapping_neg() as u64,
+            ValueTag::Int16 => (self.payload as i16).wrapping_neg() as u64,
+            ValueTag::Int32 => (self.payload as i32).wrapping_neg() as u64,
+            ValueTag::Int64 => (self.payload as i64).wrapping_neg() as u64,
+            _ => unimplemented!("Cannot negate {:?} yet", self.tag),
+        };
+
+        Self {
+            tag: self.tag,
+            payload,
+        }
+    }
+}
+
 impl std::cmp::PartialOrd for Value {
     fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
         match (self.tag, rhs.tag) {
@@ -143,9 +186,38 @@ impl TryFrom<u64> for ValueTag {
     }
 }
 
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.tag {
+            ValueTag::UInt8 => write!(f, "{}", self.payload as u8),
+            ValueTag::Int8 => write!(f, "{}", self.payload as i8),
+
+            ValueTag::UInt16 => write!(f, "{}", self.payload as u16),
+            ValueTag::Int16 => write!(f, "{}", self.payload as i16),
+
+            ValueTag::UInt32 => write!(f, "{}", self.payload as u32),
+            ValueTag::Int32 => write!(f, "{}", self.payload as i32),
+
+            ValueTag::UInt64 => write!(f, "{}", self.payload),
+            ValueTag::Int64 => write!(f, "{}", self.payload as i64),
+
+            ValueTag::Float32 => {
+                write!(f, "{}", f32::from_bits(self.payload as u32))
+            }
+
+            ValueTag::Float64 => {
+                write!(f, "{}", f64::from_bits(self.payload))
+            }
+
+            ValueTag::Bool => write!(f, "{}", self.payload != 0),
+            ValueTag::Void => write!(f, "()"),
+        }
+    }
+}
+
 pub fn print_value(value: Value) -> std::io::Result<()> {
     let stdout = std::io::stdout();
     let mut stdout = stdout.lock();
 
-    writeln!(stdout, "{value:?}")
+    writeln!(stdout, "{value}")
 }

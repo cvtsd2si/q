@@ -1,7 +1,7 @@
 use crate::lexer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
-    Statement, Type,
+    Statement, Type, UnaryExpressionKind,
 };
 use crate::parser::error::ParserError;
 use std::collections::VecDeque;
@@ -595,7 +595,7 @@ impl<'src> Parser<'src> {
     }
 
     fn factor(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.call()?;
+        let mut result = self.unary()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[TokenKind::Star, TokenKind::Slash]) {
@@ -614,7 +614,7 @@ impl<'src> Parser<'src> {
                 }
             };
 
-            let right = self.call()?;
+            let right = self.unary()?;
             let end = right.span();
 
             result = Expression::Binary {
@@ -627,6 +627,40 @@ impl<'src> Parser<'src> {
         }
 
         Ok(result)
+    }
+
+    fn unary(&mut self) -> Result<Expression, ParserError> {
+        if self.check_many_greedy(&[TokenKind::Minus, TokenKind::Bang, TokenKind::Tilde]) {
+            let kind = match self.prev {
+                Some(token) => match token.kind {
+                    TokenKind::Minus => UnaryExpressionKind::Negate,
+                    TokenKind::Bang => UnaryExpressionKind::LogicalNot,
+                    TokenKind::Tilde => UnaryExpressionKind::BitwiseNot,
+                    _ => unreachable!(),
+                },
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: format!("Encountered the end of token stream (prev: None)"),
+                    });
+                }
+            };
+
+            let begin = self.prev.unwrap().span;
+
+            let expr = self.unary()?;
+            let end = expr.span();
+
+            return Ok(Expression::Unary {
+                kind,
+                expr: expr.into(),
+                ty: None,
+                span: begin + end,
+            });
+        }
+
+        self.call()
     }
 
     fn call(&mut self) -> Result<Expression, ParserError> {
@@ -687,7 +721,7 @@ impl<'src> Parser<'src> {
                     })
                 }
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
-                _ => unreachable!(),
+                _ => unreachable!("got: {token:?}"),
             },
             None => Err(ParserError {
                 src: self.src.to_string(),

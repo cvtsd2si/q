@@ -12,6 +12,13 @@ use crate::{
     },
 };
 
+macro_rules! unop {
+    ($stack:expr, $op:tt) => {
+        let obj = $stack.pop().unwrap();
+        $stack.push(($op obj).into());
+    };
+}
+
 macro_rules! binop {
     ($stack:expr, $op:tt) => {
         let b = $stack.pop().unwrap();
@@ -138,6 +145,8 @@ impl Vm {
                 Op::Ge => self.handle_op_ge(),
                 Op::E => self.handle_op_e(),
                 Op::Ne => self.handle_op_ne(),
+                Op::Neg => self.handle_op_neg(),
+                Op::Not | Op::BitwiseNot => self.handle_op_not(),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -326,6 +335,14 @@ impl Vm {
 
     fn handle_op_ne(&mut self) {
         binop!(self.stack, !=);
+    }
+
+    fn handle_op_neg(&mut self) {
+        unop!(self.stack, -);
+    }
+
+    fn handle_op_not(&mut self) {
+        unop!(self.stack, !);
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {

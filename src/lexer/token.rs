@@ -31,6 +31,8 @@ impl Token {
             '=' => TokenKind::Equal,
             '<' => TokenKind::Less,
             '>' => TokenKind::Greater,
+            '!' => TokenKind::Bang,
+            '~' => TokenKind::Tilde,
             _ => panic!("Cannot find TokenKind for {}", ch),
         }
     }
@@ -60,6 +62,8 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Bang,
+    Tilde,
     Equal,
     DoubleEqual,
     NotEqual,

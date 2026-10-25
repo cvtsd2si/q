@@ -38,6 +38,11 @@ impl RegAllocator {
                 dst: self.replace_pseudo(dst),
             },
 
+            AsmInstr::Unary { kind, dst } => AsmInstr::Unary {
+                kind: *kind,
+                dst: self.replace_pseudo(dst),
+            },
+
             AsmInstr::Bin { kind, lhs, rhs } => AsmInstr::Bin {
                 kind: kind.to_owned(),
                 lhs: self.replace_pseudo(lhs),
@@ -53,6 +58,13 @@ impl RegAllocator {
                 cc: *cc,
                 dst: self.replace_pseudo(dst),
             },
+
+            AsmInstr::Shift { kind, amount, dst } => AsmInstr::Shift {
+                kind: *kind,
+                amount: *amount,
+                dst: self.replace_pseudo(dst),
+            },
+
             _ => instr.clone(),
         }
     }

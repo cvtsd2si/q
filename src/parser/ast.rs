@@ -113,6 +113,12 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    Unary {
+        kind: UnaryExpressionKind,
+        expr: Box<Expression>,
+        ty: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -123,6 +129,7 @@ impl Expression {
             Expression::Binary { span, .. } => *span,
             Expression::Call { span, .. } => *span,
             Expression::Assign { span, .. } => *span,
+            Expression::Unary { span, .. } => *span,
         }
     }
 
@@ -133,8 +140,16 @@ impl Expression {
             Expression::Binary { ty, .. } => *ty,
             Expression::Call { ty, .. } => *ty,
             Expression::Assign { ty, .. } => *ty,
+            Expression::Unary { ty, .. } => *ty,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum UnaryExpressionKind {
+    Negate,
+    LogicalNot,
+    BitwiseNot,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -211,6 +226,7 @@ pub enum Literal {
 #[derive(Debug, Clone)]
 pub enum LiteralVal {
     Integer(u128),
+    NegativeInteger(u128),
     Float(String),
     Bool(bool),
 }
@@ -220,6 +236,10 @@ impl TryFrom<(&LiteralVal, Type)> for Literal {
 
     fn try_from((val, ty): (&LiteralVal, Type)) -> Result<Self, Self::Error> {
         let overflow = || format!("Literal {val:?} is out of range for {ty:?}");
+        let negative = |n: u128| -> Result<i128, String> {
+            let magnitude = i128::try_from(n).map_err(|_| overflow())?;
+            Ok(-magnitude)
+        };
 
         match (val, ty) {
             (LiteralVal::Integer(n), Type::UInt8) => {
@@ -253,6 +273,22 @@ impl TryFrom<(&LiteralVal, Type)> for Literal {
             (LiteralVal::Integer(n), Type::Int64) => {
                 Ok(Self::Int64(i64::try_from(*n).map_err(|_| overflow())?))
             }
+
+            (LiteralVal::NegativeInteger(n), Type::Int8) => Ok(Self::Int8(
+                i8::try_from(negative(*n)?).map_err(|_| overflow())?,
+            )),
+
+            (LiteralVal::NegativeInteger(n), Type::Int16) => Ok(Self::Int16(
+                i16::try_from(negative(*n)?).map_err(|_| overflow())?,
+            )),
+
+            (LiteralVal::NegativeInteger(n), Type::Int32) => Ok(Self::Int32(
+                i32::try_from(negative(*n)?).map_err(|_| overflow())?,
+            )),
+
+            (LiteralVal::NegativeInteger(n), Type::Int64) => Ok(Self::Int64(
+                i64::try_from(negative(*n)?).map_err(|_| overflow())?,
+            )),
 
             (LiteralVal::Float(s), Type::Float32) => {
                 let n = s.parse::<f32>().map_err(|e| e.to_string())?;
@@ -313,5 +349,23 @@ impl Type {
                 | Type::Float32
                 | Type::Float64
         )
+    }
+
+    pub fn is_signed(self) -> bool {
+        matches!(self, Type::Int8 | Type::Int16 | Type::Int32 | Type::Int64)
+    }
+
+    pub fn size_of(self) -> usize {
+        match self {
+            Type::UInt8 => std::mem::size_of::<u8>(),
+            Type::Int8 => std::mem::size_of::<i8>(),
+            Type::UInt16 => std::mem::size_of::<u16>(),
+            Type::Int16 => std::mem::size_of::<i16>(),
+            Type::UInt32 => std::mem::size_of::<u32>(),
+            Type::Int32 => std::mem::size_of::<i32>(),
+            Type::UInt64 => std::mem::size_of::<u64>(),
+            Type::Int64 => std::mem::size_of::<i64>(),
+            _ => unimplemented!(),
+        }
     }
 }

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::lexer::token::Span;
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
-    Statement, Type,
+    Statement, Type, UnaryExpressionKind,
 };
 
 pub struct Typechecker {
@@ -354,6 +354,101 @@ fn typecheck_expr(
             })
         }
 
+        Expression::Unary {
+            kind,
+            expr,
+            ty,
+            span,
+        } => {
+            if matches!(kind, UnaryExpressionKind::Negate) {
+                if let Expression::Literal {
+                    val: LiteralVal::Integer(n),
+                    ty,
+                    ..
+                } = expr.as_ref()
+                {
+                    return typecheck_literal(
+                        LiteralVal::NegativeInteger(*n),
+                        *ty,
+                        expected_ty,
+                        span,
+                    );
+                }
+            }
+
+            let op_hint = known_ty(typechecker, &expr)?;
+
+            let operand_ty = match kind {
+                UnaryExpressionKind::LogicalNot => Type::Boolean,
+                UnaryExpressionKind::Negate | UnaryExpressionKind::BitwiseNot => {
+                    merge_types(expected_ty, op_hint)?.unwrap_or_else(|| default_numeric_ty(&expr))
+                }
+            };
+
+            let expr = typecheck_expr(typechecker, *expr, Some(operand_ty))?;
+
+            if expr.ty() != Some(operand_ty) {
+                return Err(TypecheckerError {
+                    msg: format!(
+                        "Expected unary expr of type {operand_ty:?}, got {:?}",
+                        expr.ty()
+                    ),
+                });
+            }
+
+            let is_valid_ty = match kind {
+                UnaryExpressionKind::Negate => matches!(
+                    operand_ty,
+                    Type::Int8
+                        | Type::Int16
+                        | Type::Int32
+                        | Type::Int64
+                        | Type::Float32
+                        | Type::Float64
+                ),
+                UnaryExpressionKind::LogicalNot => operand_ty == Type::Boolean,
+                UnaryExpressionKind::BitwiseNot => matches!(
+                    operand_ty,
+                    Type::UInt8
+                        | Type::Int8
+                        | Type::UInt16
+                        | Type::Int16
+                        | Type::UInt32
+                        | Type::Int32
+                        | Type::UInt64
+                        | Type::Int64
+                        | Type::Float32
+                        | Type::Float64
+                ),
+            };
+
+            if !is_valid_ty {
+                return Err(TypecheckerError {
+                    msg: format!("Invalid operand type {operand_ty:?} for unary {kind:?}"),
+                });
+            }
+
+            let result_ty = match kind {
+                UnaryExpressionKind::LogicalNot => Type::Boolean,
+                UnaryExpressionKind::Negate | UnaryExpressionKind::BitwiseNot => operand_ty,
+            };
+
+            if let Some(expected) = expected_ty
+                && expected != result_ty
+            {
+                return Err(TypecheckerError {
+                    msg: format!("Expected {expected:?}, got {result_ty:?}."),
+                });
+            }
+
+            Ok(Expression::Unary {
+                kind,
+                expr: expr.into(),
+                ty: Some(result_ty),
+                span,
+            })
+        }
+
         Expression::Binary {
             kind,
             lhs,
@@ -536,7 +631,7 @@ fn typecheck_literal(
 
     let ty = expected_ty.or(explicit_ty).unwrap_or(match &val {
         LiteralVal::Bool(_) => Type::Boolean,
-        LiteralVal::Integer(_) => Type::Int32,
+        LiteralVal::Integer(_) | LiteralVal::NegativeInteger(_) => Type::Int32,
         LiteralVal::Float(_) => Type::Float64,
     });
 
@@ -623,6 +718,13 @@ fn known_ty(
                 msg: format!("Unknown fn: {target}"),
             }),
 
+        Expression::Unary { kind, expr, .. } => match kind {
+            UnaryExpressionKind::LogicalNot => Ok(Some(Type::Boolean)),
+            UnaryExpressionKind::BitwiseNot | UnaryExpressionKind::Negate => {
+                known_ty(typechecker, expr)
+            }
+        },
+
         Expression::Binary { kind, lhs, rhs, .. } => {
             if matches!(
                 kind,
@@ -657,6 +759,7 @@ fn default_numeric_ty(expr: &Expression) -> Type {
             val: LiteralVal::Float(_),
             ..
         } => Type::Float64,
+        Expression::Unary { expr, .. } => default_numeric_ty(expr),
         Expression::Binary { lhs, .. } => default_numeric_ty(lhs),
         _ => Type::Int32,
     }
