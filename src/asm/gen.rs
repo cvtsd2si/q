@@ -1786,7 +1786,101 @@ impl IRInstr {
                             asm_ty: AsmType::Quad,
                         },
                     ]),
-                    AsmType::Quad => todo!(),
+                    AsmType::Quad => {
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_UIntToFloat_{tmp}");
+                        let l2 = format!(".L{func_name}_UIntToFloat_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert UInt64 to Float32.".into()),        
+                            AsmInstr::Comment("Cvtsi2ss interprets its source as signed, so values >= 2^63 need special handling.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Compare the source against zero using signed comparison.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Imm(0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("If the sign bit is set, jump to the unsigned conversion path.".into()),
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::L,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The value fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert it directly to double and skip the unsigned conversion path.".into()),
+                            AsmInstr::Cvtsi2ss {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Comment("The source is >= 2^63 and cannot be converted directly as a signed integer.".into()),
+                            AsmInstr::Comment("Compute (src >> 1) | (src & 1), convert to double, then multiply by 2.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Load the original value into %rax.".into()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Copy the original value into %rdx.".into()),
+                            AsmInstr::Mov {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Logically shift %rdx right by one bit.".into()),
+                            AsmInstr::Comment("This clears the sign bit and divides the unsigned value by 2.".into()),
+                            AsmInstr::Unary {
+                                kind: AsmInstrUnaryKind::Shr,
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Extract the original least significant bit into %rax.".into()),
+                            AsmInstr::Comment("This bit preserves rounding information lost by the right shift.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::And,
+                                lhs: AsmOp::Imm(1),
+                                rhs: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Combine the shifted value with the original least significant bit.".into()),
+                            AsmInstr::Comment("%rdx = (src >> 1) | (src & 1).".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Or,
+                                lhs: AsmOp::Reg(AsmReg::Ax),
+                                rhs: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The adjusted value now fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert the adjusted value to double.".into()),
+                            AsmInstr::Cvtsi2ss {
+                                src: AsmOp::Reg(AsmReg::Dx),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Double the converted result to restore the original magnitude.".into()),
+                            AsmInstr::Comment("Adding the double to itself is equivalent to multiplying by 2.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    }
                     _ => unreachable!(),
                 }
             }
