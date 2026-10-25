@@ -394,7 +394,6 @@ impl JitCompiler {
         ];
 
         insert_epilogue(&mut body);
-
         body.push(AsmInstr::Ret);
 
         body
