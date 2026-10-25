@@ -1,4 +1,4 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg::{self, Xmm15}, AsmType};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
 
 pub trait Fixup {
     type Output;
