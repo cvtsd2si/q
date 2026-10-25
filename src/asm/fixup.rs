@@ -1,4 +1,4 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
+use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg::{self, Xmm15}, AsmType};
 
 pub trait Fixup {
     type Output;
@@ -36,14 +36,19 @@ impl Fixup for AsmInstr {
                 if matches!(src, AsmOp::Stack(_) | AsmOp::Mem(_, _))
                     && matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
+                let scratch = match asm_ty {
+                    AsmType::Float | AsmType::Double => AsmReg::Xmm15,
+                    AsmType::Byte | AsmType::Word | AsmType::Long | AsmType::Quad => AsmReg::R9,
+                };
+
                 vec![
                     AsmInstr::Mov {
                         src: src.clone(),
-                        dst: AsmOp::Reg(AsmReg::R9),
+                        dst: AsmOp::Reg(scratch),
                         asm_ty: *asm_ty,
                     },
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
+                        src: AsmOp::Reg(scratch),
                         dst: dst.clone(),
                         asm_ty: *asm_ty,
                     },
@@ -84,6 +89,11 @@ impl Fixup for AsmInstr {
                     dst: AsmOp::Reg(AsmReg::R9),
                     asm_ty: *asm_ty,
                 },
+            ],
+
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty } if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) => vec![
+                AsmInstr::Cvtsi2sd { src: src.clone(), dst: AsmOp::Reg(AsmReg::Xmm15), asm_ty: *asm_ty },
+                AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Xmm15), dst: dst.clone(), asm_ty: AsmType::Double },
             ],
 
             _ => vec![self.clone()],
