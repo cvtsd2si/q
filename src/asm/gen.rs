@@ -1676,7 +1676,7 @@ impl IRInstr {
                         let l2 = format!(".L{func_name}_DoubleToUInt2_{tmp}");
 
                         Ok(vec![
-                            AsmInstr::Comment("Convert Double to UInt64.".into()),        
+                            AsmInstr::Comment("Convert Double to UInt64.".into()),
                             AsmInstr::Cmp {
                                 src: AsmOp::Data(static_const.name.clone(), 0),
                                 dst: src.codegen(ctx)?,
@@ -1718,7 +1718,7 @@ impl IRInstr {
                             },
                             AsmInstr::Label(l2.clone()),
                         ])
-                    },
+                    }
                     _ => unreachable!(),
                 }
             }
@@ -1848,14 +1848,14 @@ impl IRInstr {
                         };
 
                         ctx.static_consts.push(static_const.clone());
-                        
+
                         let tmp = mktmp();
 
                         let l1 = format!(".L{func_name}_FloatToUInt1_{tmp}");
                         let l2 = format!(".L{func_name}_FloatToUInt2_{tmp}");
 
                         Ok(vec![
-                            AsmInstr::Comment("Convert Float to UInt64.".into()),        
+                            AsmInstr::Comment("Convert Float to UInt64.".into()),
                             AsmInstr::Cmp {
                                 src: AsmOp::Data(static_const.name.clone(), 0),
                                 dst: src.codegen(ctx)?,
@@ -1897,7 +1897,7 @@ impl IRInstr {
                             },
                             AsmInstr::Label(l2.clone()),
                         ])
-                    },
+                    }
                     _ => unreachable!(),
                 }
             }

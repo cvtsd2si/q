@@ -38,6 +38,10 @@ impl Emit for AsmFunc {
 
 impl Emit for AsmStaticConst {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
+        writeln!(f)?;
+
+        writeln!(f, "\t.section .rodata")?;
+        writeln!(f, "\t.balign {}", self.alignment)?;
         writeln!(f, "{}:", self.name)?;
 
         match self.init {
@@ -150,13 +154,22 @@ impl std::fmt::Display for AsmInstr {
                     rhs.as_width(*asm_ty)
                 ),
             },
-            AsmInstr::Cmp { src, dst, asm_ty } => writeln!(
-                f,
-                "cmp{} {}, {}",
-                asm_ty.suffix(),
-                src.as_width(*asm_ty),
-                dst.as_width(*asm_ty)
-            ),
+            AsmInstr::Cmp { src, dst, asm_ty } => {
+                let instr = match asm_ty {
+                    AsmType::Byte => "cmpb",
+                    AsmType::Word => "cmpw",
+                    AsmType::Long => "cmpl",
+                    AsmType::Quad => "cmpq",
+                    AsmType::Float => "comiss",
+                    AsmType::Double => "comisd",
+                };
+                writeln!(
+                    f,
+                    "{instr} {}, {}",
+                    src.as_width(*asm_ty),
+                    dst.as_width(*asm_ty)
+                )
+            }
             AsmInstr::Setcc { cc, dst } => match dst {
                 AsmOp::Reg(reg) => writeln!(f, "set{cc} {}", reg.as_width(AsmType::Byte)),
                 AsmOp::Stack(_) | AsmOp::Mem(_, _) => {
@@ -223,7 +236,7 @@ impl std::fmt::Display for AsmInstr {
                     (AsmType::Byte, AsmType::Quad) => "bq",
                     (AsmType::Word, AsmType::Long) => "wl",
                     (AsmType::Word, AsmType::Quad) => "wq",
-                    (AsmType::Long, AsmType::Quad) => "lq",
+                    (AsmType::Long, AsmType::Quad) => "lq", // FIXME
                     _ => unreachable!("{src_ty:?}, {dst_ty:?}"),
                 };
 
@@ -257,20 +270,44 @@ impl std::fmt::Display for AsmInstr {
                     dst.as_width(*dst_ty)
                 )
             }
-            AsmInstr::Cvtsi2sd { src, dst, asm_ty } => {
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty }
+            | AsmInstr::Cvtsi2ss { src, dst, asm_ty }
+            | AsmInstr::Cvttsd2si { src, dst, asm_ty }
+            | AsmInstr::Cvttss2si { src, dst, asm_ty } => {
+                let mnemonic = match self {
+                    AsmInstr::Cvtsi2sd { .. } => "cvtsi2sd",
+                    AsmInstr::Cvtsi2ss { .. } => "cvtsi2ss",
+                    AsmInstr::Cvttsd2si { .. } => "cvttsd2si",
+                    AsmInstr::Cvttss2si { .. } => "cvttss2si",
+                    _ => unreachable!(),
+                };
+
                 let suffix = match asm_ty {
                     AsmType::Long => "l",
                     AsmType::Quad => "q",
-                    _ => unreachable!("got: {asm_ty:?}"),
+                    _ => unreachable!(),
                 };
 
                 writeln!(
                     f,
-                    "cvtsi2sd{suffix} {}, {}",
+                    "{mnemonic}{suffix} {}, {}",
                     src.as_width(*asm_ty),
                     dst.as_width(*asm_ty)
                 )
             }
+            AsmInstr::Cvtss2sd { src, dst } => writeln!(
+                f,
+                "cvtss2sd {}, {}",
+                src.as_width(AsmType::Float),
+                dst.as_width(AsmType::Double)
+            ),
+
+            AsmInstr::Cvtsd2ss { src, dst } => writeln!(
+                f,
+                "cvtsd2ss {}, {}",
+                src.as_width(AsmType::Double),
+                dst.as_width(AsmType::Float)
+            ),
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),

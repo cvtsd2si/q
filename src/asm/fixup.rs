@@ -127,18 +127,110 @@ impl Fixup for AsmInstr {
                 ]
             }
 
-            AsmInstr::Cmp { src, dst, asm_ty } if matches!(dst, AsmOp::Imm(_)) => vec![
-                AsmInstr::Mov {
-                    src: dst.clone(),
-                    dst: AsmOp::Reg(AsmReg::R9),
-                    asm_ty: *asm_ty,
-                },
-                AsmInstr::Cmp {
-                    src: src.clone(),
-                    dst: AsmOp::Reg(AsmReg::R9),
-                    asm_ty: *asm_ty,
-                },
-            ],
+            AsmInstr::Cmp {
+                asm_ty,
+                src: _,
+                dst: AsmOp::Reg(_),
+            } if matches!(asm_ty, AsmType::Float | AsmType::Double) => vec![self.clone()],
+
+            AsmInstr::Cmp { asm_ty, src, dst }
+                if matches!(asm_ty, AsmType::Float | AsmType::Double) =>
+            {
+                vec![
+                    AsmInstr::Mov {
+                        asm_ty: *asm_ty,
+                        src: dst.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                    },
+                    AsmInstr::Cmp {
+                        asm_ty: *asm_ty,
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                    },
+                ]
+            }
+
+            /* Not both operands of 'cmp' can be in memory */
+            AsmInstr::Cmp { asm_ty, src, dst }
+                if matches!(src, AsmOp::Mem(_, _) | AsmOp::Data(_, _))
+                    && matches!(dst, AsmOp::Mem(_, _) | AsmOp::Data(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Mov {
+                        asm_ty: *asm_ty,
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::R10),
+                    },
+                    AsmInstr::Cmp {
+                        asm_ty: *asm_ty,
+                        src: AsmOp::Reg(AsmReg::R10),
+                        dst: dst.clone(),
+                    },
+                ]
+            }
+
+            /* First operand of 'cmp' can't be a large constant, and second can't be a constant at all */
+            AsmInstr::Cmp {
+                asm_ty: AsmType::Quad,
+                src: AsmOp::Imm(imm1),
+                dst: AsmOp::Imm(imm2),
+            } if is_large(*imm1) => {
+                vec![
+                    AsmInstr::Mov {
+                        asm_ty: AsmType::Quad,
+                        src: AsmOp::Imm(*imm1),
+                        dst: AsmOp::Reg(AsmReg::R10),
+                    },
+                    AsmInstr::Mov {
+                        asm_ty: AsmType::Quad,
+                        src: AsmOp::Imm(*imm2),
+                        dst: AsmOp::Reg(AsmReg::R11),
+                    },
+                    AsmInstr::Cmp {
+                        asm_ty: AsmType::Quad,
+                        src: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(AsmReg::R11),
+                    },
+                ]
+            }
+
+            AsmInstr::Cmp {
+                asm_ty: AsmType::Quad,
+                src: AsmOp::Imm(imm1),
+                dst,
+            } => {
+                vec![
+                    AsmInstr::Mov {
+                        asm_ty: AsmType::Quad,
+                        src: AsmOp::Imm(*imm1),
+                        dst: AsmOp::Reg(AsmReg::R10),
+                    },
+                    AsmInstr::Cmp {
+                        asm_ty: AsmType::Quad,
+                        src: AsmOp::Reg(AsmReg::R10),
+                        dst: dst.clone(),
+                    },
+                ]
+            }
+
+            AsmInstr::Cmp {
+                asm_ty,
+                src,
+                dst: AsmOp::Imm(imm),
+            } => {
+                vec![
+                    AsmInstr::Mov {
+                        asm_ty: *asm_ty,
+                        src: AsmOp::Imm(*imm),
+                        dst: AsmOp::Reg(AsmReg::R11),
+                    },
+                    AsmInstr::Cmp {
+                        asm_ty: *asm_ty,
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::R11),
+                    },
+                ]
+            }
 
             AsmInstr::Cvtsi2sd { src, dst, asm_ty }
                 if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
@@ -157,7 +249,94 @@ impl Fixup for AsmInstr {
                 ]
             }
 
+            AsmInstr::Cvtsi2ss { src, dst, asm_ty }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvtsi2ss {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
+
+            AsmInstr::Cvttsd2si { src, dst, asm_ty }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvttsd2si {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
+
+            AsmInstr::Cvttss2si { src, dst, asm_ty }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvttss2si {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
+
+            AsmInstr::Cvtss2sd { src, dst }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvtss2sd {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
+
+            AsmInstr::Cvtsd2ss { src, dst }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvtsd2ss {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
+
             _ => vec![self.clone()],
         }
     }
+}
+
+fn is_large(n: i64) -> bool {
+    n > i32::MAX as i64 || n < i32::MIN as i64
 }

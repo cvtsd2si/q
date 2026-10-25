@@ -111,6 +111,34 @@ impl RegAllocator {
                 asm_ty: *asm_ty,
             },
 
+            AsmInstr::Cvtsi2ss { src, dst, asm_ty } => AsmInstr::Cvtsi2ss {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
+            },
+
+            AsmInstr::Cvttsd2si { src, dst, asm_ty } => AsmInstr::Cvttsd2si {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
+            },
+
+            AsmInstr::Cvttss2si { src, dst, asm_ty } => AsmInstr::Cvttss2si {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+                asm_ty: *asm_ty,
+            },
+
+            AsmInstr::Cvtss2sd { src, dst } => AsmInstr::Cvtss2sd {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+            },
+
+            AsmInstr::Cvtsd2ss { src, dst } => AsmInstr::Cvtsd2ss {
+                src: self.replace_pseudo(src),
+                dst: self.replace_pseudo(dst),
+            },
+
             _ => instr.clone(),
         }
     }
