@@ -179,7 +179,7 @@ impl JitCompiler {
         insert_prologue(&mut body);
 
         /*
-         * %rdi = hidden *mut JitResult ptr
+         * %rdi = *mut JitResult
          * %rsi = *mut Vm
          * %rdx = *const Rt
          * %rcx = *const Value (args)
