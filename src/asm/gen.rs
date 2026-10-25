@@ -1,5 +1,4 @@
 use crate::{
-    asm::r#gen::AsmType::Long,
     bytecode::r#gen::BytecodeFunc,
     ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, mktmp},
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
@@ -92,6 +91,29 @@ pub enum AsmInstr {
         dst_ty: AsmType,
     },
     Cvtsi2sd {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvttsd2si {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvtss2sd {
+        src: AsmOp,
+        dst: AsmOp,
+    },
+    Cvtsd2ss {
+        src: AsmOp,
+        dst: AsmOp,
+    },
+    Cvttss2si {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvtsi2ss {
         src: AsmOp,
         dst: AsmOp,
         asm_ty: AsmType,
@@ -1515,7 +1537,259 @@ impl IRInstr {
                 }
             }
 
-            _ => todo!(),
+            IRInstr::DoubleToInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long | AsmType::Quad => Ok(vec![AsmInstr::Cvttsd2si {
+                        asm_ty,
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                    }]),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::DoubleToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Quad => todo!(),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::IntToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movsx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    _ => Ok(vec![AsmInstr::Cvtsi2sd {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                }
+            }
+
+            IRInstr::DoubleToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => Ok(vec![AsmInstr::Cvtsd2ss {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
+
+            IRInstr::FloatToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => Ok(vec![AsmInstr::Cvtss2sd {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
+
+            IRInstr::FloatToInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long | AsmType::Quad => Ok(vec![AsmInstr::Cvttss2si {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::FloatToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Quad => todo!(),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::IntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movsx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    _ => Ok(vec![AsmInstr::Cvtsi2ss {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                }
+            }
+
+            IRInstr::UIntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movzx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Mov {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    AsmType::Quad => todo!(),
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
