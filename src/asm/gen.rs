@@ -1359,11 +1359,10 @@ impl IRInstr {
                 let asm_ty = AsmType::from(*src_ty);
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
-                        AsmInstr::Movzx {
+                        AsmInstr::Mov {
                             src: src.codegen(ctx)?,
-                            src_ty: asm_ty.clone(),
                             dst: AsmOp::Reg(AsmReg::Ax),
-                            dst_ty: AsmType::Long,
+                            asm_ty: AsmType::Long,
                         },
                         AsmInstr::Cvtsi2sd {
                             src: AsmOp::Reg(AsmReg::Ax),
@@ -1372,11 +1371,10 @@ impl IRInstr {
                         },
                     ]),
                     AsmType::Long => Ok(vec![
-                        AsmInstr::Movzx {
+                        AsmInstr::Mov {
                             src: src.codegen(ctx)?,
-                            src_ty: AsmType::Long,
                             dst: AsmOp::Reg(AsmReg::Ax),
-                            dst_ty: AsmType::Long,
+                            asm_ty: AsmType::Long,
                         },
                         AsmInstr::Cvtsi2sd {
                             src: AsmOp::Reg(AsmReg::Ax),
