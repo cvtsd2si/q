@@ -387,7 +387,7 @@ impl JitCompiler {
             AsmInstr::Newline,
             AsmInstr::Comment("%rdx = ValueTag".into()),
             AsmInstr::Mov {
-                src: AsmOp::Imm(ValueTag::Void as u64 as i64),
+                src: AsmOp::Imm(ValueTag::Void as i64),
                 dst: AsmOp::Reg(AsmReg::Dx),
             },
             AsmInstr::Newline,
