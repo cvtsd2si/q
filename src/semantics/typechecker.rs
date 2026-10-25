@@ -788,10 +788,7 @@ fn known_ty(
             known_ty(typechecker, lhs)
         }
 
-        Expression::Cast {
-            target_ty,
-            ..
-        } => Ok(Some(*target_ty)),
+        Expression::Cast { target_ty, .. } => Ok(Some(*target_ty)),
     }
 }
 

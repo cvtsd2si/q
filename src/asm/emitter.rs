@@ -1,7 +1,9 @@
 use crate::{
     asm::r#gen::{
-        AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg, AsmReg, AsmType,
-    }, parser::ast::Type,
+        AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
+        AsmReg, AsmType,
+    },
+    parser::ast::Type,
 };
 use std::fmt::Write;
 
@@ -58,19 +60,54 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::Ret => writeln!(f, "ret"),
             AsmInstr::Pop(val) => writeln!(f, "popq {}", val.as_width(AsmType::Quad)),
             AsmInstr::Push(val) => writeln!(f, "pushq {}", val.as_width(AsmType::Quad)),
-            AsmInstr::Mov { src, dst, asm_ty } => writeln!(f, "mov{} {}, {}", asm_ty.suffix(), src.as_width(*asm_ty), dst.as_width(*asm_ty)),
+            AsmInstr::Mov { src, dst, asm_ty } => writeln!(
+                f,
+                "mov{} {}, {}",
+                asm_ty.suffix(),
+                src.as_width(*asm_ty),
+                dst.as_width(*asm_ty)
+            ),
             AsmInstr::Unary { kind, dst, asm_ty } => match kind {
-                AsmInstrUnaryKind::Not => writeln!(f, "not{} {}", asm_ty.suffix(), dst.as_width(*asm_ty)),
-                AsmInstrUnaryKind::Neg => writeln!(f, "neg{} {}", asm_ty.suffix(), dst.as_width(*asm_ty)),
+                AsmInstrUnaryKind::Not => {
+                    writeln!(f, "not{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
+                }
+                AsmInstrUnaryKind::Neg => {
+                    writeln!(f, "neg{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
+                }
             },
-            AsmInstr::Bin { kind, lhs, rhs, asm_ty } => match kind {
-                AsmInstrBinKind::Add => writeln!(f, "add{} {}, {}", asm_ty.suffix(), lhs.as_width(*asm_ty), rhs.as_width(*asm_ty)),
-                AsmInstrBinKind::Sub => writeln!(f, "sub{} {}, {}", asm_ty.suffix(), lhs.as_width(*asm_ty), rhs.as_width(*asm_ty)),
+            AsmInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                asm_ty,
+            } => match kind {
+                AsmInstrBinKind::Add => writeln!(
+                    f,
+                    "add{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
+                AsmInstrBinKind::Sub => writeln!(
+                    f,
+                    "sub{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
             },
-            AsmInstr::Cmp { src, dst, asm_ty } => writeln!(f, "cmp{} {}, {}", asm_ty.suffix(), src.as_width(*asm_ty), dst.as_width(*asm_ty)),
+            AsmInstr::Cmp { src, dst, asm_ty } => writeln!(
+                f,
+                "cmp{} {}, {}",
+                asm_ty.suffix(),
+                src.as_width(*asm_ty),
+                dst.as_width(*asm_ty)
+            ),
             AsmInstr::Setcc { cc, dst } => match dst {
                 AsmOp::Reg(reg) => writeln!(f, "set{cc} {}", reg.as_width(AsmType::Byte)),
-                AsmOp::Stack(_) | AsmOp::Mem(_, _) => writeln!(f, "set{cc} {}", dst.as_width(AsmType::Byte)),
+                AsmOp::Stack(_) | AsmOp::Mem(_, _) => {
+                    writeln!(f, "set{cc} {}", dst.as_width(AsmType::Byte))
+                }
                 _ => unreachable!("got: {dst:?}"),
             },
             AsmInstr::Jmpcc { cc, target } => writeln!(f, "j{cc} {target}"),
@@ -86,14 +123,46 @@ impl std::fmt::Display for AsmInstr {
                 writeln!(f, "\t# Zero-extend the retval.")?;
                 writeln!(f, "\tmovl %eax, %eax")
             }
-            AsmInstr::CallIndirect { target } => writeln!(f, "call *{}", target.as_width(AsmType::Quad)),
-            AsmInstr::Lea { src, dst } => writeln!(f, "leaq {}, {}", src.as_width(AsmType::Quad), dst.as_width(AsmType::Quad)),
-            AsmInstr::Shift { kind, amount, dst, asm_ty } => match kind {
-                AsmInstrShiftKind::Shl => writeln!(f, "shl{} ${amount}, {}", asm_ty.suffix(), dst.as_width(*asm_ty)),
-                AsmInstrShiftKind::Shr => writeln!(f, "shr{} ${amount}, {}", asm_ty.suffix(), dst.as_width(*asm_ty)),
-                AsmInstrShiftKind::Sar => writeln!(f, "sar{} ${amount}, {}", asm_ty.suffix(), dst.as_width(*asm_ty)),
+            AsmInstr::CallIndirect { target } => {
+                writeln!(f, "call *{}", target.as_width(AsmType::Quad))
+            }
+            AsmInstr::Lea { src, dst } => writeln!(
+                f,
+                "leaq {}, {}",
+                src.as_width(AsmType::Quad),
+                dst.as_width(AsmType::Quad)
+            ),
+            AsmInstr::Shift {
+                kind,
+                amount,
+                dst,
+                asm_ty,
+            } => match kind {
+                AsmInstrShiftKind::Shl => writeln!(
+                    f,
+                    "shl{} ${amount}, {}",
+                    asm_ty.suffix(),
+                    dst.as_width(*asm_ty)
+                ),
+                AsmInstrShiftKind::Shr => writeln!(
+                    f,
+                    "shr{} ${amount}, {}",
+                    asm_ty.suffix(),
+                    dst.as_width(*asm_ty)
+                ),
+                AsmInstrShiftKind::Sar => writeln!(
+                    f,
+                    "sar{} ${amount}, {}",
+                    asm_ty.suffix(),
+                    dst.as_width(*asm_ty)
+                ),
             },
-            AsmInstr::Movsx { src, src_ty, dst, dst_ty } => {
+            AsmInstr::Movsx {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
                 let suffix = match (src_ty, dst_ty) {
                     (AsmType::Byte, AsmType::Word) => "bw",
                     (AsmType::Byte, AsmType::Long) => "bl",
@@ -104,9 +173,19 @@ impl std::fmt::Display for AsmInstr {
                     _ => unreachable!("{src_ty:?}, {dst_ty:?}"),
                 };
 
-                writeln!(f, "movs{suffix} {}, {}", src.as_width(*src_ty), dst.as_width(*dst_ty))
-            },
-            AsmInstr::Movzx { src, src_ty, dst, dst_ty } => {
+                writeln!(
+                    f,
+                    "movs{suffix} {}, {}",
+                    src.as_width(*src_ty),
+                    dst.as_width(*dst_ty)
+                )
+            }
+            AsmInstr::Movzx {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
                 let suffix = match (src_ty, dst_ty) {
                     (AsmType::Byte, AsmType::Word) => "bw",
                     (AsmType::Byte, AsmType::Long) => "bl",
@@ -117,8 +196,13 @@ impl std::fmt::Display for AsmInstr {
                     _ => unreachable!("{src_ty:?}, {dst_ty:?}"),
                 };
 
-                writeln!(f, "movz{suffix} {}, {}", src.as_width(*src_ty), dst.as_width(*dst_ty))            
-            },
+                writeln!(
+                    f,
+                    "movz{suffix} {}, {}",
+                    src.as_width(*src_ty),
+                    dst.as_width(*dst_ty)
+                )
+            }
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),

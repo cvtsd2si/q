@@ -39,14 +39,24 @@ impl RegAllocator {
                 asm_ty: *asm_ty,
             },
 
-            AsmInstr::Movsx { src, src_ty, dst, dst_ty } => AsmInstr::Movsx {
+            AsmInstr::Movsx {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => AsmInstr::Movsx {
                 src: self.replace_pseudo(src),
                 src_ty: *src_ty,
                 dst: self.replace_pseudo(dst),
                 dst_ty: *dst_ty,
             },
 
-            AsmInstr::Movzx { src, src_ty, dst, dst_ty } => AsmInstr::Movzx {
+            AsmInstr::Movzx {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => AsmInstr::Movzx {
                 src: self.replace_pseudo(src),
                 src_ty: *src_ty,
                 dst: self.replace_pseudo(dst),
@@ -59,7 +69,12 @@ impl RegAllocator {
                 asm_ty: *asm_ty,
             },
 
-            AsmInstr::Bin { kind, lhs, rhs, asm_ty } => AsmInstr::Bin {
+            AsmInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                asm_ty,
+            } => AsmInstr::Bin {
                 kind: kind.to_owned(),
                 lhs: self.replace_pseudo(lhs),
                 rhs: self.replace_pseudo(rhs),
@@ -77,7 +92,12 @@ impl RegAllocator {
                 dst: self.replace_pseudo(dst),
             },
 
-            AsmInstr::Shift { kind, amount, dst, asm_ty } => AsmInstr::Shift {
+            AsmInstr::Shift {
+                kind,
+                amount,
+                dst,
+                asm_ty,
+            } => AsmInstr::Shift {
                 kind: *kind,
                 amount: *amount,
                 dst: self.replace_pseudo(dst),

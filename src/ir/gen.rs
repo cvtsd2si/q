@@ -244,7 +244,10 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
             }
 
             if ret.is_none() {
-                f.body.push(IRInstr::Ret { val: None, ret_ty: None });
+                f.body.push(IRInstr::Ret {
+                    val: None,
+                    ret_ty: None,
+                });
             }
 
             ir_prog.funcs.push(f);
@@ -258,16 +261,26 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
             let r = irfy_expr_and_cvt(instrs, init);
             let dst = IRVal::Var(name.to_string());
 
-            instrs.push(IRInstr::Cpy { src: r, src_ty: ty.unwrap(), dst });
+            instrs.push(IRInstr::Cpy {
+                src: r,
+                src_ty: ty.unwrap(),
+                dst,
+            });
         }
 
         Statement::Ret { value, ret_ty } => {
             if value.is_some() {
                 let r = irfy_expr_and_cvt(instrs, value.as_ref().unwrap());
 
-                instrs.push(IRInstr::Ret { val: Some(r), ret_ty: *ret_ty });
+                instrs.push(IRInstr::Ret {
+                    val: Some(r),
+                    ret_ty: *ret_ty,
+                });
             } else {
-                instrs.push(IRInstr::Ret { val: None, ret_ty: *ret_ty });
+                instrs.push(IRInstr::Ret {
+                    val: None,
+                    ret_ty: *ret_ty,
+                });
             }
         }
 
@@ -624,29 +637,32 @@ fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) 
     let instr = match (src_ty, dst_ty) {
         /* int -> int  */
         (from, to) if from.is_int() && to.is_int() => {
-            if from.size_of() == to.size_of() {
-                IRInstr::Cpy { src, src_ty, dst: dst.clone() }
-            } else if to.size_of() < from.size_of() {
-                IRInstr::Truncate {
+            use std::cmp::Ordering;
+
+            match from.size_of().cmp(&to.size_of()) {
+                Ordering::Equal => IRInstr::Cpy {
+                    src,
+                    src_ty,
+                    dst: dst.clone(),
+                },
+                Ordering::Greater => IRInstr::Truncate {
                     src,
                     dst: dst.clone(),
                     src_ty,
                     dst_ty,
-                }
-            } else if from.is_signed() {
-                IRInstr::SignExtend {
-                        src,
-                        dst: dst.clone(),
-                        src_ty,
-                        dst_ty,
-                }
-            } else {
-                IRInstr::ZeroExtend {
-                        src,
-                        dst: dst.clone(),
-                        src_ty,
-                        dst_ty,
-                }
+                },
+                Ordering::Less if from.is_signed() => IRInstr::SignExtend {
+                    src,
+                    dst: dst.clone(),
+                    src_ty,
+                    dst_ty,
+                },
+                Ordering::Less => IRInstr::ZeroExtend {
+                    src,
+                    dst: dst.clone(),
+                    src_ty,
+                    dst_ty,
+                },
             }
         }
 

@@ -129,7 +129,7 @@ impl AsmType {
             AsmType::Byte => 1,
             AsmType::Word => 2,
             AsmType::Long => 4,
-            AsmType::Quad => 8,           
+            AsmType::Quad => 8,
         }
     }
 }
@@ -141,7 +141,7 @@ impl From<Type> for AsmType {
             Type::Int16 | Type::UInt16 => AsmType::Word,
             Type::Int32 | Type::UInt32 => AsmType::Long,
             Type::Int64 | Type::UInt64 => AsmType::Quad,
-            _ => unreachable!("Not a supported integer type: {value:?}"), 
+            _ => unreachable!("Not a supported integer type: {value:?}"),
         }
     }
 }
@@ -373,47 +373,71 @@ impl IRInstr {
                             .transpose()?
                             .unwrap_or(AsmOp::Imm(0)),
                         dst: AsmOp::Reg(AsmReg::Ax),
-                        asm_ty: ret_ty
-                                .map(|ty| AsmType::from(ty))
-                                .unwrap_or(AsmType::Quad),
+                        asm_ty: ret_ty.map(|ty| AsmType::from(ty)).unwrap_or(AsmType::Quad),
                     },
                     AsmInstr::Newline,
                 ];
 
                 if let Some(ty) = ret_ty {
                     let src_ty = AsmType::from(*ty);
-                    
+
                     match (src_ty, ty.is_signed()) {
                         /* already 64 bits  */
                         (AsmType::Quad, _) => {
-                            instrs.push(AsmInstr::Comment("Already 64 bits.  No extension needed.".into()));
-                        },
-                        
+                            instrs.push(AsmInstr::Comment(
+                                "Already 64 bits.  No extension needed.".into(),
+                            ));
+                        }
+
                         /* writing to 32-bit register automatically zero-extends into the
                          * corresponding 64-bit register.  */
                         (AsmType::Long, false) => {
                             instrs.extend([
-                                AsmInstr::Comment("writing to 32-bit register automatically zero-extends".into()),
+                                AsmInstr::Comment(
+                                    "writing to 32-bit register automatically zero-extends".into(),
+                                ),
                                 AsmInstr::Comment("into the corresponding 64-bit register".into()),
                             ]);
-                        },
+                        }
 
                         /* sign-extend smaller ints  */
                         (_, true) => {
-                           instrs.extend([
-                                AsmInstr::Comment("Extend retval into %rax before returning from the native fn.".into()),
-                                AsmInstr::Comment(format!("retval ty: {ty:?}, so we need to use {}-extend it.", if ty.is_signed() { "sign" } else { "zero" })),
-                            ]); 
-                            instrs.push(AsmInstr::Movsx { src: AsmOp::Reg(AsmReg::Ax), src_ty, dst: AsmOp::Reg(AsmReg::Ax), dst_ty: AsmType::Quad });
+                            instrs.extend([
+                                AsmInstr::Comment(
+                                    "Extend retval into %rax before returning from the native fn."
+                                        .into(),
+                                ),
+                                AsmInstr::Comment(format!(
+                                    "retval ty: {ty:?}, so we need to use {}-extend it.",
+                                    if ty.is_signed() { "sign" } else { "zero" }
+                                )),
+                            ]);
+                            instrs.push(AsmInstr::Movsx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Quad,
+                            });
                         }
 
                         /* zero-extend smaller ints.  */
                         (_, false) => {
-                           instrs.extend([
-                                AsmInstr::Comment("Extend retval into %rax before returning from the native fn.".into()),
-                                AsmInstr::Comment(format!("retval ty: {ty:?}, so we need to use {}-extend it.", if ty.is_signed() { "sign" } else { "zero" })),
-                           ]);                             
-                           instrs.push(AsmInstr::Movzx { src: AsmOp::Reg(AsmReg::Ax), src_ty, dst: AsmOp::Reg(AsmReg::Ax), dst_ty: AsmType::Quad });
+                            instrs.extend([
+                                AsmInstr::Comment(
+                                    "Extend retval into %rax before returning from the native fn."
+                                        .into(),
+                                ),
+                                AsmInstr::Comment(format!(
+                                    "retval ty: {ty:?}, so we need to use {}-extend it.",
+                                    if ty.is_signed() { "sign" } else { "zero" }
+                                )),
+                            ]);
+                            instrs.push(AsmInstr::Movzx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Quad,
+                            });
                         }
                     }
                 }

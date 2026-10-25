@@ -50,9 +50,13 @@ impl Fixup for AsmInstr {
                 ]
             }
 
-            AsmInstr::Bin { kind, lhs, rhs, asm_ty }
-                if matches!(lhs, AsmOp::Stack(_) | AsmOp::Mem(_, _))
-                    && matches!(rhs, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            AsmInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                asm_ty,
+            } if matches!(lhs, AsmOp::Stack(_) | AsmOp::Mem(_, _))
+                && matches!(rhs, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
                 vec![
                     AsmInstr::Mov {
