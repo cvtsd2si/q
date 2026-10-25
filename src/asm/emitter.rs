@@ -1,9 +1,6 @@
-use crate::{
-    asm::r#gen::{
-        AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
-        AsmReg, AsmType,
-    },
-    parser::ast::Type,
+use crate::asm::r#gen::{
+    AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
+    AsmType,
 };
 use std::fmt::Write;
 
@@ -60,19 +57,44 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::Ret => writeln!(f, "ret"),
             AsmInstr::Pop(val) => writeln!(f, "popq {}", val.as_width(AsmType::Quad)),
             AsmInstr::Push(val) => writeln!(f, "pushq {}", val.as_width(AsmType::Quad)),
-            AsmInstr::Mov { src, dst, asm_ty } => writeln!(
-                f,
-                "mov{} {}, {}",
-                asm_ty.suffix(),
-                src.as_width(*asm_ty),
-                dst.as_width(*asm_ty)
-            ),
+            AsmInstr::Mov { src, dst, asm_ty } => {
+                let is_src_xmm = src.clone().is_xmm();
+                let is_dst_xmm = dst.clone().is_xmm();
+
+                let mnemonic = match (is_src_xmm, is_dst_xmm, asm_ty.size()) {
+                    /* GPR, immediate, or memory operands.  */
+                    (false, false, 1) => "movb",
+                    (false, false, 2) => "movw",
+                    (false, false, 4) => "movl",
+                    (false, false, 8) => "movq",
+
+                    /* SSE -> SSE */
+                    (true, true, 4) => "movss",
+                    (true, true, 8) => "movsd",
+
+                    /* SSE <-> GPR or memory.  */
+                    (true, false, 4) | (false, true, 4) => "movd",
+                    (true, false, 8) | (false, true, 8) => "movq",
+
+                    _ => unreachable!("invalid mov: {src:?} -> {dst:?} ({asm_ty:?})"),
+                };
+
+                writeln!(
+                    f,
+                    "{mnemonic} {}, {}",
+                    src.as_width(*asm_ty),
+                    dst.as_width(*asm_ty)
+                )
+            }
             AsmInstr::Unary { kind, dst, asm_ty } => match kind {
                 AsmInstrUnaryKind::Not => {
                     writeln!(f, "not{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
                 }
                 AsmInstrUnaryKind::Neg => {
                     writeln!(f, "neg{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
+                }
+                AsmInstrUnaryKind::Shr => {
+                    writeln!(f, "shr{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
                 }
             },
             AsmInstr::Bin {
@@ -91,6 +113,20 @@ impl std::fmt::Display for AsmInstr {
                 AsmInstrBinKind::Sub => writeln!(
                     f,
                     "sub{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
+                AsmInstrBinKind::And => writeln!(
+                    f,
+                    "and{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
+                AsmInstrBinKind::Or => writeln!(
+                    f,
+                    "or{} {}, {}",
                     asm_ty.suffix(),
                     lhs.as_width(*asm_ty),
                     rhs.as_width(*asm_ty)

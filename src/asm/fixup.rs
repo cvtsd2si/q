@@ -33,6 +33,26 @@ impl Fixup for AsmInstr {
     fn fixup(&self) -> Self::Output {
         match self {
             AsmInstr::Mov { src, dst, asm_ty }
+                if matches!(src, AsmOp::Imm(_))
+                    && (dst.clone().is_xmm()
+                        || (asm_ty.size() == 8
+                            && matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)))) =>
+            {
+                vec![
+                    AsmInstr::Mov {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R9),
+                        dst: dst.clone(),
+                        asm_ty: *asm_ty,
+                    },
+                ]
+            }
+
+            AsmInstr::Mov { src, dst, asm_ty }
                 if matches!(src, AsmOp::Stack(_) | AsmOp::Mem(_, _))
                     && matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
             {
@@ -91,10 +111,22 @@ impl Fixup for AsmInstr {
                 },
             ],
 
-            AsmInstr::Cvtsi2sd { src, dst, asm_ty } if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) => vec![
-                AsmInstr::Cvtsi2sd { src: src.clone(), dst: AsmOp::Reg(AsmReg::Xmm15), asm_ty: *asm_ty },
-                AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Xmm15), dst: dst.clone(), asm_ty: AsmType::Double },
-            ],
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty }
+                if matches!(dst, AsmOp::Stack(_) | AsmOp::Mem(_, _)) =>
+            {
+                vec![
+                    AsmInstr::Cvtsi2sd {
+                        src: src.clone(),
+                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        asm_ty: *asm_ty,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: dst.clone(),
+                        asm_ty: AsmType::Double,
+                    },
+                ]
+            }
 
             _ => vec![self.clone()],
         }
