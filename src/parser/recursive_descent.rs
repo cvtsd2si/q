@@ -595,7 +595,7 @@ impl<'src> Parser<'src> {
     }
 
     fn factor(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.unary()?;
+        let mut result = self.cast()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[TokenKind::Star, TokenKind::Slash]) {
@@ -614,7 +614,7 @@ impl<'src> Parser<'src> {
                 }
             };
 
-            let right = self.unary()?;
+            let right = self.cast()?;
             let end = right.span();
 
             result = Expression::Binary {
@@ -627,6 +627,29 @@ impl<'src> Parser<'src> {
         }
 
         Ok(result)
+    }
+
+    fn cast(&mut self) -> Result<Expression, ParserError> {
+        let mut expr = self.unary()?;
+        let begin = expr.span();
+
+        while self.check(TokenKind::As) {
+            self.consume(TokenKind::As)?;
+
+            let target = self.consume_primitive()?;
+            let target_ty = Type::from(target);
+
+            let end = target.span;
+
+            expr = Expression::Cast {
+                expr: expr.into(),
+                target_ty,
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(expr)
     }
 
     fn unary(&mut self) -> Result<Expression, ParserError> {
@@ -721,6 +744,7 @@ impl<'src> Parser<'src> {
                     })
                 }
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
+                TokenKind::LParen => self.parse_grouping(),
                 _ => unreachable!("got: {token:?}"),
             },
             None => Err(ParserError {
@@ -766,6 +790,13 @@ impl<'src> Parser<'src> {
             }
             NumberKind::Float => Ok(LiteralVal::Float(cleaned)),
         }
+    }
+
+    fn parse_grouping(&mut self) -> Result<Expression, ParserError> {
+        self.consume(TokenKind::LParen)?;
+        let expr = self.parse_expr()?;
+        self.consume(TokenKind::RParen)?;
+        Ok(expr)
     }
 
     fn parse_bool(&mut self, token: &Token) -> Result<Expression, ParserError> {

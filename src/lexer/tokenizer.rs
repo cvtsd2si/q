@@ -116,6 +116,7 @@ impl<'src> Iterator for Tokenizer<'src> {
                         "print" => TokenKind::Print,
                         "ret" => TokenKind::Ret,
                         "let" => TokenKind::Let,
+                        "as" => TokenKind::As,
                         "u8" => TokenKind::U8,
                         "i8" => TokenKind::I8,
                         "u16" => TokenKind::U16,

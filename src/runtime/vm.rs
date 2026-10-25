@@ -1,7 +1,7 @@
 use crate::{
     bytecode::r#gen::{BytecodeProg, Op},
     ir::r#gen::{IRInstr, IRProg},
-    parser::ast::Literal,
+    parser::ast::{Literal, Type},
     runtime::{
         jit::{
             JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit,
@@ -147,6 +147,23 @@ impl Vm {
                 Op::Ne => self.handle_op_ne(),
                 Op::Neg => self.handle_op_neg(),
                 Op::Not | Op::BitwiseNot => self.handle_op_not(),
+                Op::Trunc { src_ty, dst_ty } => self.handle_op_trunc(src_ty, dst_ty),
+                Op::Sx { src_ty, dst_ty } => self.handle_op_sx(src_ty, dst_ty),
+                Op::Zx { src_ty, dst_ty } => self.handle_op_zx(src_ty, dst_ty),
+                Op::UIntToDouble { src_ty } | Op::IntToDouble { src_ty } => {
+                    self.handle_op_int_to_float(src_ty, Type::Float64)
+                }
+                Op::UIntToFloat { src_ty } | Op::IntToFloat { src_ty } => {
+                    self.handle_op_int_to_float(src_ty, Type::Float32)
+                }
+                Op::DoubleToInt { dst_ty } | Op::DoubleToUInt { dst_ty } => {
+                    self.handle_op_float_to_int(Type::Float64, dst_ty)
+                }
+                Op::FloatToInt { dst_ty } | Op::FloatToUInt { dst_ty } => {
+                    self.handle_op_float_to_int(Type::Float32, dst_ty)
+                }
+                Op::DoubleToFloat => self.handle_op_float_to_float(Type::Float32),
+                Op::FloatToDouble => self.handle_op_float_to_float(Type::Float64),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -343,6 +360,115 @@ impl Vm {
 
     fn handle_op_not(&mut self) {
         unop!(self.stack, !);
+    }
+
+    fn handle_op_trunc(&mut self, _src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+        self.stack.push(value.cast_int(dst_ty));
+    }
+
+    fn handle_op_sx(&mut self, _src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+        self.stack.push(value.cast_int(dst_ty));
+    }
+    fn handle_op_zx(&mut self, _src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+        self.stack.push(value.cast_int(dst_ty));
+    }
+
+    fn handle_op_int_to_float(&mut self, src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+
+        let payload = match (src_ty.is_signed(), dst_ty) {
+            (true, Type::Float32) => {
+                (value.cast_int(Type::Int64).payload as i64 as f32).to_bits() as u64
+            }
+            (false, Type::Float32) => {
+                (value.cast_int(Type::UInt64).payload as f32).to_bits() as u64
+            }
+            (true, Type::Float64) => (value.cast_int(Type::Int64).payload as i64 as f64).to_bits(),
+            (false, Type::Float64) => (value.cast_int(Type::UInt64).payload as f64).to_bits(),
+            _ => unreachable!("Invalid floating destination type: {dst_ty:?}"),
+        };
+
+        self.stack.push(Value {
+            tag: ValueTag::from(dst_ty),
+            payload,
+        });
+    }
+
+    fn handle_op_float_to_float(&mut self, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+
+        let payload = match (value.tag, dst_ty) {
+            (ValueTag::Float64, Type::Float32) => {
+                (f64::from_bits(value.payload) as f32).to_bits() as u64
+            }
+            (ValueTag::Float32, Type::Float64) => {
+                (f32::from_bits(value.payload as u32) as f64).to_bits()
+            }
+            _ => unreachable!("Invalid float conversion: {:?} -> {dst_ty:?}", value.tag),
+        };
+
+        self.stack.push(Value {
+            tag: ValueTag::from(dst_ty),
+            payload,
+        });
+    }
+
+    fn handle_op_float_to_int(&mut self, src_ty: Type, dst_ty: Type) {
+        let value = self.stack.pop().unwrap();
+
+        let n = match src_ty {
+            Type::Float32 => f32::from_bits(value.payload as u32) as f64,
+            Type::Float64 => f64::from_bits(value.payload),
+            _ => unreachable!("Invalid floating source type: {src_ty:?}"),
+        };
+
+        let intermediate = match dst_ty {
+            Type::Int8 | Type::UInt8 | Type::Int16 | Type::UInt16 | Type::Int32 => Value {
+                tag: ValueTag::Int32,
+                payload: Self::cvtt_i32(n) as i64 as u64,
+            },
+            Type::UInt32 | Type::Int64 => Value {
+                tag: ValueTag::Int64,
+                payload: Self::cvtt_i64(n) as u64,
+            },
+            Type::UInt64 => {
+                const TWO_63: f64 = 9_223_372_036_854_775_808.0;
+                let payload = if n.is_nan() || n < TWO_63 {
+                    Self::cvtt_i64(n) as u64
+                } else {
+                    (Self::cvtt_i64(n - TWO_63) as u64).wrapping_add(1u64 << 63)
+                };
+                Value {
+                    tag: ValueTag::UInt64,
+                    payload,
+                }
+            }
+            _ => unreachable!("Invalid integer destination type: {dst_ty:?}"),
+        };
+
+        self.stack.push(intermediate.cast_int(dst_ty));
+    }
+
+    fn cvtt_i32(n: f64) -> i32 {
+        let n = n.trunc();
+        if !n.is_finite() || n < -2_147_483_648.0 || n >= 2_147_483_648.0 {
+            i32::MIN
+        } else {
+            n as i32
+        }
+    }
+
+    fn cvtt_i64(n: f64) -> i64 {
+        const TWO_63: f64 = 9_223_372_036_854_775_808.0;
+        let n = n.trunc();
+        if !n.is_finite() || n < -TWO_63 || n >= TWO_63 {
+            i64::MIN
+        } else {
+            n as i64
+        }
     }
 
     fn handle_op_print(&mut self) -> Result<(), VmError> {

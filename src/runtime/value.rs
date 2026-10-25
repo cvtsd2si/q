@@ -9,6 +9,39 @@ pub struct Value {
     pub payload: u64,
 }
 
+impl Value {
+    pub fn cast_int(self, to_ty: Type) -> Self {
+        /* Interpret the original payload according to its source type.  */
+        let value = match self.tag {
+            ValueTag::Int8 => (self.payload as i8 as i64) as u64,
+            ValueTag::UInt8 => self.payload as u8 as u64,
+            ValueTag::Int16 => (self.payload as i16 as i64) as u64,
+            ValueTag::UInt16 => self.payload as u16 as u64,
+            ValueTag::Int32 => (self.payload as i32 as i64) as u64,
+            ValueTag::UInt32 => self.payload as u32 as u64,
+            ValueTag::Int64 | ValueTag::UInt64 => self.payload,
+            _ => unreachable!("Cannot cast {:?} as integer", self.tag),
+        };
+
+        /* Convert to the destination integer type.  */
+        let payload = match to_ty {
+            Type::Int8 => (value as i8 as i64) as u64,
+            Type::UInt8 => value as u8 as u64,
+            Type::Int16 => (value as i16 as i64) as u64,
+            Type::UInt16 => value as u16 as u64,
+            Type::Int32 => (value as i32 as i64) as u64,
+            Type::UInt32 => value as u32 as u64,
+            Type::Int64 | Type::UInt64 => value,
+            _ => unreachable!("Expected integer destination type: {to_ty:?}"),
+        };
+
+        Self {
+            tag: ValueTag::from(to_ty),
+            payload,
+        }
+    }
+}
+
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ValueTag {

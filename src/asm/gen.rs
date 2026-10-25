@@ -1,6 +1,9 @@
 use crate::{
     bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, mktmp},
+    ir::r#gen::{
+        Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRStaticConst, IRVal, StaticInit,
+        mktmp,
+    },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
         jit::{JIT_ERROR, JIT_RET},
@@ -12,6 +15,7 @@ use crate::{
 #[derive(Debug)]
 pub struct AsmProg {
     pub funcs: Vec<AsmFunc>,
+    pub static_consts: Vec<AsmStaticConst>,
 }
 
 #[derive(Debug)]
@@ -22,10 +26,44 @@ pub struct AsmFunc {
 }
 
 #[derive(Debug, Clone)]
+pub struct AsmStaticConst {
+    pub name: String,
+    pub init: StaticInit,
+    pub ty: Type,
+    pub alignment: usize,
+}
+
+impl CodegenContext {
+    pub fn intern_float(&mut self, literal: Literal) -> String {
+        let (key, ty, init) = match literal {
+            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
+            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
+            _ => unreachable!(),
+        };
+
+        if let Some(name) = self.float_pool.get(&key) {
+            return name.clone();
+        }
+
+        let name = format!(".LC{}", mktmp());
+
+        self.static_consts.push(IRStaticConst {
+            name: name.clone(),
+            ty,
+            init,
+            alignment: ty.alignment(),
+        });
+
+        name
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum AsmInstr {
     Mov {
         src: AsmOp,
         dst: AsmOp,
+        asm_ty: AsmType,
     },
     Ret,
     Push(AsmOp),
@@ -33,20 +71,24 @@ pub enum AsmInstr {
     Unary {
         kind: AsmInstrUnaryKind,
         dst: AsmOp,
+        asm_ty: AsmType,
     },
     Shift {
         kind: AsmInstrShiftKind,
         amount: u8,
         dst: AsmOp,
+        asm_ty: AsmType,
     },
     Bin {
         kind: AsmInstrBinKind,
         lhs: AsmOp,
         rhs: AsmOp,
+        asm_ty: AsmType,
     },
     Cmp {
         src: AsmOp,
         dst: AsmOp,
+        asm_ty: AsmType,
     },
     Jmpcc {
         cc: ConditionCode,
@@ -73,8 +115,106 @@ pub enum AsmInstr {
         src: AsmOp,
         dst: AsmOp,
     },
+    Movsx {
+        src: AsmOp,
+        src_ty: AsmType,
+        dst: AsmOp,
+        dst_ty: AsmType,
+    },
+    Movzx {
+        src: AsmOp,
+        src_ty: AsmType,
+        dst: AsmOp,
+        dst_ty: AsmType,
+    },
+    Cvtsi2sd {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvttsd2si {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvtss2sd {
+        src: AsmOp,
+        dst: AsmOp,
+    },
+    Cvtsd2ss {
+        src: AsmOp,
+        dst: AsmOp,
+    },
+    Cvttss2si {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
+    Cvtsi2ss {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
     Comment(String),
     Newline,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AsmType {
+    Byte,
+    Word,
+    Long,
+    Quad,
+    Float,
+    Double,
+}
+
+impl From<usize> for AsmType {
+    fn from(value: usize) -> Self {
+        match value {
+            1 => Self::Byte,
+            2 => Self::Word,
+            4 => Self::Long,
+            8 => Self::Quad,
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl AsmType {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            AsmType::Byte => "b",
+            AsmType::Word => "w",
+            AsmType::Long => "l",
+            AsmType::Quad => "q",
+            AsmType::Float => "ss",
+            AsmType::Double => "sd",
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        match self {
+            AsmType::Byte => 1,
+            AsmType::Word => 2,
+            AsmType::Long | AsmType::Float => 4,
+            AsmType::Quad | AsmType::Double => 8,
+        }
+    }
+}
+
+impl From<Type> for AsmType {
+    fn from(value: Type) -> Self {
+        match value {
+            Type::Int8 | Type::UInt8 | Type::Boolean => AsmType::Byte,
+            Type::Int16 | Type::UInt16 => AsmType::Word,
+            Type::Int32 | Type::UInt32 => AsmType::Long,
+            Type::Int64 | Type::UInt64 => AsmType::Quad,
+            Type::Float32 => AsmType::Float,
+            Type::Float64 => AsmType::Double,
+            _ => unreachable!("Not a supported type: {value:?}"),
+        }
+    }
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
@@ -99,6 +239,7 @@ pub enum ConditionCode {
 pub enum AsmInstrUnaryKind {
     Not,
     Neg,
+    Shr,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -144,15 +285,48 @@ impl RtFn {
 pub enum AsmInstrBinKind {
     Add,
     Sub,
+    And,
+    Or,
 }
 
 #[derive(Debug, Clone)]
 pub enum AsmOp {
-    Pseudo(String),
+    Pseudo { name: String, ty: Type },
     Reg(AsmReg),
     Imm(i64),
     Stack(isize),
     Mem(AsmReg, isize),
+    Data(String, isize),
+}
+
+impl AsmOp {
+    pub fn as_width(&self, ty: AsmType) -> String {
+        match self {
+            Self::Reg(reg) => reg.as_width(ty).to_string(),
+            _ => self.to_string(),
+        }
+    }
+
+    pub fn is_xmm(self) -> bool {
+        matches!(self, Self::Reg(reg) if reg.is_xmm())
+    }
+}
+
+impl std::fmt::Display for AsmOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AsmOp::Reg(reg) => write!(f, "{}", reg.as_width(AsmType::Quad)),
+            AsmOp::Imm(n) => write!(f, "${n}"),
+            AsmOp::Stack(offset) => write!(f, "{offset}(%rbp)"),
+            AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg.as_width(AsmType::Quad)),
+            AsmOp::Pseudo { .. } => unreachable!(),
+            AsmOp::Data(ident, offset) => match offset {
+                0 => write!(f, "{ident}(%rip)"),
+                n if *n > 0 => write!(f, "{ident}+{n}(%rip)"),
+                n => write!(f, "{ident}{n}(%rip)"),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -172,6 +346,74 @@ pub enum AsmReg {
     Dx,
     Di,
     Si,
+    Xmm0,
+    Xmm1,
+    Xmm2,
+    Xmm3,
+    Xmm4,
+    Xmm5,
+    Xmm6,
+    Xmm7,
+    Xmm15,
+}
+
+impl AsmReg {
+    pub fn as_width(self, ty: AsmType) -> &'static str {
+        match self {
+            Self::Xmm0 => "%xmm0",
+            Self::Xmm1 => "%xmm1",
+            Self::Xmm2 => "%xmm2",
+            Self::Xmm3 => "%xmm3",
+            Self::Xmm4 => "%xmm4",
+            Self::Xmm5 => "%xmm5",
+            Self::Xmm6 => "%xmm6",
+            Self::Xmm7 => "%xmm7",
+            Self::Xmm15 => "%xmm15",
+
+            _ => {
+                let names = match self {
+                    Self::Ax => ["%al", "%ax", "%eax", "%rax"],
+                    Self::Cx => ["%cl", "%cx", "%ecx", "%rcx"],
+                    Self::Dx => ["%dl", "%dx", "%edx", "%rdx"],
+                    Self::Si => ["%sil", "%si", "%esi", "%rsi"],
+                    Self::Di => ["%dil", "%di", "%edi", "%rdi"],
+                    Self::Bp => ["%bpl", "%bp", "%ebp", "%rbp"],
+                    Self::Sp => ["%spl", "%sp", "%esp", "%rsp"],
+                    Self::R8 => ["%r8b", "%r8w", "%r8d", "%r8"],
+                    Self::R9 => ["%r9b", "%r9w", "%r9d", "%r9"],
+                    Self::R10 => ["%r10b", "%r10w", "%r10d", "%r10"],
+                    Self::R11 => ["%r11b", "%r11w", "%r11d", "%r11"],
+                    Self::R12 => ["%r12b", "%r12w", "%r12d", "%r12"],
+                    Self::R13 => ["%r13b", "%r13w", "%r13d", "%r13"],
+                    Self::R14 => ["%r14b", "%r14w", "%r14d", "%r14"],
+                    Self::R15 => ["%r15b", "%r15w", "%r15d", "%r15"],
+                    _ => unreachable!(),
+                };
+
+                match ty {
+                    AsmType::Byte => names[0],
+                    AsmType::Word => names[1],
+                    AsmType::Long | AsmType::Float => names[2],
+                    AsmType::Quad | AsmType::Double => names[3],
+                }
+            }
+        }
+    }
+
+    pub fn is_xmm(self) -> bool {
+        matches!(
+            self,
+            Self::Xmm0
+                | Self::Xmm1
+                | Self::Xmm2
+                | Self::Xmm3
+                | Self::Xmm4
+                | Self::Xmm5
+                | Self::Xmm6
+                | Self::Xmm7
+                | Self::Xmm15
+        )
+    }
 }
 
 impl Codegen<AsmProg, CodegenContext> for IRProg {
@@ -182,6 +424,16 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
                 .iter()
                 .map(|f| f.codegen(ctx))
                 .collect::<Result<Vec<AsmFunc>, _>>()?,
+            static_consts: ctx
+                .static_consts
+                .iter()
+                .map(|konst| AsmStaticConst {
+                    name: konst.name.clone(),
+                    init: konst.init.clone(),
+                    ty: konst.ty.clone(),
+                    alignment: konst.alignment.clone(),
+                })
+                .collect(),
         })
     }
 }
@@ -205,7 +457,14 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
             )));
             body.push(AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Di, offset),
-                dst: AsmOp::Pseudo(param.name.clone()),
+                dst: AsmOp::Pseudo {
+                    name: param.name.clone(),
+                    ty: param.ty.clone(),
+                },
+                asm_ty: match param.ty {
+                    Type::Float32 => AsmType::Long,
+                    _ => AsmType::Quad,
+                },
             });
             body.push(AsmInstr::Newline);
         }
@@ -230,12 +489,17 @@ impl IRInstr {
         func_name: &str,
     ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {
-            IRInstr::Cpy { src, dst } => Ok(vec![AsmInstr::Mov {
-                src: src.codegen(ctx)?,
-                dst: dst.codegen(ctx)?,
-            }]),
+            IRInstr::Cpy { src, src_ty, dst } => Ok(vec![
+                AsmInstr::Comment(format!("Copying {src_ty:?}")),
+                AsmInstr::Mov {
+                    src: src.codegen(ctx)?,
+                    dst: dst.codegen(ctx)?,
+                    asm_ty: AsmType::from(*src_ty),
+                },
+                AsmInstr::Newline,
+            ]),
 
-            IRInstr::Ret { val } => {
+            IRInstr::Ret { val, ret_ty } => {
                 let mut instrs = vec![
                     AsmInstr::Comment("%rax = retval".into()),
                     AsmInstr::Mov {
@@ -245,21 +509,98 @@ impl IRInstr {
                             .transpose()?
                             .unwrap_or(AsmOp::Imm(0)),
                         dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: ret_ty.map(|ty| AsmType::from(ty)).unwrap_or(AsmType::Quad),
                     },
+                    AsmInstr::Newline,
+                ];
+
+                if let Some(ty) = ret_ty {
+                    let src_ty = AsmType::from(*ty);
+
+                    match (src_ty, ty.is_signed()) {
+                        (AsmType::Float | AsmType::Double, _) => {
+                            /* Float32 payload bits are already in %eax.  */
+                            /* Float64 payload bits are already in %rax.  */
+                            /* No additional extension is needed.  */
+                        }
+
+                        /* already 64 bits  */
+                        (AsmType::Quad, _) => {
+                            instrs.push(AsmInstr::Comment(
+                                "Already 64 bits.  No extension needed.".into(),
+                            ));
+                        }
+
+                        /* writing to 32-bit register automatically zero-extends into the
+                         * corresponding 64-bit register.  */
+                        (AsmType::Long, false) => {
+                            instrs.extend([
+                                AsmInstr::Comment(
+                                    "writing to 32-bit register automatically zero-extends".into(),
+                                ),
+                                AsmInstr::Comment("into the corresponding 64-bit register".into()),
+                            ]);
+                        }
+
+                        /* sign-extend smaller ints  */
+                        (_, true) => {
+                            instrs.extend([
+                                AsmInstr::Comment(
+                                    "Extend retval into %rax before returning from the native fn."
+                                        .into(),
+                                ),
+                                AsmInstr::Comment(format!(
+                                    "retval ty: {ty:?}, so we need to use {}-extend it.",
+                                    if ty.is_signed() { "sign" } else { "zero" }
+                                )),
+                            ]);
+                            instrs.push(AsmInstr::Movsx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Quad,
+                            });
+                        }
+
+                        /* zero-extend smaller ints.  */
+                        (_, false) => {
+                            instrs.extend([
+                                AsmInstr::Comment(
+                                    "Extend retval into %rax before returning from the native fn."
+                                        .into(),
+                                ),
+                                AsmInstr::Comment(format!(
+                                    "retval ty: {ty:?}, so we need to use {}-extend it.",
+                                    if ty.is_signed() { "sign" } else { "zero" }
+                                )),
+                            ]);
+                            instrs.push(AsmInstr::Movzx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Quad,
+                            });
+                        }
+                    }
+                }
+
+                instrs.extend([
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rdx = ValueTag".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(ret_ty.map(ValueTag::from).unwrap_or(ValueTag::Void) as i64),
                         dst: AsmOp::Reg(AsmReg::Dx),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rcx = JIT_RET".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(JIT_RET as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                ];
+                ]);
 
                 insert_epilogue(&mut instrs);
                 instrs.push(AsmInstr::Ret);
@@ -286,11 +627,13 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: dst.codegen(ctx)?,
+                        asm_ty: AsmType::from(*operand_ty),
                     },
                     AsmInstr::Bin {
                         kind,
                         lhs: rhs.codegen(ctx)?,
                         rhs: dst.codegen(ctx)?,
+                        asm_ty: AsmType::from(*operand_ty),
                     },
                     AsmInstr::Newline,
                 ];
@@ -328,10 +671,12 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: rhs.codegen(ctx)?,
                         dst: lhs.codegen(ctx)?,
+                        asm_ty: AsmType::from(*operand_ty),
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
                         dst: dst.codegen(ctx)?,
+                        asm_ty: AsmType::from(*operand_ty),
                     },
                     AsmInstr::Setcc {
                         cc,
@@ -356,21 +701,20 @@ impl IRInstr {
                 let src = src.codegen(ctx)?;
                 let dst = dst.codegen(ctx)?;
 
-                instrs.extend([
-                    AsmInstr::Mov {
-                        src,
-                        dst: dst.clone(),
-                    },
-                ]);
+                instrs.extend([AsmInstr::Mov {
+                    src,
+                    dst: dst.clone(),
+                    asm_ty: AsmType::from(*operand_ty),
+                }]);
 
                 match kind {
                     UnaryExpressionKind::Negate if operand_ty.is_signed() => {
                         instrs.push(AsmInstr::Unary {
                             kind: AsmInstrUnaryKind::Neg,
                             dst: dst.clone(),
+                            asm_ty: AsmType::from(*operand_ty),
                         });
                         instrs.push(AsmInstr::Newline);
-                        instrs.extend(normalize_int(dst, *operand_ty));
                     }
                     UnaryExpressionKind::LogicalNot if *operand_ty == Type::Boolean => {
                         instrs.extend([
@@ -380,6 +724,7 @@ impl IRInstr {
                             AsmInstr::Cmp {
                                 src: AsmOp::Imm(0),
                                 dst: dst.clone(),
+                                asm_ty: AsmType::from(*operand_ty),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment(
@@ -392,6 +737,7 @@ impl IRInstr {
                             AsmInstr::Mov {
                                 src: AsmOp::Imm(0),
                                 dst: dst.clone(),
+                                asm_ty: AsmType::from(*operand_ty),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment(
@@ -408,9 +754,9 @@ impl IRInstr {
                         instrs.push(AsmInstr::Unary {
                             kind: AsmInstrUnaryKind::Not,
                             dst: dst.clone(),
+                            asm_ty: AsmType::from(*operand_ty),
                         });
                         instrs.push(AsmInstr::Newline);
-                        instrs.extend(normalize_int(dst, *operand_ty));
                     }
                     _ => panic!("Unsupported unary op {kind:?} on {operand_ty:?}"), // FIXME: don't panic
                 }
@@ -436,28 +782,134 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm0),
+                        dst: AsmOp::Mem(AsmReg::Sp, 0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm1),
+                        dst: AsmOp::Mem(AsmReg::Sp, 8),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm2),
+                        dst: AsmOp::Mem(AsmReg::Sp, 16),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm3),
+                        dst: AsmOp::Mem(AsmReg::Sp, 24),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm4),
+                        dst: AsmOp::Mem(AsmReg::Sp, 32),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm5),
+                        dst: AsmOp::Mem(AsmReg::Sp, 40),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm6),
+                        dst: AsmOp::Mem(AsmReg::Sp, 48),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm7),
+                        dst: AsmOp::Mem(AsmReg::Sp, 56),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rdi = *mut Vm".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R13),
                         dst: AsmOp::Reg(AsmReg::Di),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rsi = ValueTag".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(tag as i64),
                         dst: AsmOp::Reg(AsmReg::Si),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rdx = payload".into()),
                     AsmInstr::Mov {
                         src: payload,
                         dst: AsmOp::Reg(AsmReg::Dx),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::CallRt {
                         target: RtFn::Print,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 0),
+                        dst: AsmOp::Reg(AsmReg::Xmm0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 8),
+                        dst: AsmOp::Reg(AsmReg::Xmm1),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 16),
+                        dst: AsmOp::Reg(AsmReg::Xmm2),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 24),
+                        dst: AsmOp::Reg(AsmReg::Xmm3),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 32),
+                        dst: AsmOp::Reg(AsmReg::Xmm4),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 40),
+                        dst: AsmOp::Reg(AsmReg::Xmm5),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 48),
+                        dst: AsmOp::Reg(AsmReg::Xmm6),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 56),
+                        dst: AsmOp::Reg(AsmReg::Xmm7),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Restore space reserverd for the caller-saved SSE regs.".into(),
+                    ),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Restore stack alignment.".into()),
@@ -465,6 +917,7 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Restore caller-saved regs.".into()),
@@ -478,6 +931,7 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::Ne,
@@ -491,6 +945,7 @@ impl IRInstr {
                 AsmInstr::Cmp {
                     src: cond.codegen(ctx)?,
                     dst: AsmOp::Imm(0),
+                    asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Jmpcc {
                     cc: ConditionCode::E,
@@ -536,6 +991,57 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Sub,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm0),
+                        dst: AsmOp::Mem(AsmReg::Sp, 0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm1),
+                        dst: AsmOp::Mem(AsmReg::Sp, 8),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm2),
+                        dst: AsmOp::Mem(AsmReg::Sp, 16),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm3),
+                        dst: AsmOp::Mem(AsmReg::Sp, 24),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm4),
+                        dst: AsmOp::Mem(AsmReg::Sp, 32),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm5),
+                        dst: AsmOp::Mem(AsmReg::Sp, 40),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm6),
+                        dst: AsmOp::Mem(AsmReg::Sp, 48),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Xmm7),
+                        dst: AsmOp::Mem(AsmReg::Sp, 56),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(format!(
@@ -551,6 +1057,7 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(frame_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                 ];
@@ -566,6 +1073,7 @@ impl IRInstr {
                         AsmInstr::Mov {
                             src: arg.codegen(ctx)?,
                             dst: AsmOp::Reg(AsmReg::R9),
+                            asm_ty: AsmType::Quad,
                         },
                         AsmInstr::Newline,
                     ]);
@@ -580,6 +1088,7 @@ impl IRInstr {
                                 AsmReg::Sp,
                                 (base + std::mem::offset_of!(Value, tag)) as isize,
                             ),
+                            asm_ty: AsmType::Quad,
                         },
                         AsmInstr::Mov {
                             src: AsmOp::Reg(AsmReg::R9),
@@ -587,6 +1096,7 @@ impl IRInstr {
                                 AsmReg::Sp,
                                 (base + std::mem::offset_of!(Value, payload)) as isize,
                             ),
+                            asm_ty: AsmType::Quad,
                         },
                         AsmInstr::Newline,
                     ]);
@@ -620,6 +1130,7 @@ impl IRInstr {
                             (func * std::mem::size_of::<usize>()) as isize,
                         ),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(
@@ -634,6 +1145,7 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(
@@ -661,11 +1173,13 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::Di),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(retval_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Di),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(format!(
@@ -702,6 +1216,7 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(JIT_ERROR as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::E,
@@ -726,10 +1241,12 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Ax),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(
@@ -751,12 +1268,14 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R13),
                         dst: AsmOp::Reg(AsmReg::Di),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rsi = fn idx".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(func as i64),
                         dst: AsmOp::Reg(AsmReg::Si),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%rdx = *const Value (ptr to args)".into()),
@@ -769,12 +1288,14 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Imm(argc as i64),
                         dst: AsmOp::Reg(AsmReg::Cx),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("%r8 = ptr to retval".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
                         dst: AsmOp::Reg(AsmReg::R8),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Invoke the rt trampoline".into()),
@@ -784,6 +1305,7 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Mem(AsmReg::Sp, (retval_offset + 8) as isize),
                         dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Both native and fallback calls keep on going here.".into()),
@@ -793,6 +1315,59 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(frame_space as i64),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 0),
+                        dst: AsmOp::Reg(AsmReg::Xmm0),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 8),
+                        dst: AsmOp::Reg(AsmReg::Xmm1),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 16),
+                        dst: AsmOp::Reg(AsmReg::Xmm2),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 24),
+                        dst: AsmOp::Reg(AsmReg::Xmm3),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 32),
+                        dst: AsmOp::Reg(AsmReg::Xmm4),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 40),
+                        dst: AsmOp::Reg(AsmReg::Xmm5),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 48),
+                        dst: AsmOp::Reg(AsmReg::Xmm6),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Mov {
+                        src: AsmOp::Mem(AsmReg::Sp, 56),
+                        dst: AsmOp::Reg(AsmReg::Xmm7),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Restore space reserverd for the caller-saved SSE regs.".into(),
+                    ),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Add,
+                        lhs: AsmOp::Imm(64),
+                        rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Release alignment padding.".into()),
@@ -800,6 +1375,7 @@ impl IRInstr {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(8),
                         rhs: AsmOp::Reg(AsmReg::Sp),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Restore caller-saved regs.".into()),
@@ -811,6 +1387,7 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
                         dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::Ne,
@@ -819,23 +1396,680 @@ impl IRInstr {
                     AsmInstr::Newline,
                 ]);
 
+                let result_ty = match dst {
+                    IRVal::Var { ty, .. } => *ty,
+                    _ => unreachable!(),
+                };
+
                 body.extend([
                     AsmInstr::Comment("Store the result into IR dst.".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst: dst.codegen(ctx)?,
+                        asm_ty: match result_ty {
+                            Type::Float32 => AsmType::Long,
+                            _ => AsmType::Quad,
+                        },
                     },
                     AsmInstr::Newline,
                 ]);
 
                 Ok(body)
             }
+
+            IRInstr::Truncate {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => Ok(vec![
+                AsmInstr::Comment(format!("Truncating {src_ty:?} into {dst_ty:?}")),
+                AsmInstr::Mov {
+                    src: src.codegen(ctx)?,
+                    dst: dst.codegen(ctx)?,
+                    asm_ty: AsmType::from(*dst_ty),
+                },
+                AsmInstr::Newline,
+            ]),
+
+            IRInstr::ZeroExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => Ok(vec![
+                AsmInstr::Comment(format!("Zero-extending {src_ty:?} into {dst_ty:?}")),
+                AsmInstr::Movzx {
+                    src: src.codegen(ctx)?,
+                    src_ty: AsmType::from(*src_ty),
+                    dst: dst.codegen(ctx)?,
+                    dst_ty: AsmType::from(*dst_ty),
+                },
+                AsmInstr::Newline,
+            ]),
+
+            IRInstr::SignExtend {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => Ok(vec![
+                AsmInstr::Comment(format!("Sign-extending {src_ty:?} into {dst_ty:?}")),
+                AsmInstr::Movsx {
+                    src: src.codegen(ctx)?,
+                    src_ty: AsmType::from(*src_ty),
+                    dst: dst.codegen(ctx)?,
+                    dst_ty: AsmType::from(*dst_ty),
+                },
+                AsmInstr::Newline,
+            ]),
+
+            IRInstr::UIntToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Mov {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Mov {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    AsmType::Quad => {
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_UintToDoubleQuad1_{tmp}");
+                        let l2 = format!(".L{func_name}_UintToDoubleQuad2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert UInt64 to Float64.".into()),        
+                            AsmInstr::Comment("cvtsi2sd interprets its source as signed, so values >= 2^63 need special handling.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Compare the source against zero using signed comparison.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Imm(0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("If the sign bit is set, jump to the unsigned conversion path.".into()),
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::L,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The value fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert it directly to double and skip the unsigned conversion path.".into()),
+                            AsmInstr::Cvtsi2sd {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Comment("The source is >= 2^63 and cannot be converted directly as a signed integer.".into()),
+                            AsmInstr::Comment("Compute (src >> 1) | (src & 1), convert to double, then multiply by 2.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Load the original value into %rax.".into()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Copy the original value into %rdx.".into()),
+                            AsmInstr::Mov {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Logically shift %rdx right by one bit.".into()),
+                            AsmInstr::Comment("This clears the sign bit and divides the unsigned value by 2.".into()),
+                            AsmInstr::Unary {
+                                kind: AsmInstrUnaryKind::Shr,
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Extract the original least significant bit into %rax.".into()),
+                            AsmInstr::Comment("This bit preserves rounding information lost by the right shift.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::And,
+                                lhs: AsmOp::Imm(1),
+                                rhs: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Combine the shifted value with the original least significant bit.".into()),
+                            AsmInstr::Comment("%rdx = (src >> 1) | (src & 1).".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Or,
+                                lhs: AsmOp::Reg(AsmReg::Ax),
+                                rhs: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The adjusted value now fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert the adjusted value to double.".into()),
+                            AsmInstr::Cvtsi2sd {
+                                src: AsmOp::Reg(AsmReg::Dx),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Double the converted result to restore the original magnitude.".into()),
+                            AsmInstr::Comment("Adding the double to itself is equivalent to multiplying by 2.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Double,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::DoubleToInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long | AsmType::Quad => Ok(vec![AsmInstr::Cvttsd2si {
+                        asm_ty,
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                    }]),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::DoubleToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Cvttsd2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Quad => {
+                        let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
+                        let i64_ceil_as_f64 = i64_ceil_as_u64 as f64;
+
+                        let static_const = IRStaticConst {
+                            name: format!("static_const.{}", mktmp()),
+                            init: StaticInit::Double(i64_ceil_as_f64),
+                            ty: Type::Float64,
+                            alignment: Type::alignment(Type::Float64),
+                        };
+
+                        ctx.static_consts.push(static_const.clone());
+
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_DoubleToUInt1_{tmp}");
+                        let l2 = format!(".L{func_name}_DoubleToUInt2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert Double to UInt64.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Data(static_const.name.clone(), 0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Double,
+                            },
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::Ae,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Cvttsd2si {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Sub,
+                                lhs: AsmOp::Data(static_const.name.clone(), 0),
+                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Double,
+                            },
+                            AsmInstr::Cvttsd2si {
+                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::IntToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movsx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2sd {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    _ => Ok(vec![AsmInstr::Cvtsi2sd {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                }
+            }
+
+            IRInstr::DoubleToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => Ok(vec![AsmInstr::Cvtsd2ss {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
+
+            IRInstr::FloatToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => Ok(vec![AsmInstr::Cvtss2sd {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
+
+            IRInstr::FloatToInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long | AsmType::Quad => Ok(vec![AsmInstr::Cvttss2si {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::FloatToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*dst_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Cvttss2si {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Quad => {
+                        let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
+                        let i64_ceil_as_f32 = i64_ceil_as_u64 as f32;
+
+                        let static_const = IRStaticConst {
+                            name: format!("static_const.{}", mktmp()),
+                            init: StaticInit::Float(i64_ceil_as_f32),
+                            ty: Type::Float32,
+                            alignment: 4,
+                        };
+
+                        ctx.static_consts.push(static_const.clone());
+
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_FloatToUInt1_{tmp}");
+                        let l2 = format!(".L{func_name}_FloatToUInt2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert Float to UInt64.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Data(static_const.name.clone(), 0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::Ae,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Cvttss2si {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Sub,
+                                lhs: AsmOp::Data(static_const.name.clone(), 0),
+                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Cvttss2si {
+                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    }
+                    _ => unreachable!(),
+                }
+            }
+
+            IRInstr::IntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movsx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    _ => Ok(vec![AsmInstr::Cvtsi2ss {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    }]),
+                }
+            }
+
+            IRInstr::UIntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                let asm_ty = AsmType::from(*src_ty);
+
+                match asm_ty {
+                    AsmType::Byte | AsmType::Word => Ok(vec![
+                        AsmInstr::Movzx {
+                            src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            dst_ty: AsmType::Long,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                    ]),
+                    AsmType::Long => Ok(vec![
+                        AsmInstr::Mov {
+                            src: src.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty,
+                        },
+                        AsmInstr::Cvtsi2ss {
+                            src: AsmOp::Reg(AsmReg::Ax),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                    ]),
+                    AsmType::Quad => {
+                        let tmp = mktmp();
+
+                        let l1 = format!(".L{func_name}_UIntToFloat1_{tmp}");
+                        let l2 = format!(".L{func_name}_UIntToFloat2_{tmp}");
+
+                        Ok(vec![
+                            AsmInstr::Comment("Convert UInt64 to Float32.".into()),        
+                            AsmInstr::Comment("Cvtsi2ss interprets its source as signed, so values >= 2^63 need special handling.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Compare the source against zero using signed comparison.".into()),
+                            AsmInstr::Cmp {
+                                src: AsmOp::Imm(0),
+                                dst: src.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("If the sign bit is set, jump to the unsigned conversion path.".into()),
+                            AsmInstr::Jmpcc {
+                                cc: ConditionCode::L,
+                                target: l1.clone(),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The value fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert it directly to double and skip the unsigned conversion path.".into()),
+                            AsmInstr::Cvtsi2ss {
+                                src: src.codegen(ctx)?,
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Jmp { target: l2.clone() },
+                            AsmInstr::Newline,
+                            AsmInstr::Label(l1.clone()),
+                            AsmInstr::Comment("The source is >= 2^63 and cannot be converted directly as a signed integer.".into()),
+                            AsmInstr::Comment("Compute (src >> 1) | (src & 1), convert to double, then multiply by 2.".into()),
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Load the original value into %rax.".into()),
+                            AsmInstr::Mov {
+                                src: src.codegen(ctx)?,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Copy the original value into %rdx.".into()),
+                            AsmInstr::Mov {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Logically shift %rdx right by one bit.".into()),
+                            AsmInstr::Comment("This clears the sign bit and divides the unsigned value by 2.".into()),
+                            AsmInstr::Unary {
+                                kind: AsmInstrUnaryKind::Shr,
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Extract the original least significant bit into %rax.".into()),
+                            AsmInstr::Comment("This bit preserves rounding information lost by the right shift.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::And,
+                                lhs: AsmOp::Imm(1),
+                                rhs: AsmOp::Reg(AsmReg::Ax),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Combine the shifted value with the original least significant bit.".into()),
+                            AsmInstr::Comment("%rdx = (src >> 1) | (src & 1).".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Or,
+                                lhs: AsmOp::Reg(AsmReg::Ax),
+                                rhs: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("The adjusted value now fits into a signed 64-bit integer.".into()),
+                            AsmInstr::Comment("Convert the adjusted value to double.".into()),
+                            AsmInstr::Cvtsi2ss {
+                                src: AsmOp::Reg(AsmReg::Dx),
+                                dst: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Double the converted result to restore the original magnitude.".into()),
+                            AsmInstr::Comment("Adding the double to itself is equivalent to multiplying by 2.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Add,
+                                lhs: dst.codegen(ctx)?,
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Float,
+                            },
+                            AsmInstr::Label(l2.clone()),
+                        ])
+                    }
+                    _ => unreachable!(),
+                }
+            }
         }
     }
 }
 
 impl Codegen<AsmOp, CodegenContext> for IRVal {
-    fn codegen(&self, _ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
         match self {
             IRVal::Const(konst) => match konst {
                 Literal::UInt8(uint8) => Ok(AsmOp::Imm(*uint8 as i64)),
@@ -847,9 +2081,16 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
                 Literal::UInt64(uint64) => Ok(AsmOp::Imm(*uint64 as i64)),
                 Literal::Int64(int64) => Ok(AsmOp::Imm(*int64)),
                 Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
-                _ => unimplemented!(),
+                Literal::Float32(_) | Literal::Float64(_) => {
+                    let name = ctx.intern_float(*konst);
+
+                    Ok(AsmOp::Data(name, 0))
+                }
             },
-            IRVal::Var(var) => Ok(AsmOp::Pseudo(var.to_owned())),
+            IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
+                name: name.into(),
+                ty: ty.clone(),
+            }),
         }
     }
 }
@@ -879,6 +2120,7 @@ where
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
         dst: AsmOp::Reg(AsmReg::Bp),
+        asm_ty: AsmType::Quad,
     });
     body.sink(AsmInstr::Newline);
     body.sink(AsmInstr::Comment("Reserve the stack space.".to_string()));
@@ -886,6 +2128,7 @@ where
         kind: AsmInstrBinKind::Sub,
         lhs: AsmOp::Imm(0),
         rhs: AsmOp::Reg(AsmReg::Sp),
+        asm_ty: AsmType::Quad,
     });
     body.sink(AsmInstr::Newline);
 }
@@ -900,75 +2143,8 @@ where
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
+        asm_ty: AsmType::Quad,
     });
     body.sink(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Newline);
-}
-
-/// Truncate a 64-bit val to its actual int width, then sign-extend it or zero-extend it
-/// back to 64 bits.
-///
-/// e.g.:
-///
-/// ```
-/// let x: u8 = 0;
-/// let y: u8 = ~x;
-/// ```
-/// We expect:
-///
-/// `~0000_0000 = 1111_1111`
-///
-/// However, currently (FIXME), the compiler uses `notq` which operates on 64-bit vals,
-/// so the result would have been `0xFFFFFFFFFFFFFFFF`, which is `u64::MAX`, not `255`,
-/// which means we need to discard the upper 56 bits.
-///
-/// This means that we first shift left filling up the right side with zeroes:
-///
-/// `0xFF00000000000000`
-///
-/// Then we need to shift right, but the actual instruction depends on signedness.
-/// If the int is unsigned, we need to zero-extend it with `shrq`, otherwise we need
-/// to sign-extend it with `sarq` (wrapping arithmetic (FIXME)).
-fn normalize_int(dst: AsmOp, ty: Type) -> Vec<AsmInstr> {
-    let shift = 64 - (ty.size_of() * 8) as u8;
-
-    if shift == 0 {
-        return vec![
-            AsmInstr::Comment(format!("Since the operand is already {} wide, we do not need to shift.", ty.size_of())),
-        ];
-    }
-
-    let is_signed = if ty.is_signed() { "signed" } else { "unsigned" };
-
-    vec![
-        AsmInstr::Comment("Normalize int (truncate then zero-extend or sign-extend).".into()),
-        AsmInstr::Comment(format!(
-            "Since the int is {is_signed} ({} bytes wide), we shift left by {shift}.",
-            ty.size_of()
-        )),
-        AsmInstr::Shift {
-            kind: AsmInstrShiftKind::Shl,
-            amount: shift,
-            dst: dst.clone(),
-        },
-        AsmInstr::Newline,
-        AsmInstr::Comment(format!(
-            "The int is {is_signed}, we use {:?} to shift it {shift} bits right and {}-extend it.",
-            if ty.is_signed() {
-                AsmInstrShiftKind::Sar
-            } else {
-                AsmInstrShiftKind::Shr
-            },
-            if ty.is_signed() { "sign" } else { "zero" },
-        )),
-        AsmInstr::Shift {
-            kind: if ty.is_signed() {
-                AsmInstrShiftKind::Sar
-            } else {
-                AsmInstrShiftKind::Shr
-            },
-            amount: shift,
-            dst: dst,
-        },
-    ]
 }

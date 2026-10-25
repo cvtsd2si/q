@@ -16,6 +16,8 @@ pub trait Codegen<T, U> {
 pub struct CodegenContext {
     pub locals: HashMap<String, usize>,
     pub funcs: HashMap<String, usize>,
+    pub static_consts: Vec<IRStaticConst>,
+    pub float_pool: HashMap<(u8, u64), String>,
 }
 
 impl CodegenContext {
@@ -23,13 +25,9 @@ impl CodegenContext {
         Self {
             locals: HashMap::new(),
             funcs: HashMap::new(),
+            static_consts: Vec::new(),
+            float_pool: HashMap::new(),
         }
-    }
-}
-
-impl Default for CodegenContext {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -38,7 +36,6 @@ impl Ctx for CodegenContext {
         match TypeId::of::<T>() {
             id if id == TypeId::of::<String>() => self.locals.get(name).copied(),
             id if id == TypeId::of::<BytecodeFunc>() => self.funcs.get(name).copied(),
-
             _ => unreachable!(),
         }
     }
@@ -66,17 +63,19 @@ pub trait Ctx {
 #[derive(Debug, Clone)]
 pub enum IRVal {
     Const(Literal),
-    Var(String),
+    Var { name: String, ty: Type },
 }
 
 #[derive(Debug, Clone)]
 pub enum IRInstr {
     Cpy {
         src: IRVal,
+        src_ty: Type,
         dst: IRVal,
     },
     Ret {
         val: Option<IRVal>,
+        ret_ty: Option<Type>,
     },
     Bin {
         kind: BinaryExpressionKind,
@@ -109,11 +108,90 @@ pub enum IRInstr {
         arg_tys: Vec<Type>,
         dst: IRVal,
     },
+    SignExtend {
+        src: IRVal,
+        dst: IRVal,
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    ZeroExtend {
+        src: IRVal,
+        dst: IRVal,
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    Truncate {
+        src: IRVal,
+        dst: IRVal,
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    DoubleToInt {
+        src: IRVal,
+        dst: IRVal,
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    IntToDouble {
+        src: IRVal,
+        dst: IRVal,
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    DoubleToUInt {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    UIntToDouble {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    DoubleToFloat {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    FloatToDouble {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    FloatToInt {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    IntToFloat {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    FloatToUInt {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
+    UIntToFloat {
+        src: IRVal,
+        src_ty: Type,
+        dst: IRVal,
+        dst_ty: Type,
+    },
 }
 
 #[derive(Debug)]
 pub struct IRProg {
     pub funcs: Vec<IRFunc>,
+    pub static_consts: Vec<IRStaticConst>,
 }
 
 #[derive(Debug, Clone)]
@@ -124,8 +202,25 @@ pub struct IRFunc {
     pub ret_ty: Option<Type>,
 }
 
+#[derive(Debug, Clone)]
+pub struct IRStaticConst {
+    pub name: String,
+    pub ty: Type,
+    pub init: StaticInit,
+    pub alignment: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StaticInit {
+    Float(f32),
+    Double(f64),
+}
+
 pub fn irfy(ast: &Program) -> IRProg {
-    let mut ir_prog = IRProg { funcs: vec![] };
+    let mut ir_prog = IRProg {
+        funcs: vec![],
+        static_consts: vec![],
+    };
 
     for block_item in &ast.block_items {
         irfy_block_item(&mut ir_prog, block_item);
@@ -163,7 +258,10 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
             }
 
             if ret.is_none() {
-                f.body.push(IRInstr::Ret { val: None });
+                f.body.push(IRInstr::Ret {
+                    val: None,
+                    ret_ty: None,
+                });
             }
 
             ir_prog.funcs.push(f);
@@ -173,20 +271,33 @@ fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
 
 fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
     match stmt {
-        Statement::Let { name, init, ty: _ } => {
+        Statement::Let { name, init, ty } => {
             let r = irfy_expr_and_cvt(instrs, init);
-            let dst = IRVal::Var(name.to_string());
+            let dst = IRVal::Var {
+                name: name.into(),
+                ty: ty.unwrap(),
+            };
 
-            instrs.push(IRInstr::Cpy { src: r, dst });
+            instrs.push(IRInstr::Cpy {
+                src: r,
+                src_ty: ty.unwrap(),
+                dst,
+            });
         }
 
-        Statement::Ret { value, ret_ty: _ } => {
+        Statement::Ret { value, ret_ty } => {
             if value.is_some() {
                 let r = irfy_expr_and_cvt(instrs, value.as_ref().unwrap());
 
-                instrs.push(IRInstr::Ret { val: Some(r) });
+                instrs.push(IRInstr::Ret {
+                    val: Some(r),
+                    ret_ty: *ret_ty,
+                });
             } else {
-                instrs.push(IRInstr::Ret { val: None });
+                instrs.push(IRInstr::Ret {
+                    val: None,
+                    ret_ty: *ret_ty,
+                });
             }
         }
 
@@ -424,17 +535,16 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             ExpRes::Plain(IRVal::Const(literal))
         }
-        Expression::Variable {
-            name,
-            ty: _,
-            span: _,
-        } => ExpRes::Plain(IRVal::Var(name.to_owned())),
+        Expression::Variable { name, ty, span: _ } => ExpRes::Plain(IRVal::Var {
+            name: name.into(),
+            ty: ty.unwrap(),
+        }),
         Expression::Unary { kind, expr, ty, .. } => {
             let operand_ty = ty.unwrap();
 
             let src = irfy_expr_and_cvt(instrs, expr);
 
-            let dst = mkirvar();
+            let dst = mkirvar(operand_ty);
 
             instrs.push(IRInstr::Unary {
                 kind: *kind,
@@ -449,15 +559,16 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             kind,
             lhs,
             rhs,
-            ty: _,
+            ty,
             span: _,
         } => {
             let operand_ty = lhs.ty().unwrap();
+            let result_ty = ty.unwrap();
 
             let lhs = irfy_expr_and_cvt(instrs, lhs);
             let rhs = irfy_expr_and_cvt(instrs, rhs);
 
-            let dst = mkirvar();
+            let dst = mkirvar(result_ty);
 
             instrs.push(IRInstr::Bin {
                 kind: *kind,
@@ -473,7 +584,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         Expression::Call {
             target,
             args,
-            ty: _,
+            ty,
             span: _,
         } => {
             let arg_tys = args.iter().map(|arg| arg.ty().unwrap()).collect();
@@ -483,7 +594,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                 .map(|arg| irfy_expr_and_cvt(instrs, arg))
                 .collect();
 
-            let dst = mkirvar();
+            let dst = mkirvar(ty.unwrap());
 
             instrs.push(IRInstr::Call {
                 target: target.to_owned(),
@@ -495,7 +606,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             ExpRes::Plain(dst)
         }
 
-        Expression::Assign { lhs, rhs, .. } => {
+        Expression::Assign { lhs, rhs, ty, .. } => {
             /* Keep lhs as lvalue.  */
             let lhs = irfy_expr(instrs, lhs);
 
@@ -508,6 +619,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                 ExpRes::Plain(op) => {
                     instrs.push(IRInstr::Cpy {
                         src: rhs.clone(),
+                        src_ty: ty.unwrap(),
                         dst: op,
                     });
                 }
@@ -516,13 +628,156 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             /* Assignments evaluate to their rhs val.  */
             ExpRes::Plain(rhs)
         }
+
+        Expression::Cast {
+            expr, target_ty, ..
+        } => {
+            let src_ty = expr.ty().unwrap();
+
+            let src = irfy_expr_and_cvt(instrs, expr);
+
+            let dst = irfy_cast(instrs, src, src_ty, *target_ty);
+
+            ExpRes::Plain(dst)
+        }
     }
 }
 
-fn mkirvar() -> IRVal {
+fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) -> IRVal {
+    /* Casting a val to its own type is a NOP.  */
+    if src_ty == dst_ty {
+        return src;
+    }
+
+    let dst = mkirvar(dst_ty);
+
+    let instr = match (src_ty, dst_ty) {
+        /* int -> int  */
+        (from, to) if from.is_int() && to.is_int() => {
+            use std::cmp::Ordering;
+
+            match from.size_of().cmp(&to.size_of()) {
+                Ordering::Equal => IRInstr::Cpy {
+                    src,
+                    src_ty,
+                    dst: dst.clone(),
+                },
+                Ordering::Greater => IRInstr::Truncate {
+                    src,
+                    dst: dst.clone(),
+                    src_ty,
+                    dst_ty,
+                },
+                Ordering::Less if from.is_signed() => IRInstr::SignExtend {
+                    src,
+                    dst: dst.clone(),
+                    src_ty,
+                    dst_ty,
+                },
+                Ordering::Less => IRInstr::ZeroExtend {
+                    src,
+                    dst: dst.clone(),
+                    src_ty,
+                    dst_ty,
+                },
+            }
+        }
+
+        /* double -> signed int  */
+        (Type::Float64, to) if to.is_int() && to.is_signed() => IRInstr::DoubleToInt {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* double -> unsigned int  */
+        (Type::Float64, to) if to.is_int() && !to.is_signed() => IRInstr::DoubleToUInt {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* signed int -> double  */
+        (from, Type::Float64) if from.is_int() && from.is_signed() => IRInstr::IntToDouble {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* unsigned int -> double  */
+        (from, Type::Float64) if from.is_int() && !from.is_signed() => IRInstr::UIntToDouble {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* double -> float  */
+        (Type::Float64, Type::Float32) => IRInstr::DoubleToFloat {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* float -> double */
+        (Type::Float32, Type::Float64) => IRInstr::FloatToDouble {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* float -> signed int  */
+        (Type::Float32, to) if to.is_int() && to.is_signed() => IRInstr::FloatToInt {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* float -> unsigned int  */
+        (Type::Float32, to) if to.is_int() && !to.is_signed() => IRInstr::FloatToUInt {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* signed int -> float  */
+        (from, Type::Float32) if from.is_int() && from.is_signed() => IRInstr::IntToFloat {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        /* unsigned int -> float  */
+        (from, Type::Float32) if from.is_int() && !from.is_signed() => IRInstr::UIntToFloat {
+            src,
+            dst: dst.clone(),
+            src_ty,
+            dst_ty,
+        },
+
+        _ => unreachable!("Unsupported cast from {src_ty:?} to {dst_ty:?}"),
+    };
+
+    instrs.push(instr);
+
+    dst
+}
+
+fn mkirvar(ty: Type) -> IRVal {
     let tmp = mktmp();
 
-    IRVal::Var(format!("tmp.{}", tmp))
+    IRVal::Var {
+        name: format!("tmp.{}", tmp),
+        ty,
+    }
 }
 
 pub fn mktmp() -> u64 {

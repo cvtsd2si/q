@@ -357,7 +357,7 @@ fn typecheck_expr(
         Expression::Unary {
             kind,
             expr,
-            ty,
+            ty: _,
             span,
         } => {
             if matches!(kind, UnaryExpressionKind::Negate) {
@@ -612,6 +612,43 @@ fn typecheck_expr(
                 span,
             })
         }
+
+        Expression::Cast {
+            expr,
+            target_ty,
+            ty: _,
+            span,
+        } => {
+            /* Determine the operand's own type independently of the destination type.  */
+            let expr = typecheck_expr(typechecker, *expr, None)?;
+
+            let src_ty = expr.ty().ok_or_else(|| TypecheckerError {
+                msg: "Cannot determine the type of cast operand".into(),
+            })?;
+
+            /* FIXME: Only allow casts between numeric types for now.  */
+            if !src_ty.is_numeric() || !target_ty.is_numeric() {
+                return Err(TypecheckerError {
+                    msg: format!("Invalid cast from {src_ty:?} to {target_ty:?}."),
+                });
+            }
+
+            /* The cast produces `target_ty`, regardless of `src_ty`.  */
+            if let Some(expected) = expected_ty {
+                if expected != target_ty {
+                    return Err(TypecheckerError {
+                        msg: format!("Expected {expected:?}, got {target_ty:?}."),
+                    });
+                }
+            }
+
+            Ok(Expression::Cast {
+                expr: expr.into(),
+                target_ty,
+                ty: Some(target_ty),
+                span,
+            })
+        }
     }
 }
 
@@ -750,6 +787,8 @@ fn known_ty(
 
             known_ty(typechecker, lhs)
         }
+
+        Expression::Cast { target_ty, .. } => Ok(Some(*target_ty)),
     }
 }
 
@@ -761,6 +800,7 @@ fn default_numeric_ty(expr: &Expression) -> Type {
         } => Type::Float64,
         Expression::Unary { expr, .. } => default_numeric_ty(expr),
         Expression::Binary { lhs, .. } => default_numeric_ty(lhs),
+        Expression::Cast { target_ty, .. } => *target_ty,
         _ => Type::Int32,
     }
 }
@@ -783,7 +823,7 @@ fn always_returns(stmt: &Statement) -> bool {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Symbol {
     pub name: String,
     pub ty: Option<Type>,

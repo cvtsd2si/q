@@ -1,9 +1,12 @@
+use std::collections::HashMap;
+
 use crate::{
     asm::{
         emitter::Emit,
         fixup::Fixup,
         r#gen::{
-            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, insert_epilogue, insert_prologue,
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmStaticConst, AsmType,
+            insert_epilogue, insert_prologue,
         },
         regalloc::Regalloc,
     },
@@ -118,6 +121,19 @@ impl JitCompiler {
         .map_err(|_| JitError {
             msg: "jit entry emission failed".to_string(),
         })?;
+
+        for konst in &ctx.static_consts {
+            AsmStaticConst {
+                name: konst.name.clone(),
+                init: konst.init.clone(),
+                ty: konst.ty.clone(),
+                alignment: konst.alignment,
+            }
+            .emit(&mut asm_txt)
+            .map_err(|_| JitError {
+                msg: "JIT constant emission failed".into(),
+            })?;
+        }
 
         let code = self.asm_exe(&asm_txt)?;
 
@@ -234,6 +250,7 @@ impl JitCompiler {
             kind: AsmInstrBinKind::Sub,
             lhs: AsmOp::Imm(8),
             rhs: AsmOp::Reg(AsmReg::Sp),
+            asm_ty: AsmType::Quad,
         });
 
         body.push(AsmInstr::Newline);
@@ -243,30 +260,35 @@ impl JitCompiler {
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Di),
                 dst: AsmOp::Reg(AsmReg::R12),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rsi = *mut Vm".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Si),
                 dst: AsmOp::Reg(AsmReg::R13),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rsi = *const Rt".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Reg(AsmReg::R14),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rcx = *const Value (args)".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Reg(AsmReg::Di),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Stack(16),
                 dst: AsmOp::Reg(AsmReg::R15),
+                asm_ty: AsmType::Quad,
             },
         ]);
 
@@ -292,12 +314,14 @@ impl JitCompiler {
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("8(%rsp) = `next_pc`".to_string()),
             AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Sp, 8),
                 dst: AsmOp::Reg(AsmReg::R10),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%r10 = `next_pc`".to_string()),
@@ -307,6 +331,7 @@ impl JitCompiler {
                     AsmReg::R12,
                     std::mem::offset_of!(JitResult, next_pc) as isize,
                 ),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rdx = ValueTag".to_string()),
@@ -317,6 +342,7 @@ impl JitCompiler {
                     (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, tag))
                         as isize,
                 ),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rax = payload | err code".to_string()),
@@ -327,6 +353,7 @@ impl JitCompiler {
                     (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, payload))
                         as isize,
                 ),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment(
@@ -335,6 +362,7 @@ impl JitCompiler {
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R12),
                 dst: AsmOp::Reg(AsmReg::Ax),
+                asm_ty: AsmType::Quad,
             },
         ]);
 
@@ -346,6 +374,7 @@ impl JitCompiler {
                 kind: AsmInstrBinKind::Add,
                 lhs: AsmOp::Imm(8),
                 rhs: AsmOp::Reg(AsmReg::Sp),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
         ]);
@@ -383,12 +412,14 @@ impl JitCompiler {
             AsmInstr::Mov {
                 src: AsmOp::Imm(JIT_ERROR as i64),
                 dst: AsmOp::Reg(AsmReg::Cx),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
             AsmInstr::Comment("%rdx = ValueTag".into()),
             AsmInstr::Mov {
                 src: AsmOp::Imm(ValueTag::Void as i64),
                 dst: AsmOp::Reg(AsmReg::Dx),
+                asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
         ];
