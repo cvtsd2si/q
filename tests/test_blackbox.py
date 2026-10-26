@@ -36,6 +36,14 @@ TEST_CASES = {
         "ret": 0,
         "stdout": ["0", "255"],
     },
+    "u32_to_u64.q": {
+        "ret": 0,
+        "stdout": ["4294967296"],
+    },
+    "u64_to_u32.q": {
+        "ret": 0,
+        "stdout": ["0", "4294967295"],
+    },
 }
 
 @pytest.mark.parametrize(
