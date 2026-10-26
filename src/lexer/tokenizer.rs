@@ -26,6 +26,22 @@ impl<'src> Iterator for Tokenizer<'src> {
                 continue;
             }
 
+            macro_rules! single_or_double {
+                ($char:literal, $kind:expr) => {
+                    if self.chars.next_if(|(_, ch)| *ch == $char).is_some() {
+                        Ok(Token {
+                            kind: $kind,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        })
+                    } else {
+                        Ok(Token::single(ch, idx))
+                    }
+                };
+            }
+
             let token = match ch {
                 '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' | '~' => {
                     Ok(Token::single(ch, idx))
@@ -47,45 +63,9 @@ impl<'src> Iterator for Tokenizer<'src> {
                         Ok(Token::single(ch, idx))
                     }
                 }
-                '!' => {
-                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
-                        Ok(Token {
-                            kind: TokenKind::NotEqual,
-                            span: Span {
-                                start: idx,
-                                end: idx + 2,
-                            },
-                        })
-                    } else {
-                        Ok(Token::single(ch, idx))
-                    }
-                }
-                '=' => {
-                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
-                        Ok(Token {
-                            kind: TokenKind::DoubleEqual,
-                            span: Span {
-                                start: idx,
-                                end: idx + 2,
-                            },
-                        })
-                    } else {
-                        Ok(Token::single(ch, idx))
-                    }
-                }
-                '-' => {
-                    if self.chars.next_if(|(_, ch)| *ch == '>').is_some() {
-                        Ok(Token {
-                            kind: TokenKind::Arrow,
-                            span: Span {
-                                start: idx,
-                                end: idx + 2,
-                            },
-                        })
-                    } else {
-                        Ok(Token::single(ch, idx))
-                    }
-                }
+                '!' => single_or_double!('=', TokenKind::NotEqual),
+                '=' => single_or_double!('=', TokenKind::DoubleEqual),
+                '-' => single_or_double!('>', TokenKind::Arrow),
                 _ if ch.is_ascii_digit() => self.tokenize_number(idx, ch),
                 _ if ch.is_alphabetic() || ch == '_' => {
                     while self

@@ -81,7 +81,7 @@ impl JitCompiler {
         }
 
         /* Compiled fn emission.  */
-        let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
+        let asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
             msg: "jit codegen failed".into(),
         })?;
         let mut asm_func = asm_func.regalloc().fixup();
