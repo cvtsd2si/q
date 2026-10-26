@@ -159,11 +159,11 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         asm_ty: *asm_ty,
                         src: src.clone(),
-                        dst: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(AsmReg::R9),
                     },
                     AsmInstr::Cmp {
                         asm_ty: *asm_ty,
-                        src: AsmOp::Reg(AsmReg::R10),
+                        src: AsmOp::Reg(AsmReg::R9),
                         dst: dst.clone(),
                     },
                 ]
@@ -179,17 +179,17 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         asm_ty: AsmType::Quad,
                         src: AsmOp::Imm(*imm1),
-                        dst: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(AsmReg::R9),
                     },
                     AsmInstr::Mov {
                         asm_ty: AsmType::Quad,
                         src: AsmOp::Imm(*imm2),
-                        dst: AsmOp::Reg(AsmReg::R11),
+                        dst: AsmOp::Reg(AsmReg::R10),
                     },
                     AsmInstr::Cmp {
                         asm_ty: AsmType::Quad,
-                        src: AsmOp::Reg(AsmReg::R10),
-                        dst: AsmOp::Reg(AsmReg::R11),
+                        src: AsmOp::Reg(AsmReg::R9),
+                        dst: AsmOp::Reg(AsmReg::R10),
                     },
                 ]
             }
@@ -198,16 +198,16 @@ impl Fixup for AsmInstr {
                 asm_ty: AsmType::Quad,
                 src: AsmOp::Imm(imm1),
                 dst,
-            } => {
+            } if is_large(*imm1) => {
                 vec![
                     AsmInstr::Mov {
                         asm_ty: AsmType::Quad,
                         src: AsmOp::Imm(*imm1),
-                        dst: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(AsmReg::R9),
                     },
                     AsmInstr::Cmp {
                         asm_ty: AsmType::Quad,
-                        src: AsmOp::Reg(AsmReg::R10),
+                        src: AsmOp::Reg(AsmReg::R9),
                         dst: dst.clone(),
                     },
                 ]
@@ -222,12 +222,12 @@ impl Fixup for AsmInstr {
                     AsmInstr::Mov {
                         asm_ty: *asm_ty,
                         src: AsmOp::Imm(*imm),
-                        dst: AsmOp::Reg(AsmReg::R11),
+                        dst: AsmOp::Reg(AsmReg::R9),
                     },
                     AsmInstr::Cmp {
                         asm_ty: *asm_ty,
                         src: src.clone(),
-                        dst: AsmOp::Reg(AsmReg::R11),
+                        dst: AsmOp::Reg(AsmReg::R9),
                     },
                 ]
             }

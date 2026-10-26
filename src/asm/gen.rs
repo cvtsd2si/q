@@ -656,7 +656,7 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
                         dst: dst.codegen(ctx)?,
-                        asm_ty: (*operand_ty).into(),
+                        asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Setcc {
                         cc,
@@ -944,8 +944,8 @@ impl IRInstr {
 
             IRInstr::Jz { cond, target } => Ok(vec![
                 AsmInstr::Cmp {
-                    src: cond.codegen(ctx)?,
-                    dst: AsmOp::Imm(0),
+                    src: AsmOp::Imm(0),
+                    dst: cond.codegen(ctx)?,
                     asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Jmpcc {
@@ -1070,19 +1070,12 @@ impl IRInstr {
                     let tag = ValueTag::from(arg_tys[idx]);
 
                     body.extend([
-                        AsmInstr::Comment(format!("Put arg {idx} into tmp scratch.")),
-                        AsmInstr::Mov {
-                            src: arg.codegen(ctx)?,
-                            dst: AsmOp::Reg(AsmReg::R9),
-                            asm_ty: AsmType::Quad,
-                        },
-                        AsmInstr::Newline,
-                    ]);
-
-                    body.extend([
                         AsmInstr::Comment(format!(
                             "Construct Value for arg {idx}: tag={tag:?}, payload follows."
                         )),
+                        AsmInstr::Comment(
+                            "Store the tag first as fixup pass might clobber %r9.".into(),
+                        ),
                         AsmInstr::Mov {
                             src: AsmOp::Imm(tag as i64),
                             dst: AsmOp::Mem(
@@ -1091,6 +1084,15 @@ impl IRInstr {
                             ),
                             asm_ty: AsmType::Quad,
                         },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment(format!("Put arg {idx} into tmp scratch (%r9).")),
+                        AsmInstr::Mov {
+                            src: arg.codegen(ctx)?,
+                            dst: AsmOp::Reg(AsmReg::R9),
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment("Store %r9 into the payload field.".to_string()),
                         AsmInstr::Mov {
                             src: AsmOp::Reg(AsmReg::R9),
                             dst: AsmOp::Mem(

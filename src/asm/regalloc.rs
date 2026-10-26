@@ -15,7 +15,7 @@ pub struct RegAllocator {
 impl RegAllocator {
     pub fn new() -> Self {
         Self {
-            allocatable_gp_regs: vec![AsmReg::R8, AsmReg::R10, AsmReg::R11], /* R9 reserved for fixup scratch */
+            allocatable_gp_regs: vec![AsmReg::R8, AsmReg::R10, AsmReg::R11], /* %r9 reserved for fixup scratch  */
             allocatable_sse_regs: vec![
                 AsmReg::Xmm0,
                 AsmReg::Xmm1,
