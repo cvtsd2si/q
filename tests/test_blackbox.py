@@ -28,6 +28,14 @@ TEST_CASES = {
         "ret": 0,
         "stdout": ["0", "255"],
     },
+    "u8_to_u64.q": {
+        "ret": 0,
+        "stdout": ["256"],
+    },
+    "u64_to_u8.q": {
+        "ret": 0,
+        "stdout": ["0", "255"],
+    },
 }
 
 @pytest.mark.parametrize(
