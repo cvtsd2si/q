@@ -207,7 +207,7 @@ impl Vm {
         if params.len() != args.len() {
             return Err(VmError {
                 msg: format!(
-                    "argcount mismatch (got {}, expected {}",
+                    "argcount mismatch (got {}, expected {})",
                     args.len(),
                     params.len()
                 ),
