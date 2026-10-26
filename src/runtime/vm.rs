@@ -104,6 +104,8 @@ impl Vm {
             /* Normal interpreter path.  */
             let op = self.bytecode.funcs[self.func].body[self.pc];
 
+            self.pc += 1;
+
             match op {
                 Op::Const(konst) => self.handle_op_const(konst),
                 Op::Add => self.handle_op_add(),
@@ -140,8 +142,6 @@ impl Vm {
                     continue;
                 }
             };
-
-            self.pc += 1;
         }
     }
 
@@ -369,12 +369,12 @@ impl Vm {
         let cond = self.stack.pop().unwrap();
 
         if cond.payload == 0 {
-            self.pc = target - 1;
+            self.pc = target;
         }
     }
 
     fn handle_op_jmp(&mut self, target: usize) {
-        self.pc = target - 1;
+        self.pc = target;
     }
 
     fn handle_op_call(&mut self, target: usize, argc: usize) {
@@ -382,7 +382,7 @@ impl Vm {
 
         self.fp_stack.push(Frame {
             func: self.func,
-            pc: self.pc + 1,
+            pc: self.pc,
             ptr: self.fp,
         });
 
