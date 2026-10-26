@@ -145,12 +145,12 @@ impl RegAllocator {
 
     fn replace_pseudo(&mut self, op: &mut AsmOp) -> AsmOp {
         match op {
-            AsmOp::Pseudo { name, ty } => self.alloc(name, ty.to_owned()),
+            AsmOp::Pseudo { name, ty } => self.alloc(name, ty),
             _ => op.clone(),
         }
     }
 
-    fn alloc(&mut self, pseudo: &str, ty: Type) -> AsmOp {
+    fn alloc(&mut self, pseudo: &str, ty: &Type) -> AsmOp {
         if let Some(op) = self.map.get(pseudo) {
             return op.clone();
         }
@@ -200,15 +200,15 @@ impl Default for RegAllocator {
 pub trait Regalloc {
     type Output;
 
-    fn regalloc(&mut self) -> Self::Output;
+    fn regalloc(self) -> Self::Output;
 }
 
 impl Regalloc for AsmProg {
     type Output = AsmProg;
 
-    fn regalloc(&mut self) -> Self::Output {
+    fn regalloc(self) -> Self::Output {
         AsmProg {
-            funcs: self.funcs.iter_mut().map(|f| f.regalloc()).collect(),
+            funcs: self.funcs.into_iter().map(|f| f.regalloc()).collect(),
             static_consts: self.static_consts.clone(),
         }
     }
@@ -217,15 +217,15 @@ impl Regalloc for AsmProg {
 impl Regalloc for AsmFunc {
     type Output = AsmFunc;
 
-    fn regalloc(&mut self) -> Self::Output {
+    fn regalloc(self) -> Self::Output {
         let mut allocator = RegAllocator::new();
 
         let mut f = AsmFunc {
             name: self.name.clone(),
             body: self
                 .body
-                .iter_mut()
-                .map(|instr| allocator.rewrite(instr))
+                .into_iter()
+                .map(|ref mut instr| allocator.rewrite(instr))
                 .collect(),
             space: 0,
         };
