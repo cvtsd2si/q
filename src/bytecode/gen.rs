@@ -18,16 +18,13 @@ pub enum Op {
     Jz(usize),
     Jmp(usize),
     Call { target: usize, argc: usize },
-    L,
-    G,
+    Lt,
     Le,
-    Ge,
-    E,
-    Ne,
+    Eq,
     Neg,
     Not,
     BitwiseNot,
-    Cvt { src_ty: Type, dst_ty: Type},
+    Cvt { src_ty: Type, dst_ty: Type },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -162,7 +159,6 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 Ok(vec![src, op])
             }
-
             IRInstr::Bin {
                 kind,
                 lhs,
@@ -170,20 +166,19 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 dst,
                 ..
             } => {
-                let op = match kind {
-                    BinaryExpressionKind::Add => Op::Add,
-                    BinaryExpressionKind::Sub => Op::Sub,
-                    BinaryExpressionKind::Less => Op::L,
-                    BinaryExpressionKind::Greater => Op::G,
-                    BinaryExpressionKind::LessEqual => Op::Le,
-                    BinaryExpressionKind::GreaterEqual => Op::Ge,
-                    BinaryExpressionKind::Equal => Op::E,
-                    BinaryExpressionKind::NotEqual => Op::Ne,
+                let (op, swap, negate) = match kind {
+                    BinaryExpressionKind::Add => (Op::Add, false, false),
+                    BinaryExpressionKind::Sub => (Op::Sub, false, false),
+                    BinaryExpressionKind::Less => (Op::Lt, false, false),
+                    BinaryExpressionKind::Greater => (Op::Lt, true, false),
+                    BinaryExpressionKind::LessEqual => (Op::Le, false, false),
+                    BinaryExpressionKind::GreaterEqual => (Op::Le, true, false),
+                    BinaryExpressionKind::Equal => (Op::Eq, false, false),
+                    BinaryExpressionKind::NotEqual => (Op::Eq, false, true),
                     _ => unreachable!(),
                 };
 
-                let lhs = lhs.load_op(ctx);
-                let rhs = rhs.load_op(ctx);
+                let (lhs, rhs) = if swap { (rhs, lhs) } else { (lhs, rhs) };
 
                 let name = match dst {
                     IRVal::Var { name, .. } => name,
@@ -192,7 +187,13 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 ctx.register::<String>(name);
 
-                Ok(vec![lhs, rhs, op])
+                let mut ops = vec![lhs.load_op(ctx), rhs.load_op(ctx), op];
+
+                if negate {
+                    ops.push(Op::Not);
+                }
+
+                Ok(ops)
             }
 
             IRInstr::Ret { val, ret_ty: _ } => match val {
@@ -241,19 +242,84 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(ops)
             }
 
-            IRInstr::ZeroExtend { src, dst, src_ty, dst_ty }
-            | IRInstr::SignExtend { src, dst, src_ty, dst_ty }
-            | IRInstr::Truncate { src, dst, src_ty, dst_ty }
-            | IRInstr::FloatToInt { src, src_ty, dst, dst_ty }
-            | IRInstr::IntToFloat { src, src_ty, dst, dst_ty }
-            | IRInstr::DoubleToInt { src, dst, src_ty, dst_ty }
-            | IRInstr::IntToDouble { src, dst, src_ty, dst_ty }
-            | IRInstr::FloatToUInt { src, src_ty, dst, dst_ty }
-            | IRInstr::UIntToFloat { src, src_ty, dst, dst_ty }
-            | IRInstr::DoubleToUInt { src, src_ty, dst, dst_ty }
-            | IRInstr::UIntToDouble { src, src_ty, dst, dst_ty }
-            | IRInstr::DoubleToFloat { src, src_ty, dst, dst_ty }
-            | IRInstr::FloatToDouble { src, src_ty, dst, dst_ty } => {
+            IRInstr::ZeroExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            }
+            | IRInstr::SignExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            }
+            | IRInstr::Truncate {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            }
+            | IRInstr::FloatToInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::IntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::DoubleToInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            }
+            | IRInstr::IntToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            }
+            | IRInstr::FloatToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::UIntToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::DoubleToUInt {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::UIntToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::DoubleToFloat {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            }
+            | IRInstr::FloatToDouble {
+                src,
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
                 let src = src.load_op(ctx);
 
                 let IRVal::Var { name, .. } = dst else {

@@ -108,12 +108,9 @@ impl Vm {
                 Op::Const(konst) => self.handle_op_const(konst),
                 Op::Add => self.handle_op_add(),
                 Op::Sub => self.handle_op_sub(),
-                Op::L => self.handle_op_l(),
-                Op::G => self.handle_op_g(),
+                Op::Lt => self.handle_op_lt(),
                 Op::Le => self.handle_op_le(),
-                Op::Ge => self.handle_op_ge(),
-                Op::E => self.handle_op_e(),
-                Op::Ne => self.handle_op_ne(),
+                Op::Eq => self.handle_op_eq(),
                 Op::Neg => self.handle_op_neg(),
                 Op::Not | Op::BitwiseNot => self.handle_op_not(),
                 Op::Print => self.handle_op_print()?,
@@ -326,28 +323,16 @@ impl Vm {
         binop!(self.stack, -);
     }
 
-    fn handle_op_l(&mut self) {
+    fn handle_op_lt(&mut self) {
         binop!(self.stack, <);
-    }
-
-    fn handle_op_g(&mut self) {
-        binop!(self.stack, >);
     }
 
     fn handle_op_le(&mut self) {
         binop!(self.stack, <=);
     }
 
-    fn handle_op_ge(&mut self) {
-        binop!(self.stack, >=);
-    }
-
-    fn handle_op_e(&mut self) {
+    fn handle_op_eq(&mut self) {
         binop!(self.stack, ==);
-    }
-
-    fn handle_op_ne(&mut self) {
-        binop!(self.stack, !=);
     }
 
     fn handle_op_neg(&mut self) {
