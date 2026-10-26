@@ -28,7 +28,6 @@ impl Default for Typechecker {
 
 pub trait Typecheck {
     type Output;
-
     fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError>;
 }
 

@@ -24,7 +24,6 @@ impl Default for LabelCollector {
 
 pub trait LabelCollect {
     type Output;
-
     fn label_collect(
         self,
         collector: &mut LabelCollector,

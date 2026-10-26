@@ -37,7 +37,6 @@ impl Default for LoopLabeler {
 
 pub trait LoopLabel {
     type Output;
-
     fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError>;
 }
 

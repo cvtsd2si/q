@@ -199,7 +199,6 @@ impl Default for RegAllocator {
 
 pub trait Regalloc {
     type Output;
-
     fn regalloc(self) -> Self::Output;
 }
 
