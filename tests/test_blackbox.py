@@ -22,17 +22,26 @@ TEST_CASES = {
     },
 }
 
-
+@pytest.mark.parametrize(
+    "jit",
+    [False, True],
+    ids=["vm", "jit"],
+)
 @pytest.mark.parametrize(
     "program",
     sorted(TESTS_DIR.glob("*.q")),
     ids=lambda p: p.stem,
 )
-def test_program(program: Path):
+def test_program(program: Path, jit: bool):
+    cmd = [str(Q_BIN), str(program)]
+
+    if jit:
+        cmd.append("--jit")
+
     expected = TEST_CASES[program.name]
 
     result = subprocess.run(
-        [str(Q_BIN), str(program)],
+        cmd,
         capture_output=True,
         text=True,
         timeout=10,

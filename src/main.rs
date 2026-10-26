@@ -80,7 +80,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut vm = Vm::new(bytecode, ir)?;
+    let mut vm = Vm::new(bytecode, ir, opts.jit)?;
     let r = vm.exec()?;
 
     Ok(r.payload as i32)
@@ -110,4 +110,7 @@ struct Opt {
 
     #[structopt(name = "bytecode", long)]
     bytecode: bool,
+
+    #[structopt(name = "jit", long)]
+    jit: bool,
 }

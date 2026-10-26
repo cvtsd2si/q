@@ -34,19 +34,22 @@ pub struct Vm {
     ir: IRProg,
     func: usize,
     pc: usize,
-    hotness: Vec<Vec<u32>>,
-    jit_code: Vec<Vec<Option<JitBlock>>>,
-    native_entrypoints: Box<[usize]>,
     bytecode: BytecodeProg,
     fp: usize,
-    shared_entry: JitTrampoline,
+    jit: Option<JitState>,
 }
 
 impl Vm {
-    pub fn new(bytecode: BytecodeProg, ir: IRProg) -> Result<Self, VmError> {
+    pub fn new(bytecode: BytecodeProg, ir: IRProg, enable_jit: bool) -> Result<Self, VmError> {
         let entrypoint = match bytecode.funcs.iter().position(|f| f.name == "main") {
             Some(entrypoint) => entrypoint,
             None => panic!("no main fn"),
+        };
+
+        let jit = if enable_jit {
+            Some(JitState::new(&bytecode)?)
+        } else {
+            None
         };
 
         Ok(Vm {
@@ -55,23 +58,9 @@ impl Vm {
             ir,
             func: entrypoint,
             pc: 0,
-            hotness: bytecode
-                .funcs
-                .iter()
-                .map(|f| vec![0; f.body.len()])
-                .collect(),
-            jit_code: bytecode
-                .funcs
-                .iter()
-                .map(|f| std::iter::repeat_with(|| None).take(f.body.len()).collect())
-                .collect(),
-            native_entrypoints: vec![0usize; bytecode.funcs.len()].into_boxed_slice(),
-            bytecode,
             fp: 0,
-            shared_entry: JitCompiler::new().compile_entry().map_err(|e| VmError {
-                msg: e.msg,
-                code: RtResult::Internal as u32,
-            })?, // FIXME: this disallows full interpretation
+            jit,
+            bytecode,
         })
     }
 
@@ -88,10 +77,8 @@ impl Vm {
     ///  without continuing execution of the suspended jitted caller.
     pub fn exec_until(&mut self, stop_depth: Option<usize>) -> Result<Value, VmError> {
         loop {
-            /* Have we jitted this instruction before?  */
-            if self.jit_code[self.func][self.pc].is_some() {
-                /* Yes, we have.  Pull it from the cache.  */
-                match self.run_jitted() {
+            if let Some(exit) = self.maybe_run_jit() {
+                match exit {
                     JitExit::Continue(pc) => {
                         self.pc = pc;
                         continue;
@@ -112,24 +99,6 @@ impl Vm {
                         });
                     }
                 }
-            }
-
-            /* Mark this instruction a little hotter.  */
-            self.hotness[self.func][self.pc] += 1;
-
-            /* We have not jitted this instruction before.
-             * If its hotness is above the `JIT_THRESHOLD`,
-             * compile it into native code, cache it, and loop again.  */
-            if self.hotness[self.func][self.pc] == JIT_THRESHOLD
-                && let Some(block) = self.compile_region(self.func, self.pc)
-            {
-                if self.pc == 0 {
-                    self.native_entrypoints[self.func] = block.code.as_ptr() as usize;
-                }
-
-                self.jit_code[self.func][self.pc] = Some(block);
-
-                continue;
             }
 
             /* Normal interpreter path.  */
@@ -193,6 +162,47 @@ impl Vm {
 
             self.pc += 1;
         }
+    }
+
+    fn maybe_run_jit(&mut self) -> Option<JitExit> {
+        let func = self.func;
+        let pc = self.pc;
+
+        /* Return `None` if jit is disabled.  */
+        let jit = self.jit.as_ref()?;
+
+        /* Have we jitted this instruction before?  */
+        if jit.code[func][pc].is_some() {
+            /* Yes, we have.  */
+            return Some(self.run_jitted());
+        }
+
+        let jit = self.jit.as_mut().unwrap();
+        let hotness = &mut jit.hotness[func][pc];
+
+        /* Mark this instruction a little hotter  */
+        *hotness = hotness.saturating_add(1);
+
+        /* Is it hot enough?  */
+        if *hotness != JIT_THRESHOLD {
+            /* No, it is not.  */
+            return None;
+        }
+
+        /* Try compiling this region.  */
+        let block = self.compile_region(func, pc)?;
+
+        let jit = self.jit.as_mut().unwrap();
+
+        /* Cache compiled code.  */
+        if pc == 0 {
+            jit.native_entrypoints[func] = block.code.as_ptr() as usize;
+        }
+
+        jit.code[func][pc] = Some(block);
+
+        /* Exec the freshly compiled region immediately.  */
+        Some(self.run_jitted())
     }
 
     fn finish_ret(&mut self, v: Value, stop_depth: Option<usize>) -> Option<Value> {
@@ -278,9 +288,11 @@ impl Vm {
     }
 
     fn run_jitted(&mut self) -> JitExit {
-        let entry = self.shared_entry.entry;
+        let jit = self.jit.as_ref().unwrap();
 
-        let block = self.jit_code[self.func][self.pc].as_ref().unwrap();
+        let entry = jit.shared_entry.entry;
+
+        let block = jit.code[self.func][self.pc].as_ref().unwrap();
 
         let body = block.code.as_ptr();
         let end_pc = block.end_pc;
@@ -291,7 +303,7 @@ impl Vm {
         // );
 
         let args = self.stack[self.fp..].as_ptr();
-        let native_entrypoints = self.native_entrypoints.as_ptr();
+        let native_entrypoints = jit.native_entrypoints.as_ptr();
         let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc, native_entrypoints) };
 
         // eprintln!("[JIT] native returned {:?}", r);
@@ -529,6 +541,40 @@ impl Vm {
             }
             None => Some(v),
         }
+    }
+}
+
+struct JitState {
+    hotness: Vec<Vec<u32>>,
+    code: Vec<Vec<Option<JitBlock>>>,
+    native_entrypoints: Box<[usize]>,
+    shared_entry: JitTrampoline,
+}
+
+impl JitState {
+    fn new(bytecode: &BytecodeProg) -> Result<Self, VmError> {
+        let shared_entry = JitCompiler::new().compile_entry().map_err(|e| VmError {
+            msg: e.msg,
+            code: RtResult::Internal as u32,
+        })?;
+
+        Ok(Self {
+            hotness: bytecode
+                .funcs
+                .iter()
+                .map(|f| vec![0; f.body.len()])
+                .collect(),
+
+            code: bytecode
+                .funcs
+                .iter()
+                .map(|f| std::iter::repeat_with(|| None).take(f.body.len()).collect())
+                .collect(),
+
+            native_entrypoints: vec![0usize; bytecode.funcs.len()].into_boxed_slice(),
+
+            shared_entry,
+        })
     }
 }
 
