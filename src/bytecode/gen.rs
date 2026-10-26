@@ -27,19 +27,7 @@ pub enum Op {
     Neg,
     Not,
     BitwiseNot,
-    Trunc { src_ty: Type, dst_ty: Type },
-    Sx { src_ty: Type, dst_ty: Type },
-    Zx { src_ty: Type, dst_ty: Type },
-    UIntToDouble { src_ty: Type },
-    IntToDouble { src_ty: Type },
-    DoubleToInt { dst_ty: Type },
-    DoubleToUInt { dst_ty: Type },
-    DoubleToFloat,
-    FloatToDouble,
-    IntToFloat { src_ty: Type },
-    UIntToFloat { src_ty: Type },
-    FloatToInt { dst_ty: Type },
-    FloatToUInt { dst_ty: Type },
+    Cvt { src_ty: Type, dst_ty: Type},
 }
 
 pub type Bytecode = Vec<Op>;
@@ -253,12 +241,19 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(ops)
             }
 
-            IRInstr::Truncate {
-                src,
-                dst,
-                src_ty,
-                dst_ty,
-            } => {
+            IRInstr::ZeroExtend { src, dst, src_ty, dst_ty }
+            | IRInstr::SignExtend { src, dst, src_ty, dst_ty }
+            | IRInstr::Truncate { src, dst, src_ty, dst_ty }
+            | IRInstr::FloatToInt { src, src_ty, dst, dst_ty }
+            | IRInstr::IntToFloat { src, src_ty, dst, dst_ty }
+            | IRInstr::DoubleToInt { src, dst, src_ty, dst_ty }
+            | IRInstr::IntToDouble { src, dst, src_ty, dst_ty }
+            | IRInstr::FloatToUInt { src, src_ty, dst, dst_ty }
+            | IRInstr::UIntToFloat { src, src_ty, dst, dst_ty }
+            | IRInstr::DoubleToUInt { src, src_ty, dst, dst_ty }
+            | IRInstr::UIntToDouble { src, src_ty, dst, dst_ty }
+            | IRInstr::DoubleToFloat { src, src_ty, dst, dst_ty }
+            | IRInstr::FloatToDouble { src, src_ty, dst, dst_ty } => {
                 let src = src.load_op(ctx);
 
                 let IRVal::Var { name, .. } = dst else {
@@ -269,90 +264,11 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 Ok(vec![
                     src,
-                    Op::Trunc {
+                    Op::Cvt {
                         src_ty: *src_ty,
                         dst_ty: *dst_ty,
                     },
                 ])
-            }
-            IRInstr::SignExtend {
-                src,
-                dst,
-                src_ty,
-                dst_ty,
-            } => {
-                let src = src.load_op(ctx);
-
-                let IRVal::Var { name, .. } = dst else {
-                    unreachable!();
-                };
-
-                ctx.register::<String>(name);
-
-                Ok(vec![
-                    src,
-                    Op::Sx {
-                        src_ty: *src_ty,
-                        dst_ty: *dst_ty,
-                    },
-                ])
-            }
-
-            IRInstr::ZeroExtend {
-                src,
-                dst,
-                src_ty,
-                dst_ty,
-            } => {
-                let src = src.load_op(ctx);
-
-                let IRVal::Var { name, .. } = dst else {
-                    unreachable!();
-                };
-
-                ctx.register::<String>(name);
-
-                Ok(vec![
-                    src,
-                    Op::Zx {
-                        src_ty: *src_ty,
-                        dst_ty: *dst_ty,
-                    },
-                ])
-            }
-
-            IRInstr::DoubleToInt { src, dst, .. }
-            | IRInstr::DoubleToUInt { src, dst, .. }
-            | IRInstr::IntToDouble { src, dst, .. }
-            | IRInstr::UIntToDouble { src, dst, .. }
-            | IRInstr::DoubleToFloat { src, dst, .. }
-            | IRInstr::FloatToDouble { src, dst, .. }
-            | IRInstr::FloatToInt { src, dst, .. }
-            | IRInstr::FloatToUInt { src, dst, .. }
-            | IRInstr::IntToFloat { src, dst, .. }
-            | IRInstr::UIntToFloat { src, dst, .. } => {
-                let load = src.load_op(ctx);
-                let op = match self {
-                    IRInstr::DoubleToInt { dst_ty, .. } => Op::DoubleToInt { dst_ty: *dst_ty },
-                    IRInstr::DoubleToUInt { dst_ty, .. } => Op::DoubleToUInt { dst_ty: *dst_ty },
-                    IRInstr::IntToDouble { src_ty, .. } => Op::IntToDouble { src_ty: *src_ty },
-                    IRInstr::UIntToDouble { src_ty, .. } => Op::UIntToDouble { src_ty: *src_ty },
-                    IRInstr::DoubleToFloat { .. } => Op::DoubleToFloat,
-                    IRInstr::FloatToDouble { .. } => Op::FloatToDouble,
-                    IRInstr::FloatToInt { dst_ty, .. } => Op::FloatToInt { dst_ty: *dst_ty },
-                    IRInstr::FloatToUInt { dst_ty, .. } => Op::FloatToUInt { dst_ty: *dst_ty },
-                    IRInstr::IntToFloat { src_ty, .. } => Op::IntToFloat { src_ty: *src_ty },
-                    IRInstr::UIntToFloat { src_ty, .. } => Op::UIntToFloat { src_ty: *src_ty },
-                    _ => unreachable!(),
-                };
-
-                let IRVal::Var { name, .. } = dst else {
-                    unreachable!();
-                };
-
-                ctx.register::<String>(name);
-
-                Ok(vec![load, op])
             }
         }
     }

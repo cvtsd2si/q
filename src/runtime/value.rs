@@ -10,33 +10,67 @@ pub struct Value {
 }
 
 impl Value {
-    pub fn cast_int(self, to_ty: Type) -> Self {
-        /* Interpret the original payload according to its source type.  */
-        let value = match self.tag {
-            ValueTag::Int8 => (self.payload as i8 as i64) as u64,
-            ValueTag::UInt8 => self.payload as u8 as u64,
-            ValueTag::Int16 => (self.payload as i16 as i64) as u64,
-            ValueTag::UInt16 => self.payload as u16 as u64,
-            ValueTag::Int32 => (self.payload as i32 as i64) as u64,
-            ValueTag::UInt32 => self.payload as u32 as u64,
-            ValueTag::Int64 | ValueTag::UInt64 => self.payload,
-            _ => unreachable!("Cannot cast {:?} as integer", self.tag),
+    pub fn cast(self, from: Type, to: Type) -> Self {
+        enum Numeric {
+            Signed(i64),
+            Unsigned(u64),
+            Float32(f32),
+            Float64(f64),
+        }
+
+        /* Decode the src val.  */
+        let value = match from {
+            Type::Int8 => Numeric::Signed(self.payload as i8 as i64),
+            Type::Int16 => Numeric::Signed(self.payload as i16 as i64),
+            Type::Int32 => Numeric::Signed(self.payload as i32 as i64),
+            Type::Int64 => Numeric::Signed(self.payload as i64),
+
+            Type::UInt8 => Numeric::Unsigned(self.payload as u8 as u64),
+            Type::UInt16 => Numeric::Unsigned(self.payload as u16 as u64),
+            Type::UInt32 => Numeric::Unsigned(self.payload as u32 as u64),
+            Type::UInt64 => Numeric::Unsigned(self.payload),
+
+            Type::Float32 => {
+                Numeric::Float32(f32::from_bits(self.payload as u32))
+            }
+            Type::Float64 => {
+                Numeric::Float64(f64::from_bits(self.payload))
+            }
+
+            _ => unreachable!("Invalid source type: {from:?}"),
         };
 
-        /* Convert to the destination integer type.  */
-        let payload = match to_ty {
-            Type::Int8 => (value as i8 as i64) as u64,
-            Type::UInt8 => value as u8 as u64,
-            Type::Int16 => (value as i16 as i64) as u64,
-            Type::UInt16 => value as u16 as u64,
-            Type::Int32 => (value as i32 as i64) as u64,
-            Type::UInt32 => value as u32 as u64,
-            Type::Int64 | Type::UInt64 => value,
-            _ => unreachable!("Expected integer destination type: {to_ty:?}"),
+        macro_rules! cast_as {
+            ($ty:ty) => {
+                match value {
+                    Numeric::Signed(n) => n as $ty,
+                    Numeric::Unsigned(n) => n as $ty,
+                    Numeric::Float32(n) => n as $ty,
+                    Numeric::Float64(n) => n as $ty,
+                }
+            };
+        }
+
+        /* Encode the dst val.  */
+        let payload = match to {
+            Type::Int8 => cast_as!(i8) as i64 as u64,
+            Type::Int16 => cast_as!(i16) as i64 as u64,
+            Type::Int32 => cast_as!(i32) as i64 as u64,
+            Type::Int64 => cast_as!(i64) as u64,
+
+            Type::UInt8 => cast_as!(u8) as u64,
+            Type::UInt16 => cast_as!(u16) as u64,
+            Type::UInt32 => cast_as!(u32) as u64,
+            Type::UInt64 => cast_as!(u64),
+
+            Type::Float32 => cast_as!(f32).to_bits() as u64,
+            Type::Float64 => cast_as!(f64).to_bits(),
+
+            _ => unreachable!("Invalid destination type: {to:?}"),
         };
 
         Self {
-            tag: ValueTag::from(to_ty),
+            tag: ValueTag::from(to),
             payload,
         }
     }
