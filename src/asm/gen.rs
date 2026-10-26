@@ -33,31 +33,6 @@ pub struct AsmStaticConst {
     pub alignment: usize,
 }
 
-impl CodegenContext {
-    pub fn intern_float(&mut self, literal: Literal) -> String {
-        let (key, ty, init) = match literal {
-            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
-            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
-            _ => unreachable!(),
-        };
-
-        if let Some(name) = self.float_pool.get(&key) {
-            return name.clone();
-        }
-
-        let name = format!(".LC{}", mktmp());
-
-        self.static_consts.push(IRStaticConst {
-            name: name.clone(),
-            ty,
-            init,
-            alignment: ty.alignment(),
-        });
-
-        name
-    }
-}
-
 #[derive(Debug, Clone)]
 pub enum AsmInstr {
     Mov {
@@ -174,18 +149,6 @@ pub enum AsmType {
     Double,
 }
 
-impl From<usize> for AsmType {
-    fn from(value: usize) -> Self {
-        match value {
-            1 => Self::Byte,
-            2 => Self::Word,
-            4 => Self::Long,
-            8 => Self::Quad,
-            _ => unreachable!(),
-        }
-    }
-}
-
 impl AsmType {
     pub fn suffix(self) -> &'static str {
         match self {
@@ -204,6 +167,18 @@ impl AsmType {
             AsmType::Word => 2,
             AsmType::Long | AsmType::Float => 4,
             AsmType::Quad | AsmType::Double => 8,
+        }
+    }
+}
+
+impl From<usize> for AsmType {
+    fn from(value: usize) -> Self {
+        match value {
+            1 => Self::Byte,
+            2 => Self::Word,
+            4 => Self::Long,
+            8 => Self::Quad,
+            _ => unreachable!(),
         }
     }
 }
@@ -499,7 +474,7 @@ impl IRInstr {
                 AsmInstr::Mov {
                     src: src.codegen(ctx)?,
                     dst: dst.codegen(ctx)?,
-                    asm_ty: AsmType::from(*src_ty),
+                    asm_ty: (*src_ty).into(),
                 },
                 AsmInstr::Newline,
             ]),
@@ -514,13 +489,13 @@ impl IRInstr {
                             .transpose()?
                             .unwrap_or(AsmOp::Imm(0)),
                         dst: AsmOp::Reg(AsmReg::Ax),
-                        asm_ty: ret_ty.map(|ty| AsmType::from(ty)).unwrap_or(AsmType::Quad),
+                        asm_ty: ret_ty.map(|ty| ty.into()).unwrap_or(AsmType::Quad),
                     },
                     AsmInstr::Newline,
                 ];
 
                 if let Some(ty) = ret_ty {
-                    let src_ty = AsmType::from(*ty);
+                    let src_ty = (*ty).into();
 
                     match (src_ty, ty.is_signed()) {
                         (AsmType::Float | AsmType::Double, _) => {
@@ -632,13 +607,13 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: dst.codegen(ctx)?,
-                        asm_ty: AsmType::from(*operand_ty),
+                        asm_ty: (*operand_ty).into(),
                     },
                     AsmInstr::Bin {
                         kind,
                         lhs: rhs.codegen(ctx)?,
                         rhs: dst.codegen(ctx)?,
-                        asm_ty: AsmType::from(*operand_ty),
+                        asm_ty: (*operand_ty).into(),
                     },
                     AsmInstr::Newline,
                 ];
@@ -676,12 +651,12 @@ impl IRInstr {
                     AsmInstr::Cmp {
                         src: rhs.codegen(ctx)?,
                         dst: lhs.codegen(ctx)?,
-                        asm_ty: AsmType::from(*operand_ty),
+                        asm_ty: (*operand_ty).into(),
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
                         dst: dst.codegen(ctx)?,
-                        asm_ty: AsmType::from(*operand_ty),
+                        asm_ty: (*operand_ty).into(),
                     },
                     AsmInstr::Setcc {
                         cc,
@@ -709,7 +684,7 @@ impl IRInstr {
                 instrs.extend([AsmInstr::Mov {
                     src,
                     dst: dst.clone(),
-                    asm_ty: AsmType::from(*operand_ty),
+                    asm_ty: (*operand_ty).into(),
                 }]);
 
                 match kind {
@@ -717,7 +692,7 @@ impl IRInstr {
                         instrs.push(AsmInstr::Unary {
                             kind: AsmInstrUnaryKind::Neg,
                             dst: dst.clone(),
-                            asm_ty: AsmType::from(*operand_ty),
+                            asm_ty: (*operand_ty).into(),
                         });
                         instrs.push(AsmInstr::Newline);
                     }
@@ -729,7 +704,7 @@ impl IRInstr {
                             AsmInstr::Cmp {
                                 src: AsmOp::Imm(0),
                                 dst: dst.clone(),
-                                asm_ty: AsmType::from(*operand_ty),
+                                asm_ty: (*operand_ty).into(),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment(
@@ -759,7 +734,7 @@ impl IRInstr {
                         instrs.push(AsmInstr::Unary {
                             kind: AsmInstrUnaryKind::Not,
                             dst: dst.clone(),
-                            asm_ty: AsmType::from(*operand_ty),
+                            asm_ty: (*operand_ty).into(),
                         });
                         instrs.push(AsmInstr::Newline);
                     }
@@ -860,13 +835,13 @@ impl IRInstr {
                     match (ty.size_of(), ty.is_signed()) {
                         (1 | 2 | 4, false) => AsmInstr::Movzx {
                             src: val,
-                            src_ty: AsmType::from(*ty),
+                            src_ty: (*ty).into(),
                             dst: AsmOp::Reg(AsmReg::Dx),
                             dst_ty: AsmType::Quad,
                         },
                         (1 | 2 | 4, true) => AsmInstr::Movsx {
                             src: val,
-                            src_ty: AsmType::from(*ty),
+                            src_ty: (*ty).into(),
                             dst: AsmOp::Reg(AsmReg::Dx),
                             dst_ty: AsmType::Quad,
                         },
@@ -1453,7 +1428,7 @@ impl IRInstr {
                 AsmInstr::Mov {
                     src: src.codegen(ctx)?,
                     dst: dst.codegen(ctx)?,
-                    asm_ty: AsmType::from(*dst_ty),
+                    asm_ty: (*dst_ty).into(),
                 },
                 AsmInstr::Newline,
             ]),
@@ -1467,9 +1442,9 @@ impl IRInstr {
                 AsmInstr::Comment(format!("Zero-extending {src_ty:?} into {dst_ty:?}")),
                 AsmInstr::Movzx {
                     src: src.codegen(ctx)?,
-                    src_ty: AsmType::from(*src_ty),
+                    src_ty: (*src_ty).into(),
                     dst: dst.codegen(ctx)?,
-                    dst_ty: AsmType::from(*dst_ty),
+                    dst_ty: (*dst_ty).into(),
                 },
                 AsmInstr::Newline,
             ]),
@@ -1483,9 +1458,9 @@ impl IRInstr {
                 AsmInstr::Comment(format!("Sign-extending {src_ty:?} into {dst_ty:?}")),
                 AsmInstr::Movsx {
                     src: src.codegen(ctx)?,
-                    src_ty: AsmType::from(*src_ty),
+                    src_ty: (*src_ty).into(),
                     dst: dst.codegen(ctx)?,
-                    dst_ty: AsmType::from(*dst_ty),
+                    dst_ty: (*dst_ty).into(),
                 },
                 AsmInstr::Newline,
             ]),
@@ -1496,7 +1471,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*src_ty);
+                let asm_ty = (*src_ty).into();
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
                         AsmInstr::Mov {
@@ -1627,7 +1602,7 @@ impl IRInstr {
                 src_ty,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*dst_ty);
+                let asm_ty = (*dst_ty).into();
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
                         AsmInstr::Cvttsd2si {
@@ -1656,7 +1631,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*dst_ty);
+                let asm_ty = (*dst_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
@@ -1755,7 +1730,7 @@ impl IRInstr {
                 src_ty,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*src_ty);
+                let asm_ty = (*src_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
@@ -1805,7 +1780,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*dst_ty);
+                let asm_ty = (*dst_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
@@ -1835,7 +1810,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*dst_ty);
+                let asm_ty = (*dst_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
@@ -1934,7 +1909,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*src_ty);
+                let asm_ty = (*src_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
@@ -1964,7 +1939,7 @@ impl IRInstr {
                 dst,
                 dst_ty,
             } => {
-                let asm_ty = AsmType::from(*src_ty);
+                let asm_ty = (*src_ty).into();
 
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![

@@ -29,6 +29,29 @@ impl CodegenContext {
             float_pool: HashMap::new(),
         }
     }
+
+    pub fn intern_float(&mut self, literal: Literal) -> String {
+        let (key, ty, init) = match literal {
+            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
+            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
+            _ => unreachable!(),
+        };
+
+        if let Some(name) = self.float_pool.get(&key) {
+            return name.clone();
+        }
+
+        let name = format!(".LC{}", mktmp());
+
+        self.static_consts.push(IRStaticConst {
+            name: name.clone(),
+            ty,
+            init,
+            alignment: ty.alignment(),
+        });
+
+        name
+    }
 }
 
 impl Ctx for CodegenContext {
