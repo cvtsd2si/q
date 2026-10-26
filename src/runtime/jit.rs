@@ -84,7 +84,7 @@ impl JitCompiler {
 
         /* Compiled fn emission.  */
         let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
-            msg: "jit codegen failed".to_string(),
+            msg: "jit codegen failed".into(),
         })?;
         let mut asm_func = asm_func.regalloc().fixup();
 
@@ -108,7 +108,7 @@ impl JitCompiler {
         }
 
         asm_func.emit(&mut asm_txt).map_err(|_e| JitError {
-            msg: "jit code emission failed".to_string(),
+            msg: "jit code emission failed".into(),
         })?;
 
         /* Runtime error handler emission.  */
@@ -119,7 +119,7 @@ impl JitCompiler {
         }
         .emit(&mut asm_txt)
         .map_err(|_| JitError {
-            msg: "jit entry emission failed".to_string(),
+            msg: "jit entry emission failed".into(),
         })?;
 
         for konst in &ctx.static_consts {
@@ -156,7 +156,7 @@ impl JitCompiler {
             );
 
             return Err(JitError {
-                msg: "JIT asm failed".to_string(),
+                msg: "JIT asm failed".into(),
             });
         }
 
@@ -171,7 +171,7 @@ impl JitCompiler {
 
     pub fn compile_entry(&mut self) -> Result<JitTrampoline, JitError> {
         let entry = AsmFunc {
-            name: "jit_shared_entry".to_string(),
+            name: "jit_shared_entry".into(),
             body: self.mk_entry(),
             space: 0,
         };
@@ -179,7 +179,7 @@ impl JitCompiler {
         let mut asm_txt = String::new();
 
         entry.emit(&mut asm_txt).map_err(|_| JitError {
-            msg: "jit entry emission failed".to_string(),
+            msg: "jit entry emission failed".into(),
         })?;
 
         let code = self.asm_exe(&asm_txt)?;
@@ -211,10 +211,10 @@ impl JitCompiler {
          * %rdx = *const Value (args)
          */
         body.push(AsmInstr::Comment(
-            "As a callee (from Rust Vm's perspective), preserve callee-saved".to_string(),
+            "As a callee (from Rust Vm's perspective), preserve callee-saved".into(),
         ));
         body.push(AsmInstr::Comment(
-            "registers used in the internal ABI.".to_string(),
+            "registers used in the internal ABI.".into(),
         ));
         body.extend([
             AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
@@ -226,14 +226,14 @@ impl JitCompiler {
         body.extend([
             AsmInstr::Newline,
             AsmInstr::Comment(
-                "As a caller (from the perspective of the natively compiled function)".to_string(),
+                "As a caller (from the perspective of the natively compiled function)".into(),
             ),
             AsmInstr::Comment(
-                "preserve caller-saved registers which must survive the call to the".to_string(),
+                "preserve caller-saved registers which must survive the call to the".into(),
             ),
-            AsmInstr::Comment("aforementioned natively compiled function.".to_string()),
+            AsmInstr::Comment("aforementioned natively compiled function.".into()),
             AsmInstr::Newline,
-            AsmInstr::Comment("%r9 contains `end_pc`.".to_string()),
+            AsmInstr::Comment("%r9 contains `end_pc`.".into()),
             AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
         ]);
 
@@ -241,10 +241,10 @@ impl JitCompiler {
 
         /* FIXME: maintain 16-byte stack alignment before calls.  */
         body.push(AsmInstr::Comment(
-            "After the five pushes, the stack is misaligned by 8,".to_string(),
+            "After the five pushes, the stack is misaligned by 8,".into(),
         ));
         body.push(AsmInstr::Comment(
-            "so its 16-byte alignment needs restored.".to_string(),
+            "so its 16-byte alignment needs restored.".into(),
         ));
         body.push(AsmInstr::Bin {
             kind: AsmInstrBinKind::Sub,
@@ -256,35 +256,35 @@ impl JitCompiler {
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("%rdi = *mut JitResult".to_string()),
+            AsmInstr::Comment("%rdi = *mut JitResult".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Di),
                 dst: AsmOp::Reg(AsmReg::R12),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rsi = *mut Vm".to_string()),
+            AsmInstr::Comment("%rsi = *mut Vm".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Si),
                 dst: AsmOp::Reg(AsmReg::R13),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rsi = *const Rt".to_string()),
+            AsmInstr::Comment("%rsi = *const Rt".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Reg(AsmReg::R14),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rcx = *const Value (args)".to_string()),
+            AsmInstr::Comment("%rcx = *const Value (args)".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Reg(AsmReg::Di),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".to_string()),
+            AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".into()),
             AsmInstr::Mov {
                 src: AsmOp::Stack(16),
                 dst: AsmOp::Reg(AsmReg::R15),
@@ -295,36 +295,36 @@ impl JitCompiler {
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("%r8 = *const u8 (compiled fn addr)".to_string()),
+            AsmInstr::Comment("%r8 = *const u8 (compiled fn addr)".into()),
             AsmInstr::CallIndirect { target: AsmReg::R8 },
         ]);
 
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("According to the internal ABI, after the call instr".to_string()),
-            AsmInstr::Comment("%rax, %rcx, %rdx, will have contained the result,".to_string()),
-            AsmInstr::Comment("while, remember, %r12 contains *mut JitResult.".to_string()),
+            AsmInstr::Comment("According to the internal ABI, after the call instr".into()),
+            AsmInstr::Comment("%rax, %rcx, %rdx, will have contained the result,".into()),
+            AsmInstr::Comment("while, remember, %r12 contains *mut JitResult.".into()),
         ]);
 
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("%rcx = JIT_CONTINUE | JIT_RET | JIT_ERROR".to_string()),
+            AsmInstr::Comment("%rcx = JIT_CONTINUE | JIT_RET | JIT_ERROR".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Cx),
                 dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("8(%rsp) = `next_pc`".to_string()),
+            AsmInstr::Comment("8(%rsp) = `next_pc`".into()),
             AsmInstr::Mov {
                 src: AsmOp::Mem(AsmReg::Sp, 8),
                 dst: AsmOp::Reg(AsmReg::R10),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%r10 = `next_pc`".to_string()),
+            AsmInstr::Comment("%r10 = `next_pc`".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R10),
                 dst: AsmOp::Mem(
@@ -334,7 +334,7 @@ impl JitCompiler {
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rdx = ValueTag".to_string()),
+            AsmInstr::Comment("%rdx = ValueTag".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Dx),
                 dst: AsmOp::Mem(
@@ -345,7 +345,7 @@ impl JitCompiler {
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rax = payload | err code".to_string()),
+            AsmInstr::Comment("%rax = payload | err code".into()),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::Ax),
                 dst: AsmOp::Mem(
@@ -357,7 +357,7 @@ impl JitCompiler {
             },
             AsmInstr::Newline,
             AsmInstr::Comment(
-                "Return the JitResult ptr according to the SystemV AMD64 ABI.".to_string(),
+                "Return the JitResult ptr according to the SystemV AMD64 ABI.".into(),
             ),
             AsmInstr::Mov {
                 src: AsmOp::Reg(AsmReg::R12),
@@ -369,7 +369,7 @@ impl JitCompiler {
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("Release the alignment padding.".to_string()),
+            AsmInstr::Comment("Release the alignment padding.".into()),
             AsmInstr::Bin {
                 kind: AsmInstrBinKind::Add,
                 lhs: AsmOp::Imm(8),
@@ -381,7 +381,7 @@ impl JitCompiler {
 
         /*   */
         body.extend([
-            AsmInstr::Comment("Restore registers and return to VM.".to_string()),
+            AsmInstr::Comment("Restore registers and return to VM.".into()),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R9)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R15)),
             AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
@@ -446,7 +446,7 @@ impl ExecutableMem {
     pub fn new(bytes: &[u8]) -> Result<Self, JitError> {
         if bytes.is_empty() {
             return Err(JitError {
-                msg: "empty machine code".to_string(),
+                msg: "empty machine code".into(),
             });
         }
 

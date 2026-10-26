@@ -981,13 +981,13 @@ impl IRInstr {
 
                 let mut body = vec![
                     AsmInstr::Comment(format!("Call `{target}`.")),
-                    AsmInstr::Comment("Preserve caller saved registers.".to_string()),
+                    AsmInstr::Comment("Preserve caller saved registers.".into()),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
                     AsmInstr::Newline,
                     /* FIXME: don't hardcode this */
-                    AsmInstr::Comment("Fix alignment after the three pushes.".to_string()),
+                    AsmInstr::Comment("Fix alignment after the three pushes.".into()),
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Sub,
                         lhs: AsmOp::Imm(8),
@@ -2116,7 +2116,7 @@ pub fn insert_prologue<T>(body: &mut T)
 where
     T: AsmSink,
 {
-    body.sink(AsmInstr::Comment("Establish a stack frame".to_string()));
+    body.sink(AsmInstr::Comment("Establish a stack frame".into()));
     body.sink(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
@@ -2124,7 +2124,7 @@ where
         asm_ty: AsmType::Quad,
     });
     body.sink(AsmInstr::Newline);
-    body.sink(AsmInstr::Comment("Reserve the stack space.".to_string()));
+    body.sink(AsmInstr::Comment("Reserve the stack space.".into()));
     body.sink(AsmInstr::Bin {
         kind: AsmInstrBinKind::Sub,
         lhs: AsmOp::Imm(0),
@@ -2138,9 +2138,7 @@ pub fn insert_epilogue<T>(body: &mut T)
 where
     T: AsmSink,
 {
-    body.sink(AsmInstr::Comment(
-        "Restore the previous stack frame".to_string(),
-    ));
+    body.sink(AsmInstr::Comment("Restore the previous stack frame".into()));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
