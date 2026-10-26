@@ -114,7 +114,7 @@ impl Vm {
                 Op::Le => self.handle_op_le(),
                 Op::Eq => self.handle_op_eq(),
                 Op::Neg => self.handle_op_neg(),
-                Op::Not | Op::BitwiseNot => self.handle_op_not(),
+                Op::Not => self.handle_op_not(),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),

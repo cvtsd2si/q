@@ -23,7 +23,6 @@ pub enum Op {
     Eq,
     Neg,
     Not,
-    BitwiseNot,
     Cvt { src_ty: Type, dst_ty: Type },
 }
 
@@ -144,8 +143,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
             } => {
                 let op = match kind {
                     UnaryExpressionKind::Negate => Op::Neg,
-                    UnaryExpressionKind::LogicalNot => Op::Not,
-                    UnaryExpressionKind::BitwiseNot => Op::BitwiseNot,
+                    UnaryExpressionKind::LogicalNot | UnaryExpressionKind::BitwiseNot => Op::Not,
                 };
 
                 let src = src.load_op(ctx);
