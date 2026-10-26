@@ -308,12 +308,16 @@ impl std::fmt::Display for AsmInstr {
                 src.as_width(AsmType::Double),
                 dst.as_width(AsmType::Float)
             ),
-            AsmInstr::Test { src, dst, asm_ty } => writeln!(
+            AsmInstr::Test {
+                src,
+                dst: _,
+                asm_ty,
+            } => writeln!(
                 f,
                 "test{} {}, {}",
                 asm_ty.suffix(),
-                src.as_width((*asm_ty).into()),
-                src.as_width((*asm_ty).into()),
+                src.as_width(*asm_ty),
+                src.as_width(*asm_ty),
             ),
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),

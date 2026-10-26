@@ -54,6 +54,12 @@ impl CodegenContext {
     }
 }
 
+impl Default for CodegenContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ctx for CodegenContext {
     fn get<T: 'static>(&self, name: &str) -> Option<usize> {
         match TypeId::of::<T>() {

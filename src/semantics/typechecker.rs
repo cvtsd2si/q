@@ -360,20 +360,14 @@ fn typecheck_expr(
             ty: _,
             span,
         } => {
-            if matches!(kind, UnaryExpressionKind::Negate) {
-                if let Expression::Literal {
+            if matches!(kind, UnaryExpressionKind::Negate)
+                && let Expression::Literal {
                     val: LiteralVal::Integer(n),
                     ty,
                     ..
                 } = expr.as_ref()
-                {
-                    return typecheck_literal(
-                        LiteralVal::NegativeInteger(*n),
-                        *ty,
-                        expected_ty,
-                        span,
-                    );
-                }
+            {
+                return typecheck_literal(LiteralVal::NegativeInteger(*n), *ty, expected_ty, span);
             }
 
             let op_hint = known_ty(typechecker, &expr)?;
@@ -634,12 +628,12 @@ fn typecheck_expr(
             }
 
             /* The cast produces `target_ty`, regardless of `src_ty`.  */
-            if let Some(expected) = expected_ty {
-                if expected != target_ty {
-                    return Err(TypecheckerError {
-                        msg: format!("Expected {expected:?}, got {target_ty:?}."),
-                    });
-                }
+            if let Some(expected) = expected_ty
+                && expected != target_ty
+            {
+                return Err(TypecheckerError {
+                    msg: format!("Expected {expected:?}, got {target_ty:?}."),
+                });
             }
 
             Ok(Expression::Cast {

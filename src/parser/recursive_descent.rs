@@ -665,7 +665,7 @@ impl<'src> Parser<'src> {
                     return Err(ParserError {
                         src: self.src.to_string(),
                         span: Span { start: 0, end: 0 },
-                        msg: format!("Encountered the end of token stream (prev: None)"),
+                        msg: "Encountered the end of token stream (prev: None)".to_string(),
                     });
                 }
             };

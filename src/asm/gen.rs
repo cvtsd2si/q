@@ -409,9 +409,9 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
                 .iter()
                 .map(|konst| AsmStaticConst {
                     name: konst.name.clone(),
-                    init: konst.init.clone(),
-                    ty: konst.ty.clone(),
-                    alignment: konst.alignment.clone(),
+                    init: konst.init,
+                    ty: konst.ty,
+                    alignment: konst.alignment,
                 })
                 .collect(),
         })
@@ -439,7 +439,7 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
                 src: AsmOp::Mem(AsmReg::Di, offset),
                 dst: AsmOp::Pseudo {
                     name: param.name.clone(),
-                    ty: param.ty.clone(),
+                    ty: param.ty,
                 },
                 asm_ty: match param.ty {
                     Type::Float32 => AsmType::Long,
@@ -465,7 +465,7 @@ impl IRInstr {
     fn codegen_with(
         &self,
         ctx: &mut CodegenContext,
-        ret_ty: Option<Type>,
+        _ret_ty: Option<Type>,
         func_name: &str,
     ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {
@@ -1469,7 +1469,7 @@ impl IRInstr {
                 src,
                 src_ty,
                 dst,
-                dst_ty,
+                dst_ty: _,
             } => {
                 let asm_ty = (*src_ty).into();
                 match asm_ty {
@@ -1599,7 +1599,7 @@ impl IRInstr {
             IRInstr::DoubleToInt {
                 src,
                 dst,
-                src_ty,
+                src_ty: _,
                 dst_ty,
             } => {
                 let asm_ty = (*dst_ty).into();
@@ -1627,7 +1627,7 @@ impl IRInstr {
 
             IRInstr::DoubleToUInt {
                 src,
-                src_ty,
+                src_ty: _,
                 dst,
                 dst_ty,
             } => {
@@ -1728,7 +1728,7 @@ impl IRInstr {
                 src,
                 dst,
                 src_ty,
-                dst_ty,
+                dst_ty: _,
             } => {
                 let asm_ty = (*src_ty).into();
 
@@ -1756,9 +1756,9 @@ impl IRInstr {
 
             IRInstr::DoubleToFloat {
                 src,
-                src_ty,
+                src_ty: _,
                 dst,
-                dst_ty,
+                dst_ty: _,
             } => Ok(vec![AsmInstr::Cvtsd2ss {
                 src: src.codegen(ctx)?,
                 dst: dst.codegen(ctx)?,
@@ -1766,9 +1766,9 @@ impl IRInstr {
 
             IRInstr::FloatToDouble {
                 src,
-                src_ty,
+                src_ty: _,
                 dst,
-                dst_ty,
+                dst_ty: _,
             } => Ok(vec![AsmInstr::Cvtss2sd {
                 src: src.codegen(ctx)?,
                 dst: dst.codegen(ctx)?,
@@ -1776,7 +1776,7 @@ impl IRInstr {
 
             IRInstr::FloatToInt {
                 src,
-                src_ty,
+                src_ty: _,
                 dst,
                 dst_ty,
             } => {
@@ -1806,7 +1806,7 @@ impl IRInstr {
 
             IRInstr::FloatToUInt {
                 src,
-                src_ty,
+                src_ty: _,
                 dst,
                 dst_ty,
             } => {
@@ -1907,7 +1907,7 @@ impl IRInstr {
                 src,
                 src_ty,
                 dst,
-                dst_ty,
+                dst_ty: _,
             } => {
                 let asm_ty = (*src_ty).into();
 
@@ -1937,7 +1937,7 @@ impl IRInstr {
                 src,
                 src_ty,
                 dst,
-                dst_ty,
+                dst_ty: _,
             } => {
                 let asm_ty = (*src_ty).into();
 
@@ -2090,7 +2090,7 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
             },
             IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
                 name: name.into(),
-                ty: ty.clone(),
+                ty: *ty,
             }),
         }
     }

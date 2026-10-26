@@ -128,10 +128,10 @@ impl Fixup for AsmInstr {
             }
 
             AsmInstr::Cmp {
-                asm_ty,
+                asm_ty: AsmType::Float | AsmType::Double,
                 src: _,
                 dst: AsmOp::Reg(_),
-            } if matches!(asm_ty, AsmType::Float | AsmType::Double) => vec![self.clone()],
+            } => vec![self.clone()],
 
             AsmInstr::Cmp { asm_ty, src, dst }
                 if matches!(asm_ty, AsmType::Float | AsmType::Double) =>

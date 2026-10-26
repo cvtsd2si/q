@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     asm::{
         emitter::Emit,
@@ -125,8 +123,8 @@ impl JitCompiler {
         for konst in &ctx.static_consts {
             AsmStaticConst {
                 name: konst.name.clone(),
-                init: konst.init.clone(),
-                ty: konst.ty.clone(),
+                init: konst.init,
+                ty: konst.ty,
                 alignment: konst.alignment,
             }
             .emit(&mut asm_txt)
