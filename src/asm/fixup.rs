@@ -2,7 +2,6 @@ use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
 
 pub trait Fixup {
     type Output;
-
     fn fixup(&self) -> Self::Output;
 }
 
