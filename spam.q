@@ -1,6 +1,9 @@
 fn main() -> u64 {
-    let x: f32 = 3.14;
-    let y: u64 = x as u64;
-    print y;
+    print fib(40);
     ret 0;
+}
+
+fn fib(n: u64) -> u64 {
+   if (n < 2) ret n;
+   ret fib(n-1) + fib(n-2);
 }

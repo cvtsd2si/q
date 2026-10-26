@@ -3,7 +3,7 @@ use std::io::Write;
 use crate::parser::ast::{Literal, Type};
 
 #[repr(C)]
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone)]
 pub struct Value {
     pub tag: ValueTag,
     pub payload: u64,
@@ -255,12 +255,40 @@ impl std::ops::Neg for Value {
 
 impl std::cmp::PartialOrd for Value {
     fn partial_cmp(&self, rhs: &Self) -> Option<std::cmp::Ordering> {
+        use ValueTag::*;
+
         match (self.tag, rhs.tag) {
-            (ValueTag::Int64, ValueTag::Int64) => {
-                (self.payload as i64).partial_cmp(&(rhs.payload as i64))
+            (Int8, Int8) => (self.payload as i8).partial_cmp(&(rhs.payload as i8)),
+            (UInt8, UInt8) => (self.payload as u8).partial_cmp(&(rhs.payload as u8)),
+
+            (Int16, Int16) => (self.payload as i16).partial_cmp(&(rhs.payload as i16)),
+            (UInt16, UInt16) => (self.payload as u16).partial_cmp(&(rhs.payload as u16)),
+
+            (Int32, Int32) => (self.payload as i32).partial_cmp(&(rhs.payload as i32)),
+            (UInt32, UInt32) => (self.payload as u32).partial_cmp(&(rhs.payload as u32)),
+
+            (Int64, Int64) => (self.payload as i64).partial_cmp(&(rhs.payload as i64)),
+            (UInt64, UInt64) => self.payload.partial_cmp(&rhs.payload),
+
+            (Float32, Float32) => {
+                f32::from_bits(self.payload as u32).partial_cmp(&f32::from_bits(rhs.payload as u32))
             }
-            _ => unimplemented!(),
+            (Float64, Float64) => {
+                f64::from_bits(self.payload).partial_cmp(&f64::from_bits(rhs.payload))
+            }
+
+            (Bool, Bool) => (self.payload != 0).partial_cmp(&(rhs.payload != 0)),
+
+            (Void, Void) => Some(std::cmp::Ordering::Equal),
+
+            _ => None,
         }
+    }
+}
+
+impl std::cmp::PartialEq for Value {
+    fn eq(&self, rhs: &Self) -> bool {
+        self.partial_cmp(rhs) == Some(std::cmp::Ordering::Equal)
     }
 }
 
