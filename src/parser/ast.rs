@@ -381,6 +381,7 @@ impl Type {
 
     pub fn size_of(self) -> usize {
         match self {
+            Type::Boolean => std::mem::size_of::<bool>(),
             Type::UInt8 => std::mem::size_of::<u8>(),
             Type::Int8 => std::mem::size_of::<i8>(),
             Type::UInt16 => std::mem::size_of::<u16>(),

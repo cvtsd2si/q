@@ -155,6 +155,11 @@ pub enum AsmInstr {
         dst: AsmOp,
         asm_ty: AsmType,
     },
+    Test {
+        src: AsmOp,
+        dst: AsmOp,
+        asm_ty: AsmType,
+    },
     Comment(String),
     Newline,
 }
@@ -737,7 +742,7 @@ impl IRInstr {
                             AsmInstr::Mov {
                                 src: AsmOp::Imm(0),
                                 dst: dst.clone(),
-                                asm_ty: AsmType::from(*operand_ty),
+                                asm_ty: AsmType::Quad,
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment(
@@ -767,11 +772,10 @@ impl IRInstr {
             }
 
             IRInstr::Print { val, ty } => {
-                let payload = val.codegen(ctx)?;
-
+                let val = val.codegen(ctx)?;
                 let tag = ValueTag::from(*ty) as u64;
 
-                Ok(vec![
+                let mut body = vec![
                     AsmInstr::Comment("Preserve caller-saved regs.".into()),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
                     AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
@@ -849,13 +853,33 @@ impl IRInstr {
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
+                ];
+
+                body.extend([
                     AsmInstr::Comment("%rdx = payload".into()),
-                    AsmInstr::Mov {
-                        src: payload,
-                        dst: AsmOp::Reg(AsmReg::Dx),
-                        asm_ty: AsmType::Quad,
+                    match (ty.size_of(), ty.is_signed()) {
+                        (1 | 2 | 4, false) => AsmInstr::Movzx {
+                            src: val,
+                            src_ty: AsmType::from(*ty),
+                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst_ty: AsmType::Quad,
+                        },
+                        (1 | 2 | 4, true) => AsmInstr::Movsx {
+                            src: val,
+                            src_ty: AsmType::from(*ty),
+                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst_ty: AsmType::Quad,
+                        },
+                        _ => AsmInstr::Mov {
+                            src: val,
+                            dst: AsmOp::Reg(AsmReg::Dx),
+                            asm_ty: AsmType::Quad,
+                        },
                     },
                     AsmInstr::Newline,
+                ]);
+
+                body.extend([
                     AsmInstr::CallRt {
                         target: RtFn::Print,
                     },
@@ -928,8 +952,8 @@ impl IRInstr {
                     AsmInstr::Comment(
                         "Check for status.  If %rax != 0, jmp to err handler.".into(),
                     ),
-                    AsmInstr::Cmp {
-                        src: AsmOp::Imm(0),
+                    AsmInstr::Test {
+                        src: AsmOp::Reg(AsmReg::Ax),
                         dst: AsmOp::Reg(AsmReg::Ax),
                         asm_ty: AsmType::Quad,
                     },
@@ -938,7 +962,9 @@ impl IRInstr {
                         target: format!("{}_rt_err", func_name),
                     },
                     AsmInstr::Newline,
-                ])
+                ]);
+
+                Ok(body)
             }
 
             IRInstr::Jz { cond, target } => Ok(vec![
@@ -1384,8 +1410,8 @@ impl IRInstr {
                     AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
                     AsmInstr::Newline,
                     AsmInstr::Comment("Check status.".into()),
-                    AsmInstr::Cmp {
-                        src: AsmOp::Imm(0),
+                    AsmInstr::Test {
+                        src: AsmOp::Reg(AsmReg::Ax),
                         dst: AsmOp::Reg(AsmReg::Ax),
                         asm_ty: AsmType::Quad,
                     },

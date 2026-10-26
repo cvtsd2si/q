@@ -161,7 +161,7 @@ impl JitCompiler {
         }
 
         for f in self.assembler.source_map().files() {
-            println!("{}", f.src);
+            eprintln!("{}", f.src);
         }
 
         let bytes = self.assembler.section_bytes(SectionId(0));
