@@ -18,6 +18,7 @@ impl Fixup for AsmProg {
 
 impl Fixup for AsmFunc {
     type Output = AsmFunc;
+
     fn fixup(&self) -> Self::Output {
         AsmFunc {
             name: self.name.clone(),
