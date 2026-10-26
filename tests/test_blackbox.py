@@ -12,6 +12,10 @@ TEST_CASES = {
         "ret": 0,
         "stdout": ["true", "false", "false", "true"],
     },
+    "u8_to_u16.q": {
+        "ret": 0,
+        "stdout": ["256"],
+    },
 }
 
 
