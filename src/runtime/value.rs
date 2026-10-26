@@ -97,36 +97,88 @@ impl From<Type> for ValueTag {
         }
     }
 }
+macro_rules! impl_arithmetic {
+    ($trait:ident, $method:ident, $wrapping:ident, $op:tt) => {
+        impl std::ops::$trait for Value {
+            type Output = Self;
 
-impl std::ops::Add for Value {
-    type Output = Self;
+            fn $method(self, rhs: Self) -> Self::Output {
+                use ValueTag::*;
 
-    fn add(self, rhs: Self) -> Self::Output {
-        match (self.tag, rhs.tag) {
-            (ValueTag::Int64, ValueTag::Int64) => Self {
-                tag: ValueTag::Int64,
-                payload: (self.payload as i64).wrapping_add(rhs.payload as i64) as u64,
-            },
+                let payload = match (self.tag, rhs.tag) {
+                    (Int8, Int8) => {
+                        (self.payload as i8)
+                            .$wrapping(rhs.payload as i8) as u8 as u64
+                    },
 
-            _ => unimplemented!(),
+                    (Int16, Int16) => {
+                        (self.payload as i16)
+                            .$wrapping(rhs.payload as i16) as u16 as u64
+                    },
+
+                    (Int32, Int32) => {
+                        (self.payload as i32)
+                            .$wrapping(rhs.payload as i32) as u32 as u64
+                    },
+
+                    (Int64, Int64) => {
+                        (self.payload as i64)
+                            .$wrapping(rhs.payload as i64) as u64
+                    },
+
+                    (UInt8, UInt8) => {
+                        (self.payload as u8)
+                            .$wrapping(rhs.payload as u8) as u64
+                    },
+
+                    (UInt16, UInt16) => {
+                        (self.payload as u16)
+                            .$wrapping(rhs.payload as u16) as u64
+                    },
+
+                    (UInt32, UInt32) => {
+                        (self.payload as u32)
+                            .$wrapping(rhs.payload as u32) as u64
+                    },
+
+                    (UInt64, UInt64) => {
+                        self.payload.$wrapping(rhs.payload)
+                    },
+
+                    (Float32, Float32) => {
+                        (
+                            f32::from_bits(self.payload as u32)
+                            $op
+                            f32::from_bits(rhs.payload as u32)
+                        ).to_bits() as u64
+                    },
+
+                    (Float64, Float64) => {
+                        (
+                            f64::from_bits(self.payload)
+                            $op
+                            f64::from_bits(rhs.payload)
+                        ).to_bits()
+                    },
+
+                    _ => panic!(
+                        "Unsupported arithmetic operation: {:?} and {:?}",
+                        self.tag,
+                        rhs.tag
+                    ),
+                };
+
+                Self {
+                    tag: self.tag,
+                    payload,
+                }
+            }
         }
-    }
+    };
 }
 
-impl std::ops::Sub for Value {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self::Output {
-        match (self.tag, rhs.tag) {
-            (ValueTag::Int64, ValueTag::Int64) => Self {
-                tag: ValueTag::Int64,
-                payload: (self.payload as i64).wrapping_sub(rhs.payload as i64) as u64,
-            },
-
-            _ => unimplemented!(),
-        }
-    }
-}
+impl_arithmetic!(Add, add, wrapping_add, +);
+impl_arithmetic!(Sub, sub, wrapping_sub, -);
 
 impl std::ops::Not for Value {
     type Output = Self;
