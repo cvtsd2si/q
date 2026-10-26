@@ -12,6 +12,10 @@ TEST_CASES = {
         "ret": 0,
         "stdout": ["true", "false", "false", "true"],
     },
+    "fib.q": {
+        "ret": 0,
+        "stdout": ["55"],
+    },
     "u8_to_u16.q": {
         "ret": 0,
         "stdout": ["256"],

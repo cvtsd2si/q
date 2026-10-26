@@ -1,5 +1,5 @@
 fn main() -> u64 {
-    print fib(40);
+    print fib(10);
     ret 0;
 }
 
