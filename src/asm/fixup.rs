@@ -299,13 +299,6 @@ impl AsmInstr {
                 },
             ]),
 
-            /* Floating-point comparisons require an SSE reg dst.  */
-            AsmInstr::Cmp {
-                asm_ty: AsmType::Float | AsmType::Double,
-                src: _,
-                dst: AsmOp::Reg(reg),
-            } if reg.is_xmm() => Ok(vec![self]),
-
             /* Floating-point comparisons cannot have a mem dst.  */
             AsmInstr::Cmp { asm_ty, src, dst }
                 if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&dst) =>
@@ -394,6 +387,24 @@ impl AsmInstr {
                     asm_ty,
                     src,
                     dst: AsmOp::Reg(AsmReg::R9),
+                },
+            ]),
+
+            /* 'cvtsi2sd' cannot have an immediate src.  */
+            AsmInstr::Cvtsi2sd {
+                src: AsmOp::Imm(n),
+                dst,
+                asm_ty,
+            } => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Cvtsi2sd {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty,
                 },
             ]),
 

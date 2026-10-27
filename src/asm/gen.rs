@@ -1728,7 +1728,7 @@ impl IRInstr {
                 src,
                 dst,
                 src_ty,
-                dst_ty: _,
+                dst_ty,
             } => {
                 let asm_ty = (*src_ty).into();
 
@@ -1746,11 +1746,15 @@ impl IRInstr {
                             asm_ty: AsmType::Quad,
                         },
                     ]),
-                    _ => Ok(vec![AsmInstr::Cvtsi2sd {
-                        src: src.codegen(ctx)?,
-                        dst: dst.codegen(ctx)?,
-                        asm_ty,
-                    }]),
+                    _ => Ok(vec![
+                        AsmInstr::Comment(format!("Converting {src_ty:?} to {dst_ty:?}.")),
+                        AsmInstr::Cvtsi2sd {
+                            src: src.codegen(ctx)?,
+                            dst: dst.codegen(ctx)?,
+                            asm_ty,
+                        },
+                        AsmInstr::Newline,
+                    ]),
                 }
             }
 

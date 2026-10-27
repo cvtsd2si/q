@@ -390,6 +390,8 @@ impl Type {
             Type::Int32 => std::mem::size_of::<i32>(),
             Type::UInt64 => std::mem::size_of::<u64>(),
             Type::Int64 => std::mem::size_of::<i64>(),
+            Type::Float32 => std::mem::size_of::<f32>(),
+            Type::Float64 => std::mem::size_of::<f64>(),
             _ => unimplemented!(),
         }
     }
