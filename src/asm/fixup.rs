@@ -1,3 +1,4 @@
+use std::collections::VecDeque;
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
 
 pub trait Fixup {
@@ -32,10 +33,37 @@ impl Fixup for AsmFunc {
     }
 }
 
+
 impl Fixup for AsmInstr {
     type Output = Vec<AsmInstr>;
 
     fn fixup(self) -> Self::Output {
+        let mut pending = VecDeque::from([self]);
+        let mut output = Vec::new();
+
+        while let Some(instr) = pending.pop_front() {
+            match instr.clone().rewrite_once() {  // FIXME: don't clone
+                Ok(replacements) => {
+                    if cfg!(debug_assertions) {
+                        eprintln!("rewritten {instr:?} to {replacements:?}");
+                    }
+
+                    for replacement in replacements.into_iter().rev() {
+                        pending.push_front(replacement.to_owned());
+                    }
+                }
+                Err(instr) => {
+                    output.push(instr.to_owned());
+                }
+            }
+        }
+
+        output
+    }
+}
+
+impl AsmInstr {
+    fn rewrite_once(self) -> Result<Vec<AsmInstr>, AsmInstr> {
         match self {
             /* 'mov' cannot move a value from one mem addr to another.  */
             AsmInstr::Mov { src, dst, asm_ty } if is_mem(&src) && is_mem(&dst) => {
@@ -44,7 +72,7 @@ impl Fixup for AsmInstr {
                     AsmType::Byte | AsmType::Word | AsmType::Long | AsmType::Quad => AsmReg::R9,
                 };
 
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src,
                         dst: AsmOp::Reg(scratch),
@@ -55,7 +83,7 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty,
                     },
-                ]
+                ])
             }
 
             /* 'movq' cannot move a large constant to a mem address.  */
@@ -64,7 +92,7 @@ impl Fixup for AsmInstr {
                 dst,
                 asm_ty: AsmType::Quad,
             } if is_large(n) && is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: AsmOp::Imm(n),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -75,7 +103,7 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Quad,
                     },
-                ]
+                ])
             }
 
             /* 'mov' cannot move any constant to an SSE reg.  */
@@ -84,7 +112,7 @@ impl Fixup for AsmInstr {
                 dst,
                 asm_ty: _,
             } if dst.is_xmm() => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: AsmOp::Imm(n),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -95,7 +123,7 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Quad,
                     },
-                ]
+                ])
             }
 
             /* 'movzx' src cannot be a constant.  */
@@ -105,7 +133,7 @@ impl Fixup for AsmInstr {
                 dst,
                 dst_ty,
             } => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: AsmOp::Imm(n),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -117,7 +145,7 @@ impl Fixup for AsmInstr {
                         dst,
                         dst_ty,
                     },
-                ]
+                ])
             }
 
             /* 'movzb{} | movzw{}' are illegal, if dst is mem.  */
@@ -127,7 +155,7 @@ impl Fixup for AsmInstr {
                 dst_ty,
                 dst,
             } if matches!(src_ty, AsmType::Byte | AsmType::Word) && is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Movzx {
                         src_ty,
                         src,
@@ -139,7 +167,7 @@ impl Fixup for AsmInstr {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst,
                     },
-                ]
+                ])
             }
 
             /* 'movzlq' does not exist.  Zero-extend with 'movl' before
@@ -150,7 +178,7 @@ impl Fixup for AsmInstr {
                 dst,
                 dst_ty: AsmType::Quad,
             } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src,
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -161,7 +189,7 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Quad,
                     },
-                ]
+                ])
             }
 
             /* 'movzlq' does not exist.  'movl' implicitly zero-extends to 64 bits.  */
@@ -171,11 +199,11 @@ impl Fixup for AsmInstr {
                 dst,
                 dst_ty: AsmType::Quad,
             } => {
-                vec![AsmInstr::Mov {
+                Ok(vec![AsmInstr::Mov {
                     src,
                     dst,
                     asm_ty: AsmType::Long,
-                }]
+                }])
             }
 
             /* 'movsx' src cannot be a constant.  */
@@ -185,7 +213,7 @@ impl Fixup for AsmInstr {
                 dst,
                 dst_ty,
             } => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: AsmOp::Imm(n),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -197,7 +225,7 @@ impl Fixup for AsmInstr {
                         dst,
                         dst_ty,
                     },
-                ]
+                ])
             }
 
             /* 'movsx' requires a GP reg dst.  */
@@ -207,7 +235,7 @@ impl Fixup for AsmInstr {
                 dst,
                 dst_ty,
             } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Movsx {
                         src,
                         src_ty,
@@ -219,7 +247,7 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: dst_ty,
                     },
-                ]
+                ])
             }
 
             /* Int binops cannot have large 64-bit immediates.  */
@@ -229,7 +257,7 @@ impl Fixup for AsmInstr {
                 rhs,
                 asm_ty: AsmType::Quad,
             } if is_large(n) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: AsmOp::Imm(n),
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -241,7 +269,7 @@ impl Fixup for AsmInstr {
                         rhs,
                         asm_ty: AsmType::Quad,
                     },
-                ]
+                ])
             }
 
             /* Floating-point binops require an SSE register as dst.  */
@@ -251,7 +279,7 @@ impl Fixup for AsmInstr {
                 rhs,
                 asm_ty,
             } if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&rhs) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: rhs.clone(),
                         dst: AsmOp::Reg(AsmReg::Xmm15),
@@ -268,7 +296,7 @@ impl Fixup for AsmInstr {
                         dst: rhs,
                         asm_ty,
                     },
-                ]
+                ])
             }
 
             /* Int binops cannot have both operands in mem.  */
@@ -278,7 +306,7 @@ impl Fixup for AsmInstr {
                 rhs,
                 asm_ty,
             } if is_mem(&lhs) && is_mem(&rhs) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         src: lhs,
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -290,7 +318,7 @@ impl Fixup for AsmInstr {
                         rhs: rhs,
                         asm_ty,
                     },
-                ]
+                ])
             }
 
             /* Floating-point comparisons require an SSE reg dst.  */
@@ -298,13 +326,13 @@ impl Fixup for AsmInstr {
                 asm_ty: AsmType::Float | AsmType::Double,
                 src: _,
                 dst: AsmOp::Reg(reg),
-            } if reg.is_xmm() => vec![self],
+            } if reg.is_xmm() => Ok(vec![self]),
 
             /* Floating-point comparisons cannot have a mem dst.  */
             AsmInstr::Cmp { asm_ty, src, dst }
                 if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&dst) =>
             {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         asm_ty,
                         src: dst,
@@ -315,12 +343,12 @@ impl Fixup for AsmInstr {
                         src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
                     },
-                ]
+                ])
             }
 
             /* Not both operands of 'cmp' can be in mem.  */
             AsmInstr::Cmp { asm_ty, src, dst } if is_mem(&src) && is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         asm_ty,
                         src,
@@ -331,7 +359,7 @@ impl Fixup for AsmInstr {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst,
                     },
-                ]
+                ])
             }
 
             /* 'cmpq' cannot compare two immediates; a large immediate also cannot be encoded directly.  */
@@ -340,7 +368,7 @@ impl Fixup for AsmInstr {
                 src: AsmOp::Imm(imm1),
                 dst: AsmOp::Imm(imm2),
             } if is_large(imm1) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         asm_ty: AsmType::Quad,
                         src: AsmOp::Imm(imm1),
@@ -356,7 +384,7 @@ impl Fixup for AsmInstr {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst: AsmOp::Reg(AsmReg::R10),
                     },
-                ]
+                ])
             }
 
             /* 'cmpq' src cannot have large src immediate.  */
@@ -365,7 +393,7 @@ impl Fixup for AsmInstr {
                 src: AsmOp::Imm(imm1),
                 dst,
             } if is_large(imm1) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         asm_ty: AsmType::Quad,
                         src: AsmOp::Imm(imm1),
@@ -376,7 +404,7 @@ impl Fixup for AsmInstr {
                         src: AsmOp::Reg(AsmReg::R9),
                         dst,
                     },
-                ]
+                ])
             }
 
             /* The dst operand of 'cmp' cannot be an immediate.  */
@@ -385,7 +413,7 @@ impl Fixup for AsmInstr {
                 src,
                 dst: AsmOp::Imm(imm),
             } => {
-                vec![
+                Ok(vec![
                     AsmInstr::Mov {
                         asm_ty,
                         src: AsmOp::Imm(imm),
@@ -396,12 +424,12 @@ impl Fixup for AsmInstr {
                         src,
                         dst: AsmOp::Reg(AsmReg::R9),
                     },
-                ]
+                ])
             }
 
             /* 'cvtsi2sd' cannot have a dst operand in mem.  */
             AsmInstr::Cvtsi2sd { src, dst, asm_ty } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvtsi2sd {
                         src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
@@ -412,12 +440,12 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Double,
                     },
-                ]
+                ])
             }
 
             /* 'cvtsi2ss' cannot have a dst operand in mem.  */
             AsmInstr::Cvtsi2ss { src, dst, asm_ty } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvtsi2ss {
                         src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
@@ -428,12 +456,12 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Float,
                     },
-                ]
+                ])
             }
 
             /* 'cvttsd2si' cannot have a dst operand in mem.  */
             AsmInstr::Cvttsd2si { src, dst, asm_ty } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvttsd2si {
                         src,
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -444,12 +472,12 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty,
                     },
-                ]
+                ])
             }
 
             /* 'cvttss2si' cannot have a dst operand in mem.  */
             AsmInstr::Cvttss2si { src, dst, asm_ty } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvttss2si {
                         src,
                         dst: AsmOp::Reg(AsmReg::R9),
@@ -460,12 +488,12 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty,
                     },
-                ]
+                ])
             }
 
             /* 'cvtss2sd' cannot have a dst operand in mem.  */
             AsmInstr::Cvtss2sd { src, dst } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvtss2sd {
                         src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
@@ -475,12 +503,12 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Double,
                     },
-                ]
+                ])
             }
 
             /* 'cvtsd2ss' cannot have a dst operand in mem.  */
             AsmInstr::Cvtsd2ss { src, dst } if is_mem(&dst) => {
-                vec![
+                Ok(vec![
                     AsmInstr::Cvtsd2ss {
                         src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
@@ -490,10 +518,10 @@ impl Fixup for AsmInstr {
                         dst,
                         asm_ty: AsmType::Float,
                     },
-                ]
+                ])
             }
 
-            _ => vec![self],
+            instr => Err(instr),
         }
     }
 }
