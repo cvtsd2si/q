@@ -120,7 +120,8 @@ impl Fixup for AsmInstr {
                 ]
             }
 
-            /* 'movzlq' does not exist.  Use 'movl' then 'movq', if dst is mem.  */
+            /* 'movzlq' does not exist.  Zero-extend with 'movl' before
+             * storing with 'movq', if dst is mem.  */
             AsmInstr::Movzx {
                 src,
                 src_ty: AsmType::Long,
@@ -141,7 +142,7 @@ impl Fixup for AsmInstr {
                 ]
             }
 
-            /* 'movzlq' does not exist.  Use 'mov'.  */
+            /* 'movzlq' does not exist.  'movl' implicitly zero-extends to 64 bits.  */
             AsmInstr::Movzx {
                 src,
                 src_ty: AsmType::Long,
@@ -155,7 +156,7 @@ impl Fixup for AsmInstr {
                 }]
             }
 
-            /* 'movsx' requires a reg dst.  */
+            /* 'movsx' requires a GP reg dst.  */
             AsmInstr::Movsx {
                 src,
                 src_ty,
