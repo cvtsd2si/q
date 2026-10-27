@@ -11,54 +11,72 @@ TEST_CASES = {
     "bool.q": {
         "ret": 0,
         "stdout": ["true", "false", "false", "true"],
+        "stderr": [],
     },
     "fib.q": {
         "ret": 0,
         "stdout": ["55"],
+        "stderr": [],
     },
     "for.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
+        "stderr": [],
     },
     "loop.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
+        "stderr": [],
+    },
+    "no_main.q": {
+        "ret": 1,
+        "stderr": ["err: vm: No 'main' fn. (code: 1)"],
+        "stdout": [],
     },
     "u8_to_u16.q": {
         "ret": 0,
         "stdout": ["256"],
+        "stderr": [],
     },
     "u16_to_u8.q": {
         "ret": 0,
         "stdout": ["0", "255"],
+        "stderr": [],
     },
     "u8_to_u32.q": {
         "ret": 0,
         "stdout": ["256"],
+        "stderr": [],
     },
     "u32_to_u8.q": {
         "ret": 0,
         "stdout": ["0", "255"],
+        "stderr": [],
     },
     "u8_to_u64.q": {
         "ret": 0,
         "stdout": ["256"],
+        "stderr": [],
     },
     "u64_to_u8.q": {
         "ret": 0,
         "stdout": ["0", "255"],
+        "stderr": [],
     },
     "u32_to_u64.q": {
         "ret": 0,
         "stdout": ["4294967296"],
+        "stderr": [],
     },
     "u64_to_u32.q": {
         "ret": 0,
         "stdout": ["0", "4294967295"],
+        "stderr": [],
     },
     "while.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
+        "stderr": [],
     },
 }
 
@@ -93,7 +111,12 @@ def test_program(program: Path, jit: bool):
     )
 
     expected_stdout = expected["stdout"]
-    actual_stdout = result.stdout.splitlines()[-len(expected_stdout):]
+    expected_stderr = expected["stderr"]
 
+    actual_stdout = result.stdout.splitlines()[-len(expected_stdout):]
     assert actual_stdout == expected_stdout
+
+    if expected_stderr:
+        actual_stderr = result.stderr.splitlines()[-len(expected_stderr):]
+        assert actual_stderr == expected_stderr
 

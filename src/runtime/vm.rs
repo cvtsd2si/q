@@ -41,10 +41,14 @@ pub struct Vm {
 
 impl Vm {
     pub fn new(bytecode: BytecodeProg, ir: IRProg, enable_jit: bool) -> Result<Self, VmError> {
-        let entrypoint = match bytecode.funcs.iter().position(|f| f.name == "main") {
-            Some(entrypoint) => entrypoint,
-            None => panic!("no main fn"),
-        };
+        let entrypoint = bytecode
+            .funcs
+            .iter()
+            .position(|f| f.name == "main")
+            .ok_or_else(|| VmError {
+                msg: "No 'main' fn.".into(),
+                code: 1,
+            })?;
 
         let jit = if enable_jit {
             Some(JitState::new(&bytecode)?)
