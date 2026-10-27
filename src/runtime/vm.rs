@@ -400,6 +400,7 @@ impl Vm {
         self.stack[self.fp + idx] = obj;
     }
 
+    #[inline(always)]
     fn handle_op_jz(&mut self, target: usize) {
         let cond = self.stack.pop().unwrap();
 
@@ -408,6 +409,7 @@ impl Vm {
         }
     }
 
+    #[inline(always)]
     fn handle_op_jmp(&mut self, target: usize) {
         self.pc = target;
     }
