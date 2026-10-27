@@ -102,6 +102,21 @@ TEST_CASES = {
         "stdout": ["0", "65535"],
         "stderr": [],
     },
+    "u16_to_u64.q": {
+        "ret": 0,
+        "stdout": ["65536"],
+        "stderr": [],
+    },
+    "u16_to_u64.q": {
+        "ret": 0,
+        "stdout": ["65536"],
+        "stderr": [],
+    },
+    "u64_to_u16.q": {
+        "ret": 0,
+        "stdout": ["0", "65535"],
+        "stderr": [],
+    },
     "while.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
