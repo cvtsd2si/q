@@ -92,6 +92,16 @@ TEST_CASES = {
         "stdout": ["0", "4294967295"],
         "stderr": [],
     },
+    "u16_to_u32.q": {
+        "ret": 0,
+        "stdout": ["65536"],
+        "stderr": [],
+    },
+    "u32_to_u16.q": {
+        "ret": 0,
+        "stdout": ["0", "65535"],
+        "stderr": [],
+    },
     "while.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
