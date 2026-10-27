@@ -22,7 +22,7 @@ use libc::{
 };
 
 pub struct JitCompiler {
-    assembler: keystone_engine::Keystone,
+    assembler: Keystone,
 }
 
 impl JitCompiler {
