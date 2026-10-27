@@ -71,7 +71,10 @@ impl Vm {
     }
 
     pub fn exec(&mut self) -> Result<Value, VmError> {
-        self.exec_until(None)
+        let r = self.exec_until(None);
+        assert_eq!(self.stack.len(), 0);
+
+        r
     }
 
     ///  Run the Vm until the top-level function returns (`None`), or until
@@ -141,7 +144,14 @@ impl Vm {
                         }
                     };
 
-                    if let Some(v) = self.finish_ret(v, stop_depth) {
+                    let r = self.finish_ret(v, stop_depth);
+
+                    if cfg!(debug_assertions) {
+                        eprintln!("op: {op:?}");
+                        self.print_stack();
+                    }
+
+                    if let Some(v) = r {
                         return Ok(v);
                     }
 
