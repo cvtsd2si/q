@@ -465,7 +465,7 @@ fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
 
             /* start the next iteration  */
             instrs.push(IRInstr::Jmp {
-                target: continue_label,
+                target: start_label,
             });
 
             /* resume execution here after exiting the loop  */
