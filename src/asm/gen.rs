@@ -838,6 +838,11 @@ impl IRInstr {
                 body.extend([
                     AsmInstr::Comment("%rdx = payload".into()),
                     match (ty.size_of(), ty.is_signed()) {
+                        (4, _) if *ty == Type::Float32 => AsmInstr::Mov {
+                            src: val,
+                            dst: AsmOp::Reg(AsmReg::Dx),
+                            asm_ty: AsmType::Float,
+                        },
                         (1 | 2 | 4, false) => AsmInstr::Movzx {
                             src: val,
                             src_ty: (*ty).into(),

@@ -422,6 +422,24 @@ impl AsmInstr {
                 },
             ]),
 
+            /* 'cvtsi2ss' cannot have an immediate src. */
+            AsmInstr::Cvtsi2ss {
+                src: AsmOp::Imm(n),
+                dst,
+                asm_ty,
+            } => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Cvtsi2ss {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty,
+                },
+            ]),
+
             /* 'cvtsi2ss' cannot have a dst operand in mem.  */
             AsmInstr::Cvtsi2ss { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvtsi2ss {

@@ -40,8 +40,7 @@ impl Emit for AsmStaticConst {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         writeln!(f)?;
 
-        writeln!(f, "\t.section .rodata")?;
-        writeln!(f, "\t.balign {}", self.alignment)?;
+        writeln!(f, "\t.balign 0x{:x}", self.alignment)?;
         writeln!(f, "{}:", self.name)?;
 
         match self.init {
@@ -184,7 +183,7 @@ impl std::fmt::Display for AsmInstr {
                 let offset = target.offset();
 
                 writeln!(f, "# Load up {target:?} from %r14 into %rax and call it.")?;
-                writeln!(f, "\tmovq {offset}(%r14), %rax")?;
+                writeln!(f, "\tmovq 0x{offset:x}(%r14), %rax")?;
                 writeln!(f, "\tcall *%rax")?;
                 writeln!(f)?;
                 writeln!(f, "\t# Zero-extend the retval.")?;
@@ -207,19 +206,19 @@ impl std::fmt::Display for AsmInstr {
             } => match kind {
                 AsmInstrShiftKind::Shl => writeln!(
                     f,
-                    "shl{} ${amount}, {}",
+                    "shl{} $0x{amount:x}, {}",
                     asm_ty.suffix(),
                     dst.as_width(*asm_ty)
                 ),
                 AsmInstrShiftKind::Shr => writeln!(
                     f,
-                    "shr{} ${amount}, {}",
+                    "shr{} $0x{amount:x}, {}",
                     asm_ty.suffix(),
                     dst.as_width(*asm_ty)
                 ),
                 AsmInstrShiftKind::Sar => writeln!(
                     f,
-                    "sar{} ${amount}, {}",
+                    "sar{} $0x{amount:x}, {}",
                     asm_ty.suffix(),
                     dst.as_width(*asm_ty)
                 ),

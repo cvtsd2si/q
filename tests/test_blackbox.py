@@ -17,6 +17,11 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    "fixup_cvtsi2ss_imm.q": {
+        "ret": 0,
+        "stdout": ["42"],
+        "stderr": [],
+    },
     "fixup_cvtsi2sd_imm.q": {
         "ret": 0,
         "stdout": ["42"],
