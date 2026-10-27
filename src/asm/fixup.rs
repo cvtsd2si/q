@@ -259,13 +259,13 @@ impl Fixup for AsmInstr {
                     },
                     AsmInstr::Bin {
                         kind,
-                        lhs: lhs.clone(),
+                        lhs: lhs,
                         rhs: AsmOp::Reg(AsmReg::Xmm15),
                         asm_ty,
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst: rhs.clone(),
+                        dst: rhs,
                         asm_ty,
                     },
                 ]
@@ -280,14 +280,14 @@ impl Fixup for AsmInstr {
             } if is_mem(&lhs) && is_mem(&rhs) => {
                 vec![
                     AsmInstr::Mov {
-                        src: lhs.clone(),
+                        src: lhs,
                         dst: AsmOp::Reg(AsmReg::R9),
                         asm_ty,
                     },
                     AsmInstr::Bin {
                         kind,
                         lhs: AsmOp::Reg(AsmReg::R9),
-                        rhs: rhs.clone(),
+                        rhs: rhs,
                         asm_ty,
                     },
                 ]
@@ -298,7 +298,7 @@ impl Fixup for AsmInstr {
                 asm_ty: AsmType::Float | AsmType::Double,
                 src: _,
                 dst: AsmOp::Reg(reg),
-            } if reg.is_xmm() => vec![self.clone()],
+            } if reg.is_xmm() => vec![self],
 
             /* Floating-point comparisons cannot have a mem dst.  */
             AsmInstr::Cmp { asm_ty, src, dst }
