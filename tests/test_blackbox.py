@@ -48,6 +48,10 @@ TEST_CASES = {
         "ret": 0,
         "stdout": ["0", "4294967295"],
     },
+    "while.q": {
+        "ret": 0,
+        "stdout": ["0", "1", "2", "3", "4"],
+    },
 }
 
 @pytest.mark.parametrize(

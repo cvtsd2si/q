@@ -53,7 +53,13 @@ impl Vm {
         };
 
         Ok(Vm {
-            stack: Vec::new(),
+            stack: vec![
+                Value {
+                    tag: ValueTag::Void,
+                    payload: 0,
+                };
+                bytecode.funcs[entrypoint].locals_count
+            ],
             fp_stack: Vec::new(),
             ir,
             func: entrypoint,
@@ -142,7 +148,26 @@ impl Vm {
                     continue;
                 }
             };
+
+            if cfg!(debug_assertions) {
+                eprintln!("op: {op:?}");
+                self.print_stack();
+            }
         }
+    }
+
+    fn print_stack(&self) {
+        eprint!("stack: [");
+
+        for (idx, obj) in self.stack.iter().enumerate() {
+            eprint!("{obj}");
+
+            if idx != self.stack.len() - 1 {
+                eprint!(", ");
+            }
+        }
+
+        eprintln!("]");
     }
 
     fn maybe_run_jit(&mut self) -> Option<JitExit> {
@@ -389,6 +414,14 @@ impl Vm {
         self.func = target;
         self.pc = 0;
         self.fp = fp;
+
+        self.stack.resize(
+            fp + self.bytecode.funcs[self.func].locals_count,
+            Value {
+                tag: ValueTag::Void,
+                payload: 0,
+            },
+        );
     }
 
     fn handle_op_ret(&mut self, v: Value) -> Option<Value> {

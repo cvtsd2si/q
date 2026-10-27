@@ -76,6 +76,10 @@ impl Ctx for CodegenContext {
             _ => unreachable!(),
         };
 
+        if let Some(&idx) = structure.get(name) {
+            return idx;
+        }
+
         let idx = structure.len();
 
         structure.insert(name.to_owned(), idx);
@@ -215,6 +219,32 @@ pub enum IRInstr {
         dst: IRVal,
         dst_ty: Type,
     },
+}
+
+impl IRInstr {
+    pub fn dst(&self) -> Option<&IRVal> {
+        match self {
+            Self::Cpy { dst, .. }
+            | Self::Bin { dst, .. }
+            | Self::Unary { dst, .. }
+            | Self::Call { dst, .. }
+            | Self::SignExtend { dst, .. }
+            | Self::ZeroExtend { dst, .. }
+            | Self::Truncate { dst, .. }
+            | Self::DoubleToInt { dst, .. }
+            | Self::IntToDouble { dst, .. }
+            | Self::DoubleToUInt { dst, .. }
+            | Self::UIntToDouble { dst, .. }
+            | Self::DoubleToFloat { dst, .. }
+            | Self::FloatToDouble { dst, .. }
+            | Self::FloatToInt { dst, .. }
+            | Self::IntToFloat { dst, .. }
+            | Self::FloatToUInt { dst, .. }
+            | Self::UIntToFloat { dst, .. } => Some(dst),
+
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]

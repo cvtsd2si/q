@@ -37,6 +37,7 @@ pub struct BytecodeProg {
 pub struct BytecodeFunc {
     pub name: String,
     pub body: Bytecode,
+    pub locals_count: usize,
     pub ir_map: Vec<usize>,
 }
 
@@ -70,9 +71,16 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
             ctx.register::<String>(&param.name);
         }
 
+        for instr in &self.body {
+            if let Some(IRVal::Var { name, .. }) = instr.dst() {
+                ctx.register::<String>(name);
+            }
+        }
+
         let mut f = BytecodeFunc {
             name: self.name.to_owned(),
             body: vec![],
+            locals_count: ctx.locals.len(),
             ir_map: vec![],
         };
 
@@ -155,8 +163,9 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 ctx.register::<String>(name);
 
-                Ok(vec![src, op])
+                Ok(vec![src, op, dst.store_op(ctx)])
             }
+
             IRInstr::Bin {
                 kind,
                 lhs,
@@ -190,6 +199,8 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 if negate {
                     ops.push(Op::Not);
                 }
+
+                ops.push(dst.store_op(ctx));
 
                 Ok(ops)
             }
@@ -236,6 +247,8 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 };
 
                 ctx.register::<String>(dst_name);
+
+                ops.push(dst.store_op(ctx));
 
                 Ok(ops)
             }
@@ -332,6 +345,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                         src_ty: *src_ty,
                         dst_ty: *dst_ty,
                     },
+                    dst.store_op(ctx),
                 ])
             }
         }
