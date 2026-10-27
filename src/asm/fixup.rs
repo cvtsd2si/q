@@ -1,5 +1,5 @@
-use std::collections::VecDeque;
 use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
+use std::collections::VecDeque;
 
 pub trait Fixup {
     type Output;
@@ -33,7 +33,6 @@ impl Fixup for AsmFunc {
     }
 }
 
-
 impl Fixup for AsmInstr {
     type Output = Vec<AsmInstr>;
 
@@ -42,7 +41,8 @@ impl Fixup for AsmInstr {
         let mut output = Vec::new();
 
         while let Some(instr) = pending.pop_front() {
-            match instr.clone().rewrite_once() {  // FIXME: don't clone
+            match instr.clone().rewrite_once() {
+                // FIXME: don't clone
                 Ok(replacements) => {
                     if cfg!(debug_assertions) {
                         eprintln!("rewritten {instr:?} to {replacements:?}");
@@ -91,40 +91,36 @@ impl AsmInstr {
                 src: AsmOp::Imm(n),
                 dst,
                 asm_ty: AsmType::Quad,
-            } if is_large(n) && is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(n),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty: AsmType::Quad,
-                    },
-                ])
-            }
+            } if is_large(n) && is_mem(&dst) => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: AsmType::Quad,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty: AsmType::Quad,
+                },
+            ]),
 
             /* 'mov' cannot move any constant to an SSE reg.  */
             AsmInstr::Mov {
                 src: AsmOp::Imm(n),
                 dst,
                 asm_ty: _,
-            } if dst.is_xmm() => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(n),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty: AsmType::Quad,
-                    },
-                ])
-            }
+            } if dst.is_xmm() => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: AsmType::Quad,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty: AsmType::Quad,
+                },
+            ]),
 
             /* 'movzx' src cannot be a constant.  */
             AsmInstr::Movzx {
@@ -132,21 +128,19 @@ impl AsmInstr {
                 src_ty,
                 dst,
                 dst_ty,
-            } => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(n),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: src_ty,
-                    },
-                    AsmInstr::Movzx {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        src_ty,
-                        dst,
-                        dst_ty,
-                    },
-                ])
-            }
+            } => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: src_ty,
+                },
+                AsmInstr::Movzx {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    src_ty,
+                    dst,
+                    dst_ty,
+                },
+            ]),
 
             /* 'movzb{} | movzw{}' are illegal, if dst is mem.  */
             AsmInstr::Movzx {
@@ -154,21 +148,19 @@ impl AsmInstr {
                 src,
                 dst_ty,
                 dst,
-            } if matches!(src_ty, AsmType::Byte | AsmType::Word) && is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Movzx {
-                        src_ty,
-                        src,
-                        dst_ty,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                    AsmInstr::Mov {
-                        asm_ty: dst_ty,
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                    },
-                ])
-            }
+            } if matches!(src_ty, AsmType::Byte | AsmType::Word) && is_mem(&dst) => Ok(vec![
+                AsmInstr::Movzx {
+                    src_ty,
+                    src,
+                    dst_ty,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Mov {
+                    asm_ty: dst_ty,
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                },
+            ]),
 
             /* 'movzlq' does not exist.  Zero-extend with 'movl' before
              * storing with 'movq', if dst is mem.  */
@@ -177,20 +169,18 @@ impl AsmInstr {
                 src_ty: AsmType::Long,
                 dst,
                 dst_ty: AsmType::Quad,
-            } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: AsmType::Long,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty: AsmType::Quad,
-                    },
-                ])
-            }
+            } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Mov {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: AsmType::Long,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty: AsmType::Quad,
+                },
+            ]),
 
             /* 'movzlq' does not exist.  'movl' implicitly zero-extends to 64 bits.  */
             AsmInstr::Movzx {
@@ -198,13 +188,11 @@ impl AsmInstr {
                 src_ty: AsmType::Long,
                 dst,
                 dst_ty: AsmType::Quad,
-            } => {
-                Ok(vec![AsmInstr::Mov {
-                    src,
-                    dst,
-                    asm_ty: AsmType::Long,
-                }])
-            }
+            } => Ok(vec![AsmInstr::Mov {
+                src,
+                dst,
+                asm_ty: AsmType::Long,
+            }]),
 
             /* 'movsx' src cannot be a constant.  */
             AsmInstr::Movsx {
@@ -212,21 +200,19 @@ impl AsmInstr {
                 src_ty,
                 dst,
                 dst_ty,
-            } => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(n),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: src_ty,
-                    },
-                    AsmInstr::Movsx {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        src_ty,
-                        dst,
-                        dst_ty,
-                    },
-                ])
-            }
+            } => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: src_ty,
+                },
+                AsmInstr::Movsx {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    src_ty,
+                    dst,
+                    dst_ty,
+                },
+            ]),
 
             /* 'movsx' requires a GP reg dst.  */
             AsmInstr::Movsx {
@@ -234,21 +220,19 @@ impl AsmInstr {
                 src_ty,
                 dst,
                 dst_ty,
-            } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Movsx {
-                        src,
-                        src_ty,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        dst_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty: dst_ty,
-                    },
-                ])
-            }
+            } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Movsx {
+                    src,
+                    src_ty,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty: dst_ty,
+                },
+            ]),
 
             /* Int binops cannot have large 64-bit immediates.  */
             AsmInstr::Bin {
@@ -256,21 +240,19 @@ impl AsmInstr {
                 lhs: AsmOp::Imm(n),
                 rhs,
                 asm_ty: AsmType::Quad,
-            } if is_large(n) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(n),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Bin {
-                        kind,
-                        lhs: AsmOp::Reg(AsmReg::R9),
-                        rhs,
-                        asm_ty: AsmType::Quad,
-                    },
-                ])
-            }
+            } if is_large(n) => Ok(vec![
+                AsmInstr::Mov {
+                    src: AsmOp::Imm(n),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty: AsmType::Quad,
+                },
+                AsmInstr::Bin {
+                    kind,
+                    lhs: AsmOp::Reg(AsmReg::R9),
+                    rhs,
+                    asm_ty: AsmType::Quad,
+                },
+            ]),
 
             /* Floating-point binops require an SSE register as dst.  */
             AsmInstr::Bin {
@@ -278,26 +260,24 @@ impl AsmInstr {
                 lhs,
                 rhs,
                 asm_ty,
-            } if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&rhs) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: rhs.clone(),
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
-                        asm_ty,
-                    },
-                    AsmInstr::Bin {
-                        kind,
-                        lhs: lhs,
-                        rhs: AsmOp::Reg(AsmReg::Xmm15),
-                        asm_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst: rhs,
-                        asm_ty,
-                    },
-                ])
-            }
+            } if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&rhs) => Ok(vec![
+                AsmInstr::Mov {
+                    src: rhs.clone(),
+                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    asm_ty,
+                },
+                AsmInstr::Bin {
+                    kind,
+                    lhs: lhs,
+                    rhs: AsmOp::Reg(AsmReg::Xmm15),
+                    asm_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: rhs,
+                    asm_ty,
+                },
+            ]),
 
             /* Int binops cannot have both operands in mem.  */
             AsmInstr::Bin {
@@ -305,21 +285,19 @@ impl AsmInstr {
                 lhs,
                 rhs,
                 asm_ty,
-            } if is_mem(&lhs) && is_mem(&rhs) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        src: lhs,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty,
-                    },
-                    AsmInstr::Bin {
-                        kind,
-                        lhs: AsmOp::Reg(AsmReg::R9),
-                        rhs: rhs,
-                        asm_ty,
-                    },
-                ])
-            }
+            } if is_mem(&lhs) && is_mem(&rhs) => Ok(vec![
+                AsmInstr::Mov {
+                    src: lhs,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Bin {
+                    kind,
+                    lhs: AsmOp::Reg(AsmReg::R9),
+                    rhs: rhs,
+                    asm_ty,
+                },
+            ]),
 
             /* Floating-point comparisons require an SSE reg dst.  */
             AsmInstr::Cmp {
@@ -347,179 +325,159 @@ impl AsmInstr {
             }
 
             /* Not both operands of 'cmp' can be in mem.  */
-            AsmInstr::Cmp { asm_ty, src, dst } if is_mem(&src) && is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        asm_ty,
-                        src,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                    AsmInstr::Cmp {
-                        asm_ty,
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                    },
-                ])
-            }
+            AsmInstr::Cmp { asm_ty, src, dst } if is_mem(&src) && is_mem(&dst) => Ok(vec![
+                AsmInstr::Mov {
+                    asm_ty,
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Cmp {
+                    asm_ty,
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                },
+            ]),
 
             /* 'cmpq' cannot compare two immediates; a large immediate also cannot be encoded directly.  */
             AsmInstr::Cmp {
                 asm_ty: AsmType::Quad,
                 src: AsmOp::Imm(imm1),
                 dst: AsmOp::Imm(imm2),
-            } if is_large(imm1) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        asm_ty: AsmType::Quad,
-                        src: AsmOp::Imm(imm1),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                    AsmInstr::Mov {
-                        asm_ty: AsmType::Quad,
-                        src: AsmOp::Imm(imm2),
-                        dst: AsmOp::Reg(AsmReg::R10),
-                    },
-                    AsmInstr::Cmp {
-                        asm_ty: AsmType::Quad,
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst: AsmOp::Reg(AsmReg::R10),
-                    },
-                ])
-            }
+            } if is_large(imm1) => Ok(vec![
+                AsmInstr::Mov {
+                    asm_ty: AsmType::Quad,
+                    src: AsmOp::Imm(imm1),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Mov {
+                    asm_ty: AsmType::Quad,
+                    src: AsmOp::Imm(imm2),
+                    dst: AsmOp::Reg(AsmReg::R10),
+                },
+                AsmInstr::Cmp {
+                    asm_ty: AsmType::Quad,
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(AsmReg::R10),
+                },
+            ]),
 
             /* 'cmpq' src cannot have large src immediate.  */
             AsmInstr::Cmp {
                 asm_ty: AsmType::Quad,
                 src: AsmOp::Imm(imm1),
                 dst,
-            } if is_large(imm1) => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        asm_ty: AsmType::Quad,
-                        src: AsmOp::Imm(imm1),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                    AsmInstr::Cmp {
-                        asm_ty: AsmType::Quad,
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                    },
-                ])
-            }
+            } if is_large(imm1) => Ok(vec![
+                AsmInstr::Mov {
+                    asm_ty: AsmType::Quad,
+                    src: AsmOp::Imm(imm1),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Cmp {
+                    asm_ty: AsmType::Quad,
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                },
+            ]),
 
             /* The dst operand of 'cmp' cannot be an immediate.  */
             AsmInstr::Cmp {
                 asm_ty,
                 src,
                 dst: AsmOp::Imm(imm),
-            } => {
-                Ok(vec![
-                    AsmInstr::Mov {
-                        asm_ty,
-                        src: AsmOp::Imm(imm),
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                    AsmInstr::Cmp {
-                        asm_ty,
-                        src,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                    },
-                ])
-            }
+            } => Ok(vec![
+                AsmInstr::Mov {
+                    asm_ty,
+                    src: AsmOp::Imm(imm),
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Cmp {
+                    asm_ty,
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+            ]),
 
             /* 'cvtsi2sd' cannot have a dst operand in mem.  */
-            AsmInstr::Cvtsi2sd { src, dst, asm_ty } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvtsi2sd {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
-                        asm_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst,
-                        asm_ty: AsmType::Double,
-                    },
-                ])
-            }
+            AsmInstr::Cvtsi2sd { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvtsi2sd {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    asm_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    dst,
+                    asm_ty: AsmType::Double,
+                },
+            ]),
 
             /* 'cvtsi2ss' cannot have a dst operand in mem.  */
-            AsmInstr::Cvtsi2ss { src, dst, asm_ty } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvtsi2ss {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
-                        asm_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst,
-                        asm_ty: AsmType::Float,
-                    },
-                ])
-            }
+            AsmInstr::Cvtsi2ss { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvtsi2ss {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    asm_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    dst,
+                    asm_ty: AsmType::Float,
+                },
+            ]),
 
             /* 'cvttsd2si' cannot have a dst operand in mem.  */
-            AsmInstr::Cvttsd2si { src, dst, asm_ty } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvttsd2si {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty,
-                    },
-                ])
-            }
+            AsmInstr::Cvttsd2si { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvttsd2si {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty,
+                },
+            ]),
 
             /* 'cvttss2si' cannot have a dst operand in mem.  */
-            AsmInstr::Cvttss2si { src, dst, asm_ty } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvttss2si {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::R9),
-                        asm_ty,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
-                        dst,
-                        asm_ty,
-                    },
-                ])
-            }
+            AsmInstr::Cvttss2si { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvttss2si {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty,
+                },
+            ]),
 
             /* 'cvtss2sd' cannot have a dst operand in mem.  */
-            AsmInstr::Cvtss2sd { src, dst } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvtss2sd {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst,
-                        asm_ty: AsmType::Double,
-                    },
-                ])
-            }
+            AsmInstr::Cvtss2sd { src, dst } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvtss2sd {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    dst,
+                    asm_ty: AsmType::Double,
+                },
+            ]),
 
             /* 'cvtsd2ss' cannot have a dst operand in mem.  */
-            AsmInstr::Cvtsd2ss { src, dst } if is_mem(&dst) => {
-                Ok(vec![
-                    AsmInstr::Cvtsd2ss {
-                        src,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm15),
-                        dst,
-                        asm_ty: AsmType::Float,
-                    },
-                ])
-            }
+            AsmInstr::Cvtsd2ss { src, dst } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Cvtsd2ss {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    dst,
+                    asm_ty: AsmType::Float,
+                },
+            ]),
 
             instr => Err(instr),
         }
