@@ -172,7 +172,7 @@ impl std::fmt::Display for AsmInstr {
             }
             AsmInstr::Setcc { cc, dst } => match dst {
                 AsmOp::Reg(reg) => writeln!(f, "set{cc} {}", reg.as_width(AsmType::Byte)),
-                AsmOp::Stack(_) | AsmOp::Mem(_, _) => {
+                AsmOp::Mem(_, _) => {
                     writeln!(f, "set{cc} {}", dst.as_width(AsmType::Byte))
                 }
                 _ => unreachable!("got: {dst:?}"),
@@ -236,7 +236,7 @@ impl std::fmt::Display for AsmInstr {
                     (AsmType::Byte, AsmType::Quad) => "bq",
                     (AsmType::Word, AsmType::Long) => "wl",
                     (AsmType::Word, AsmType::Quad) => "wq",
-                    (AsmType::Long, AsmType::Quad) => "lq", // FIXME
+                    (AsmType::Long, AsmType::Quad) => "lq",
                     _ => unreachable!("{src_ty:?}, {dst_ty:?}"),
                 };
 
@@ -259,7 +259,6 @@ impl std::fmt::Display for AsmInstr {
                     (AsmType::Byte, AsmType::Quad) => "bq",
                     (AsmType::Word, AsmType::Long) => "wl",
                     (AsmType::Word, AsmType::Quad) => "wq",
-                    (AsmType::Long, AsmType::Quad) => "lq",
                     _ => unreachable!("{src_ty:?}, {dst_ty:?}"),
                 };
 

@@ -158,8 +158,10 @@ impl JitCompiler {
             });
         }
 
-        for f in self.assembler.source_map().files() {
-            eprintln!("{}", f.src);
+        if cfg!(debug_assertions) {
+            for f in self.assembler.source_map().files() {
+                eprintln!("{}", f.src);
+            }
         }
 
         let bytes = self.assembler.section_bytes(SectionId(0));
@@ -284,7 +286,7 @@ impl JitCompiler {
             AsmInstr::Newline,
             AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".into()),
             AsmInstr::Mov {
-                src: AsmOp::Stack(16),
+                src: AsmOp::Mem(AsmReg::Bp, 16),
                 dst: AsmOp::Reg(AsmReg::R15),
                 asm_ty: AsmType::Quad,
             },

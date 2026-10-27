@@ -274,7 +274,6 @@ pub enum AsmOp {
     Pseudo { name: String, ty: Type },
     Reg(AsmReg),
     Imm(i64),
-    Stack(isize),
     Mem(AsmReg, isize),
     Data(String, isize),
 }
@@ -287,7 +286,7 @@ impl AsmOp {
         }
     }
 
-    pub fn is_xmm(self) -> bool {
+    pub fn is_xmm(&self) -> bool {
         matches!(self, Self::Reg(reg) if reg.is_xmm())
     }
 }
@@ -297,7 +296,6 @@ impl std::fmt::Display for AsmOp {
         match self {
             AsmOp::Reg(reg) => write!(f, "{}", reg.as_width(AsmType::Quad)),
             AsmOp::Imm(n) => write!(f, "${n}"),
-            AsmOp::Stack(offset) => write!(f, "{offset}(%rbp)"),
             AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg.as_width(AsmType::Quad)),
             AsmOp::Pseudo { .. } => unreachable!(),
             AsmOp::Data(ident, offset) => match offset {

@@ -160,7 +160,7 @@ impl RegAllocator {
             _ => self.allocatable_gp_regs.pop().map(AsmOp::Reg),
         };
 
-        let op = reg.unwrap_or_else(|| AsmOp::Stack(self.get_stack_offset(pseudo)));
+        let op = reg.unwrap_or_else(|| AsmOp::Mem(AsmReg::Bp, self.get_stack_offset(pseudo)));
 
         self.map.insert(pseudo.to_owned(), op.clone());
 

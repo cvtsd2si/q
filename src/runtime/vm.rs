@@ -291,17 +291,26 @@ impl Vm {
 
         match jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc) {
             Ok(Some(block)) => {
-                eprintln!("[JIT]: compilation successful");
+                if cfg!(debug_assertions) {
+                    eprintln!("[JIT]: compilation successful");
+                }
+
                 Some(block)
             }
 
             Ok(None) => {
-                eprintln!("[JIT]: compilation skipped");
+                if cfg!(debug_assertions) {
+                    eprintln!("[JIT]: compilation skipped");
+                }
+
                 None
             }
 
             Err(e) => {
-                eprintln!("[JIT]: compilation failed: {e}");
+                if cfg!(debug_assertions) {
+                    eprintln!("[JIT]: compilation failed: {e}");
+                }
+
                 None
             }
         }

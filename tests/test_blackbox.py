@@ -111,12 +111,10 @@ def test_program(program: Path, jit: bool):
     )
 
     expected_stdout = expected["stdout"]
-    expected_stderr = expected["stderr"]
-
     actual_stdout = result.stdout.splitlines()[-len(expected_stdout):]
     assert actual_stdout == expected_stdout
 
-    if expected_stderr:
-        actual_stderr = result.stderr.splitlines()[-len(expected_stderr):]
-        assert actual_stderr == expected_stderr
+    expected_stderr = expected["stderr"]
+    actual_stderr = result.stderr.splitlines()[-len(expected_stderr):]
+    assert actual_stderr == expected_stderr
 
