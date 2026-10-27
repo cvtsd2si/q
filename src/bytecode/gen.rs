@@ -127,20 +127,29 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
 impl Codegen<Bytecode, CodegenContext> for IRInstr {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
         match self {
-            IRInstr::Cpy { src, dst, .. } => {
-                let src = src.load_op(ctx);
+            IRInstr::Cpy { src, src_ty, dst } => {
+                let mut ops = vec![src.load_op(ctx)];
 
-                let name = match dst {
-                    IRVal::Var { name, .. } => name,
+                let (name, dst_ty) = match dst {
+                    IRVal::Var { name, ty } => (name, ty),
                     IRVal::Const(_) => unreachable!(),
                 };
 
+                /* Change the dst ValueTag.  */
+                if src_ty != dst_ty {
+                    ops.push(Op::Cvt {
+                        src_ty: *src_ty,
+                        dst_ty: *dst_ty,
+                    });
+                }
+
                 if ctx.get::<String>(name).is_some() {
-                    Ok(vec![src, dst.store_op(ctx)])
+                    ops.push(dst.store_op(ctx));
                 } else {
                     ctx.register::<String>(name);
-                    Ok(vec![src])
                 }
+
+                Ok(ops)
             }
 
             IRInstr::Unary {

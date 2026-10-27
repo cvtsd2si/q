@@ -1555,10 +1555,11 @@ impl IRInstr {
                 let asm_ty = (*src_ty).into();
                 match asm_ty {
                     AsmType::Byte | AsmType::Word => Ok(vec![
-                        AsmInstr::Mov {
+                        AsmInstr::Movzx {
                             src: src.codegen(ctx)?,
+                            src_ty: asm_ty,
                             dst: AsmOp::Reg(AsmReg::Ax),
-                            asm_ty: AsmType::Long,
+                            dst_ty: AsmType::Long,
                         },
                         AsmInstr::Cvtsi2sd {
                             src: AsmOp::Reg(AsmReg::Ax),
@@ -1794,7 +1795,7 @@ impl IRInstr {
                             },
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::Add,
-                                lhs: dst.codegen(ctx)?,
+                                lhs: AsmOp::Imm(i64_ceil_as_u64 as i64),
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },
@@ -1824,7 +1825,7 @@ impl IRInstr {
                         AsmInstr::Cvtsi2sd {
                             src: AsmOp::Reg(AsmReg::Ax),
                             dst: dst.codegen(ctx)?,
-                            asm_ty: AsmType::Quad,
+                            asm_ty: AsmType::Long,
                         },
                     ]),
                     _ => Ok(vec![
@@ -1977,7 +1978,7 @@ impl IRInstr {
                             },
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::Add,
-                                lhs: dst.codegen(ctx)?,
+                                lhs: AsmOp::Imm(i64_ceil_as_u64 as i64),
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },
