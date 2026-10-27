@@ -295,13 +295,20 @@ impl std::fmt::Display for AsmOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AsmOp::Reg(reg) => write!(f, "{}", reg.as_width(AsmType::Quad)),
-            AsmOp::Imm(n) => write!(f, "${n}"),
-            AsmOp::Mem(reg, offset) => write!(f, "{offset}({})", reg.as_width(AsmType::Quad)),
+            AsmOp::Imm(n) if *n < 0 => write!(f, "$-0x{:x}", n.unsigned_abs()),
+            AsmOp::Imm(n) => write!(f, "$0x{n:x}"),
+            AsmOp::Mem(reg, offset) if *offset < 0 => write!(
+                f,
+                "-0x{:x}({})",
+                offset.unsigned_abs(),
+                reg.as_width(AsmType::Quad)
+            ),
+            AsmOp::Mem(reg, offset) => write!(f, "0x{offset:x}({})", reg.as_width(AsmType::Quad)),
             AsmOp::Pseudo { .. } => unreachable!(),
-            AsmOp::Data(ident, offset) => match offset {
+            AsmOp::Data(ident, offset) => match *offset {
                 0 => write!(f, "{ident}(%rip)"),
-                n if *n > 0 => write!(f, "{ident}+{n}(%rip)"),
-                n => write!(f, "{ident}{n}(%rip)"),
+                n if n > 0 => write!(f, "{ident}+0x{n:x}(%rip)"),
+                n => write!(f, "{ident}-0x{:x}(%rip)", n.unsigned_abs()),
             },
         }
     }

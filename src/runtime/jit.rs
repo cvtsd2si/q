@@ -16,27 +16,23 @@ use crate::{
         vm::Vm,
     },
 };
+use keystone_engine::{Arch, Keystone, Mode, OptionType, OptionValue};
 use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
 };
-use rsasm::{
-    arch,
-    assembler::{Assembler, Options},
-    section::SectionId,
-};
 
 pub struct JitCompiler {
-    assembler: Assembler,
+    assembler: keystone_engine::Keystone,
 }
 
 impl JitCompiler {
     pub fn new() -> Self {
-        Self {
-            assembler: Assembler::new(
-                arch::lookup("x86-64").unwrap(),
-                Options::new().with_relocatable(false),
-            ),
-        }
+        let assembler = Keystone::new(Arch::X86, Mode::MODE_64).unwrap();
+        assembler
+            .option(OptionType::SYNTAX, OptionValue::SYNTAX_ATT)
+            .unwrap();
+
+        Self { assembler }
     }
 
     pub fn compile(
@@ -143,30 +139,18 @@ impl JitCompiler {
     }
 
     fn asm_exe(&mut self, asm_txt: &str) -> Result<ExecutableMem, JitError> {
-        self.assembler.assemble_str("", asm_txt);
-
-        if !self.assembler.finish() {
-            eprintln!(
-                "{}",
-                self.assembler
-                    .diags()
-                    .render(self.assembler.source_map(), false)
-            );
-
-            return Err(JitError {
-                msg: "JIT asm failed".into(),
-            });
-        }
-
         if cfg!(debug_assertions) {
-            for f in self.assembler.source_map().files() {
-                eprintln!("{}", f.src);
-            }
+            eprintln!("{}", asm_txt);
         }
 
-        let bytes = self.assembler.section_bytes(SectionId(0));
+        let r = self
+            .assembler
+            .asm(asm_txt.to_string(), 0)
+            .map_err(|e| JitError {
+                msg: format!("JIT asm failed: {e}"),
+            })?;
 
-        ExecutableMem::new(&bytes)
+        ExecutableMem::new(&r.bytes)
     }
 
     pub fn compile_entry(&mut self) -> Result<JitTrampoline, JitError> {
