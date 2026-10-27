@@ -273,6 +273,16 @@ TEST_CASES = {
         "stderr": ["err: vm: No 'main' fn. (code: 1)"],
         "stdout": [],
     },
+    "do_while.q": {
+        "ret": 0,
+        "stdout": ["0", "1", "2", "3", "4"],
+        "stderr": [],
+    },
+    "for_empty.q": {
+        "ret": 0,
+        "stdout": ["0", "1", "2", "3", "4"],
+        "stderr": [],
+    },
     "while.q": {
         "ret": 0,
         "stdout": ["0", "1", "2", "3", "4"],
