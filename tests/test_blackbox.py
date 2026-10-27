@@ -52,6 +52,66 @@ TEST_CASES = {
         "stderr": ["err: vm: No 'main' fn. (code: 1)"],
         "stdout": [],
     },
+    "i8_to_i16.q": {
+        "ret": 0,
+        "stdout": ["128", "-128"],
+        "stderr": [],
+    },
+    "i8_to_i32.q": {
+        "ret": 0,
+        "stdout": ["128", "-128"],
+        "stderr": [],
+    },
+    "i8_to_i64.q": {
+        "ret": 0,
+        "stdout": ["128", "-128"],
+        "stderr": [],
+    },
+    "i16_to_i8.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "127"],
+        "stderr": [],
+    },
+    "i16_to_i32.q": {
+        "ret": 0,
+        "stdout": ["32768", "-32768"],
+        "stderr": [],
+    },
+    "i16_to_i64.q": {
+        "ret": 0,
+        "stdout": ["32768", "-32768"],
+        "stderr": [],
+    },
+    "i32_to_i8.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "127"],
+        "stderr": [],
+    },
+    "i32_to_i16.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "32767"],
+        "stderr": [],
+    },
+    "i32_to_i64.q": {
+        "ret": 0,
+        "stdout": ["2147483648", "-2147483648"],
+        "stderr": [],
+    },
+    "i64_to_i8.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "127"],
+        "stderr": [],
+    },
+    "i64_to_i16.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "32767"],
+        "stderr": [],
+    },
+    "i64_to_i32.q": {
+        "ret": 0,
+        "stdout": ["0", "-1", "2147483647"],
+        "stderr": [],
+    },
     "u8_to_u16.q": {
         "ret": 0,
         "stdout": ["256"],
