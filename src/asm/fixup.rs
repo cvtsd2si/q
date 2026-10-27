@@ -268,7 +268,7 @@ impl AsmInstr {
                 },
                 AsmInstr::Bin {
                     kind,
-                    lhs: lhs,
+                    lhs,
                     rhs: AsmOp::Reg(AsmReg::Xmm15),
                     asm_ty,
                 },
@@ -294,7 +294,7 @@ impl AsmInstr {
                 AsmInstr::Bin {
                     kind,
                     lhs: AsmOp::Reg(AsmReg::R9),
-                    rhs: rhs,
+                    rhs,
                     asm_ty,
                 },
             ]),
