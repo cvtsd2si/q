@@ -154,7 +154,7 @@ impl JitCompiler {
     }
 
     pub fn compile_entry(&mut self) -> Result<JitTrampoline, JitError> {
-        let entry = AsmFunc {
+        let f = AsmFunc {
             name: "jit_shared_entry".into(),
             body: self.mk_entry(),
             space: 0,
@@ -162,7 +162,7 @@ impl JitCompiler {
 
         let mut asm_txt = String::new();
 
-        entry.emit(&mut asm_txt).map_err(|_| JitError {
+        f.emit(&mut asm_txt).map_err(|_| JitError {
             msg: "jit entry emission failed".into(),
         })?;
 
