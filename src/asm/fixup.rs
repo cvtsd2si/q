@@ -98,6 +98,28 @@ impl Fixup for AsmInstr {
                 ]
             }
 
+            /* 'movzx' src cannot be a constant.  */
+            AsmInstr::Movzx {
+                src: AsmOp::Imm(n),
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                vec![
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(n),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: src_ty,
+                    },
+                    AsmInstr::Movzx {
+                        src: AsmOp::Reg(AsmReg::R9),
+                        src_ty,
+                        dst,
+                        dst_ty,
+                    },
+                ]
+            }
+
             /* 'movzb{} | movzw{}' are illegal, if dst is mem.  */
             AsmInstr::Movzx {
                 src_ty,
@@ -154,6 +176,28 @@ impl Fixup for AsmInstr {
                     dst,
                     asm_ty: AsmType::Long,
                 }]
+            }
+
+            /* 'movsx' src cannot be a constant.  */
+            AsmInstr::Movsx {
+                src: AsmOp::Imm(n),
+                src_ty,
+                dst,
+                dst_ty,
+            } => {
+                vec![
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(n),
+                        dst: AsmOp::Reg(AsmReg::R9),
+                        asm_ty: src_ty,
+                    },
+                    AsmInstr::Movsx {
+                        src: AsmOp::Reg(AsmReg::R9),
+                        src_ty,
+                        dst,
+                        dst_ty,
+                    },
+                ]
             }
 
             /* 'movsx' requires a GP reg dst.  */
@@ -254,7 +298,7 @@ impl Fixup for AsmInstr {
                 asm_ty: AsmType::Float | AsmType::Double,
                 src: _,
                 dst: AsmOp::Reg(reg),
-            } if reg.clone().is_xmm() => vec![self.clone()],
+            } if reg.is_xmm() => vec![self.clone()],
 
             /* Floating-point comparisons cannot have a mem dst.  */
             AsmInstr::Cmp { asm_ty, src, dst }
@@ -268,7 +312,7 @@ impl Fixup for AsmInstr {
                     },
                     AsmInstr::Cmp {
                         asm_ty,
-                        src: src,
+                        src,
                         dst: AsmOp::Reg(AsmReg::Xmm15),
                     },
                 ]

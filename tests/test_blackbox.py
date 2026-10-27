@@ -1,6 +1,5 @@
 import subprocess
 from pathlib import Path
-
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -16,6 +15,16 @@ TEST_CASES = {
     "fib.q": {
         "ret": 0,
         "stdout": ["55"],
+        "stderr": [],
+    },
+     "fixup_movsx_imm.q": {
+        "ret": 0,
+        "stdout": ["0", "127", "32767", "2147483647"],
+        "stderr": [],
+    },
+    "fixup_movzx_imm.q": {
+        "ret": 0,
+        "stdout": ["0", "127", "255", "65535", "4294967295"],
         "stderr": [],
     },
     "for.q": {
