@@ -17,6 +17,11 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    "float_negation.q": {
+        "ret": 0,
+        "stdout": ["-42.5", "-17.25"],
+        "stderr": [],
+    },
     "fixup_cvtsi2ss_imm.q": {
         "ret": 0,
         "stdout": ["42"],

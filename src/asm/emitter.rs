@@ -152,6 +152,13 @@ impl std::fmt::Display for AsmInstr {
                     lhs.as_width(*asm_ty),
                     rhs.as_width(*asm_ty)
                 ),
+                AsmInstrBinKind::Xor => writeln!(
+                    f,
+                    "xor{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
             },
             AsmInstr::Cmp { src, dst, asm_ty } => {
                 let instr = match asm_ty {

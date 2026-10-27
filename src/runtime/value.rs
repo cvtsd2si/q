@@ -243,6 +243,8 @@ impl std::ops::Neg for Value {
             ValueTag::Int16 => (self.payload as i16).wrapping_neg() as u64,
             ValueTag::Int32 => (self.payload as i32).wrapping_neg() as u64,
             ValueTag::Int64 => (self.payload as i64).wrapping_neg() as u64,
+            ValueTag::Float32 => (self.payload as u32 ^ 0x8000_0000) as u64,
+            ValueTag::Float64 => self.payload ^ 0x8000_0000_0000_0000,
             _ => unimplemented!("Cannot negate {:?} yet", self.tag),
         };
 

@@ -267,6 +267,7 @@ pub enum AsmInstrBinKind {
     Sub,
     And,
     Or,
+    Xor,
 }
 
 #[derive(Debug, Clone)]
@@ -693,6 +694,74 @@ impl IRInstr {
                 }]);
 
                 match kind {
+                    UnaryExpressionKind::Negate if operand_ty.is_float() => {
+                        let float_ty: AsmType = (*operand_ty).into();
+
+                        instrs.push(AsmInstr::Comment(
+                            "Move the floating-point bits into %r9.".into(),
+                        ));
+                        instrs.push(AsmInstr::Mov {
+                            src: dst.clone(),
+                            dst: AsmOp::Reg(AsmReg::R9),
+                            asm_ty: float_ty,
+                        });
+                        instrs.push(AsmInstr::Newline);
+
+                        match float_ty {
+                            AsmType::Float => {
+                                instrs.push(AsmInstr::Comment(
+                                    "Flip bit 31 of the f32 representation.".into(),
+                                ));
+                                instrs.push(AsmInstr::Bin {
+                                    kind: AsmInstrBinKind::Xor,
+                                    lhs: AsmOp::Imm(0x8000_0000),
+                                    rhs: AsmOp::Reg(AsmReg::R9),
+                                    asm_ty: AsmType::Long,
+                                });
+                                instrs.push(AsmInstr::Newline);
+                            }
+
+                            AsmType::Double => {
+                                instrs.push(AsmInstr::Comment(
+                                    "Construct the f64 sign-bit mask in %r10.".into(),
+                                ));
+                                instrs.push(AsmInstr::Mov {
+                                    src: AsmOp::Imm(1),
+                                    dst: AsmOp::Reg(AsmReg::R10),
+                                    asm_ty: AsmType::Quad,
+                                });
+                                instrs.push(AsmInstr::Shift {
+                                    kind: AsmInstrShiftKind::Shl,
+                                    amount: 63,
+                                    dst: AsmOp::Reg(AsmReg::R10),
+                                    asm_ty: AsmType::Quad,
+                                });
+                                instrs.push(AsmInstr::Newline);
+                                instrs.push(AsmInstr::Comment(
+                                    "Flip bit 63 of the f64 representation.".into(),
+                                ));
+                                instrs.push(AsmInstr::Bin {
+                                    kind: AsmInstrBinKind::Xor,
+                                    lhs: AsmOp::Reg(AsmReg::R10),
+                                    rhs: AsmOp::Reg(AsmReg::R9),
+                                    asm_ty: AsmType::Quad,
+                                });
+                                instrs.push(AsmInstr::Newline);
+                            }
+
+                            _ => unreachable!(),
+                        }
+
+                        instrs.push(AsmInstr::Comment(
+                            "Move the negated bits back into the dst.".into(),
+                        ));
+                        instrs.push(AsmInstr::Mov {
+                            src: AsmOp::Reg(AsmReg::R9),
+                            dst: dst.clone(),
+                            asm_ty: float_ty,
+                        });
+                        instrs.push(AsmInstr::Newline);
+                    }
                     UnaryExpressionKind::Negate if operand_ty.is_signed() => {
                         instrs.push(AsmInstr::Unary {
                             kind: AsmInstrUnaryKind::Neg,
