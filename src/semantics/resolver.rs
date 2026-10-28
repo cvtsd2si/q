@@ -132,7 +132,7 @@ impl Resolve for Param {
         let uniq_name = mkuniq(&self.name);
 
         resolver.var_map.insert(
-            self.name.clone(),
+            self.name,
             Var {
                 name: uniq_name.clone(),
             },
@@ -296,15 +296,18 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
         Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
 
         Expression::Variable { name, ty, span } => {
-            let resolved_name = resolver.var_map.get(&name);
-            if resolved_name.is_none() {
+            let resolved_var = resolver.var_map.get(&name).cloned();
+
+            if resolved_var.is_none() {
                 return Err(ResolverError {
                     msg: format!("undefined var: {}", name),
                 });
             }
 
+            let resolved_var = resolved_var.unwrap();
+
             Ok(Expression::Variable {
-                name: resolved_name.cloned().unwrap().name,
+                name: resolved_var.name,
                 ty,
                 span,
             })
