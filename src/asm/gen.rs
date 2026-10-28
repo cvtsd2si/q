@@ -50,7 +50,7 @@ pub enum AsmInstr {
     },
     Shift {
         kind: AsmInstrShiftKind,
-        amount: u8,
+        amount: AsmOp,
         dst: AsmOp,
         asm_ty: AsmType,
     },
@@ -834,7 +834,7 @@ impl IRInstr {
                             } else {
                                 AsmInstrShiftKind::Shr
                             },
-                            amount: 8,
+                            amount: AsmOp::Imm(8),
                             dst: AsmOp::Reg(AsmReg::Ax),
                             asm_ty: AsmType::Word,
                         },
@@ -851,6 +851,79 @@ impl IRInstr {
                     },
                     AsmInstr::Newline,
                 ]);
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if matches!(kind, BinaryExpressionKind::Shl | BinaryExpressionKind::Shr) => {
+                let asm_ty: AsmType = (*operand_ty).into();
+                let is_signed = operand_ty.is_signed();
+
+                let shift_kind = match (*kind, is_signed) {
+                    (BinaryExpressionKind::Shl, _) => AsmInstrShiftKind::Shl,
+                    (BinaryExpressionKind::Shr, true) => AsmInstrShiftKind::Sar,
+                    (BinaryExpressionKind::Shr, false) => AsmInstrShiftKind::Shr,
+                    _ => unreachable!(),
+                };
+
+                /* Rust's wrapping_shl/wrapping_shr use the shift count
+                 * modulo the operand's bit width.
+                 *
+                 * i8/u8:   count & 7
+                 * i16/u16: count & 15
+                 * i32/u32: count & 31
+                 * i64/u64: count & 63  */
+                let shift_mask = (operand_ty.size_of() * 8 - 1) as i64;
+
+                let instrs = vec![
+                    AsmInstr::Comment(format!(
+                        "Bitwise shift ({shift_kind:?}, signed: {is_signed})"
+                    )),
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the shift count into Reg::Cx.".into()),
+                    AsmInstr::Mov {
+                        src: rhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Cx),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!("Mask CL with {shift_mask}.")),
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::And,
+                        lhs: AsmOp::Imm(shift_mask),
+                        rhs: AsmOp::Reg(AsmReg::Cx),
+                        asm_ty: AsmType::Byte,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the left operand into Reg::R10.".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::R10),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Perform the shift using CL.".into()),
+                    AsmInstr::Shift {
+                        kind: shift_kind,
+                        amount: AsmOp::Reg(AsmReg::Cx),
+                        dst: AsmOp::Reg(AsmReg::R10),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the shifted result into the destination.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::R10),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ];
 
                 Ok(instrs)
             }
@@ -1048,7 +1121,7 @@ impl IRInstr {
                                 });
                                 instrs.push(AsmInstr::Shift {
                                     kind: AsmInstrShiftKind::Shl,
-                                    amount: 63,
+                                    amount: AsmOp::Imm(63),
                                     dst: AsmOp::Reg(AsmReg::R10),
                                     asm_ty: AsmType::Quad,
                                 });

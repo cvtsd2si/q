@@ -167,6 +167,8 @@ pub enum BinaryExpressionKind {
     Mul,
     Div,
     Rem,
+    Shl,
+    Shr,
     Less,
     Greater,
     LessEqual,

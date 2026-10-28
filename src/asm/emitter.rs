@@ -233,7 +233,7 @@ impl std::fmt::Display for AsmInstr {
             ),
             AsmInstr::Shift {
                 kind,
-                amount,
+                amount: AsmOp::Imm(amount),
                 dst,
                 asm_ty,
             } => match kind {
@@ -253,6 +253,34 @@ impl std::fmt::Display for AsmInstr {
                     f,
                     "sar{} $0x{amount:x}, {}",
                     asm_ty.suffix(),
+                    dst.as_width(*asm_ty)
+                ),
+            },
+            AsmInstr::Shift {
+                kind,
+                amount,
+                dst,
+                asm_ty,
+            } => match kind {
+                AsmInstrShiftKind::Shl => writeln!(
+                    f,
+                    "shl{} {}, {}",
+                    asm_ty.suffix(),
+                    amount.as_width(*asm_ty),
+                    dst.as_width(*asm_ty)
+                ),
+                AsmInstrShiftKind::Shr => writeln!(
+                    f,
+                    "shr{} {}, {}",
+                    asm_ty.suffix(),
+                    amount.as_width(*asm_ty),
+                    dst.as_width(*asm_ty)
+                ),
+                AsmInstrShiftKind::Sar => writeln!(
+                    f,
+                    "sar{} {}, {}",
+                    asm_ty.suffix(),
+                    amount.as_width(*asm_ty),
                     dst.as_width(*asm_ty)
                 ),
             },

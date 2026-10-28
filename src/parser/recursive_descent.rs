@@ -518,7 +518,7 @@ impl<'src> Parser<'src> {
     }
 
     fn relational(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.term()?;
+        let mut result = self.bitwise_shift()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[
@@ -540,6 +540,41 @@ impl<'src> Parser<'src> {
                         src: self.src.to_string(),
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of token stream (prev: None)".to_string(),
+                    });
+                }
+            };
+
+            let right = self.bitwise_shift()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind,
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn bitwise_shift(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.term()?;
+        let begin = result.span();
+
+        while self.check_many_greedy(&[TokenKind::LessLess, TokenKind::GreaterGreater]) {
+            let kind = match self.prev.as_ref() {
+                Some(token) => match token.kind {
+                    TokenKind::LessLess => BinaryExpressionKind::Shl,
+                    TokenKind::GreaterGreater => BinaryExpressionKind::Shr,
+                    _ => unreachable!(),
+                },
+                None => {
+                    return Err(ParserError {
+                        src: self.src.to_string(),
+                        span: Span { start: 0, end: 0 },
+                        msg: "Encountered the end of the token stream (prev: None)".to_string(),
                     });
                 }
             };

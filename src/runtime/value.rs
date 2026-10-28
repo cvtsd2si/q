@@ -127,6 +127,7 @@ impl From<Type> for ValueTag {
         }
     }
 }
+
 macro_rules! impl_arithmetic {
     ($trait:ident, $method:ident, $wrapping:ident, $op:tt) => {
         impl std::ops::$trait for Value {
@@ -206,6 +207,51 @@ macro_rules! impl_arithmetic {
         }
     };
 }
+
+macro_rules! impl_shift {
+    ($trait:ident, $method:ident, $wrapping:ident) => {
+        impl std::ops::$trait for Value {
+            type Output = Self;
+
+            fn $method(self, rhs: Self) -> Self::Output {
+                use ValueTag::*;
+
+                let shift = rhs.payload as u32;
+
+                let payload = match (self.tag, rhs.tag) {
+                    (Int8, Int8) => (self.payload as i8).$wrapping(shift) as u8 as u64,
+
+                    (Int16, Int16) => (self.payload as i16).$wrapping(shift) as u16 as u64,
+
+                    (Int32, Int32) => (self.payload as i32).$wrapping(shift) as u32 as u64,
+
+                    (Int64, Int64) => (self.payload as i64).$wrapping(shift) as u64,
+
+                    (UInt8, UInt8) => (self.payload as u8).$wrapping(shift) as u64,
+
+                    (UInt16, UInt16) => (self.payload as u16).$wrapping(shift) as u64,
+
+                    (UInt32, UInt32) => (self.payload as u32).$wrapping(shift) as u64,
+
+                    (UInt64, UInt64) => self.payload.$wrapping(shift),
+
+                    _ => panic!(
+                        "Unsupported shift operation: {:?} and {:?}",
+                        self.tag, rhs.tag
+                    ),
+                };
+
+                Self {
+                    tag: self.tag,
+                    payload,
+                }
+            }
+        }
+    };
+}
+
+impl_shift!(Shl, shl, wrapping_shl);
+impl_shift!(Shr, shr, wrapping_shr);
 
 impl_arithmetic!(Add, add, wrapping_add, +);
 impl_arithmetic!(Sub, sub, wrapping_sub, -);

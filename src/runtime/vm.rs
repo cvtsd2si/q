@@ -126,6 +126,8 @@ impl Vm {
                 Op::Mul => self.handle_op_mul(),
                 Op::Div => self.handle_op_div(),
                 Op::Rem => self.handle_op_rem(),
+                Op::Shl => self.handle_op_shl(),
+                Op::Shr => self.handle_op_shr(),
                 Op::Lt => self.handle_op_lt(),
                 Op::Le => self.handle_op_le(),
                 Op::Eq => self.handle_op_eq(),
@@ -374,16 +376,24 @@ impl Vm {
         binop!(self.stack, -);
     }
 
-    fn handle_op_rem(&mut self) {
-        binop!(self.stack, %);
-    }
-
     fn handle_op_mul(&mut self) {
         binop!(self.stack, *);
     }
 
     fn handle_op_div(&mut self) {
         binop!(self.stack, /);
+    }
+
+    fn handle_op_rem(&mut self) {
+        binop!(self.stack, %);
+    }
+
+    fn handle_op_shl(&mut self) {
+        binop!(self.stack, <<);
+    }
+
+    fn handle_op_shr(&mut self) {
+        binop!(self.stack, >>);
     }
 
     fn handle_op_lt(&mut self) {

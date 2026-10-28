@@ -46,22 +46,67 @@ impl<'src> Iterator for Tokenizer<'src> {
                 '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' | '~' | '%' => {
                     Ok(Token::single(ch, idx))
                 }
-                '<' | '>' => {
-                    if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
-                        Ok(Token {
-                            kind: if ch == '<' {
-                                TokenKind::LessEqual
-                            } else {
-                                TokenKind::GreaterEqual
-                            },
+                '<' => {
+                    if self.chars.next_if(|(_, ch)| *ch == '<').is_some() {
+                        if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                            return Some(Ok(Token {
+                                kind: TokenKind::LessLessEqual,
+                                span: Span {
+                                    start: idx,
+                                    end: idx + 3,
+                                },
+                            }));
+                        }
+
+                        return Some(Ok(Token {
+                            kind: TokenKind::LessLess,
                             span: Span {
                                 start: idx,
                                 end: idx + 2,
                             },
-                        })
-                    } else {
-                        Ok(Token::single(ch, idx))
+                        }));
+                    } else if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                        return Some(Ok(Token {
+                            kind: TokenKind::LessEqual,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        }));
                     }
+
+                    Ok(Token::single(ch, idx))
+                }
+                '>' => {
+                    if self.chars.next_if(|(_, ch)| *ch == '>').is_some() {
+                        if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                            return Some(Ok(Token {
+                                kind: TokenKind::GreaterGreaterEqual,
+                                span: Span {
+                                    start: idx,
+                                    end: idx + 3,
+                                },
+                            }));
+                        }
+
+                        return Some(Ok(Token {
+                            kind: TokenKind::GreaterGreater,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        }));
+                    } else if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
+                        return Some(Ok(Token {
+                            kind: TokenKind::GreaterEqual,
+                            span: Span {
+                                start: idx,
+                                end: idx + 2,
+                            },
+                        }));
+                    }
+
+                    Ok(Token::single(ch, idx))
                 }
                 '!' => single_or_double!('=', TokenKind::NotEqual),
                 '=' => single_or_double!('=', TokenKind::DoubleEqual),
