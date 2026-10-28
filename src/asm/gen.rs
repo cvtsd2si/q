@@ -1821,7 +1821,7 @@ impl IRInstr {
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },
-                            AsmInstr::Label(l2.clone()),
+                            AsmInstr::Label(l2),
                         ])
                     }
                     _ => unreachable!(),
@@ -2004,7 +2004,7 @@ impl IRInstr {
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },
-                            AsmInstr::Label(l2.clone()),
+                            AsmInstr::Label(l2),
                         ])
                     }
                     _ => unreachable!(),
@@ -2167,7 +2167,7 @@ impl IRInstr {
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Float,
                             },
-                            AsmInstr::Label(l2.clone()),
+                            AsmInstr::Label(l2),
                         ])
                     }
                     _ => unreachable!(),
