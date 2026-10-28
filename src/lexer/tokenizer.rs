@@ -43,7 +43,7 @@ impl<'src> Iterator for Tokenizer<'src> {
             }
 
             let token = match ch {
-                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' | '~' => {
+                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '+' | '*' | '/' | '~' | '%' => {
                     Ok(Token::single(ch, idx))
                 }
                 '<' | '>' => {

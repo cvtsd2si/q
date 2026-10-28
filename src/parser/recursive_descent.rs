@@ -598,11 +598,12 @@ impl<'src> Parser<'src> {
         let mut result = self.cast()?;
         let begin = result.span();
 
-        while self.check_many_greedy(&[TokenKind::Star, TokenKind::Slash]) {
+        while self.check_many_greedy(&[TokenKind::Star, TokenKind::Slash, TokenKind::Percent]) {
             let kind = match self.prev.as_ref() {
                 Some(token) => match token.kind {
                     TokenKind::Star => BinaryExpressionKind::Mul,
                     TokenKind::Slash => BinaryExpressionKind::Div,
+                    TokenKind::Percent => BinaryExpressionKind::Rem,
                     _ => unreachable!(),
                 },
                 None => {

@@ -588,16 +588,18 @@ fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
 
 fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
     match expr {
-        Expression::Literal { val, ty, span: _ } => {
+        Expression::Literal { val, ty, .. } => {
             let ty = ty.unwrap();
             let literal = Literal::try_from((val, ty)).unwrap();
 
             ExpRes::Plain(IRVal::Const(literal))
         }
-        Expression::Variable { name, ty, span: _ } => ExpRes::Plain(IRVal::Var {
+
+        Expression::Variable { name, ty, .. } => ExpRes::Plain(IRVal::Var {
             name: name.into(),
             ty: ty.unwrap(),
         }),
+
         Expression::Unary { kind, expr, ty, .. } => {
             let operand_ty = ty.unwrap();
 
@@ -614,12 +616,9 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             ExpRes::Plain(dst)
         }
+
         Expression::Binary {
-            kind,
-            lhs,
-            rhs,
-            ty,
-            span: _,
+            kind, lhs, rhs, ty, ..
         } => {
             let operand_ty = lhs.ty().unwrap();
             let result_ty = ty.unwrap();
@@ -641,10 +640,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         }
 
         Expression::Call {
-            target,
-            args,
-            ty,
-            span: _,
+            target, args, ty, ..
         } => {
             let arg_tys = args.iter().map(|arg| arg.ty().unwrap()).collect();
 

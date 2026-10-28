@@ -745,6 +745,122 @@ impl IRInstr {
                 rhs,
                 dst,
                 operand_ty,
+            } if matches!(kind, BinaryExpressionKind::Rem) => {
+                let asm_ty: AsmType = (*operand_ty).into();
+                let is_byte = asm_ty == AsmType::Byte;
+                let is_signed = operand_ty.is_signed();
+
+                let mut instrs = vec![
+                    AsmInstr::Comment(format!("Integer remainder (signed: {is_signed})")),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ];
+
+                if is_signed {
+                    if is_byte {
+                        instrs.extend([
+                            AsmInstr::Comment(
+                                "Sign-extend AL into AX for signed 8-bit division.".into(),
+                            ),
+                            AsmInstr::Movsx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty: AsmType::Byte,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Word,
+                            },
+                            AsmInstr::Newline,
+                        ]);
+                    } else {
+                        instrs.extend([
+                            AsmInstr::Comment("Sign-extend Reg::Ax into Reg::Dx.".into()),
+                            AsmInstr::Cdq { asm_ty },
+                            AsmInstr::Newline,
+                        ]);
+                    }
+
+                    instrs.extend([
+                        AsmInstr::Comment("Perform signed division using idiv.".into()),
+                        AsmInstr::Idiv {
+                            op: rhs.codegen(ctx)?,
+                            asm_ty,
+                        },
+                        AsmInstr::Newline,
+                    ]);
+                } else {
+                    if is_byte {
+                        instrs.extend([
+                            AsmInstr::Comment("Zero-extend %al into %eax, clearing %ah.".into()),
+                            AsmInstr::Movzx {
+                                src: AsmOp::Reg(AsmReg::Ax),
+                                src_ty: AsmType::Byte,
+                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst_ty: AsmType::Long,
+                            },
+                            AsmInstr::Newline,
+                        ]);
+                    } else {
+                        instrs.extend([
+                            AsmInstr::Comment("Clear Reg::Dx for unsigned division.".into()),
+                            AsmInstr::Mov {
+                                src: AsmOp::Imm(0),
+                                dst: AsmOp::Reg(AsmReg::Dx),
+                                asm_ty,
+                            },
+                            AsmInstr::Newline,
+                        ]);
+                    }
+
+                    instrs.extend([
+                        AsmInstr::Comment("Perform unsigned division using div.".into()),
+                        AsmInstr::Div {
+                            op: rhs.codegen(ctx)?,
+                            asm_ty,
+                        },
+                        AsmInstr::Newline,
+                    ]);
+                }
+
+                if is_byte {
+                    instrs.extend([
+                        AsmInstr::Comment("Extract the 8-bit remainder from %ah into %al.".into()),
+                        AsmInstr::Shift {
+                            kind: if is_signed {
+                                AsmInstrShiftKind::Sar
+                            } else {
+                                AsmInstrShiftKind::Shr
+                            },
+                            amount: 8,
+                            dst: AsmOp::Reg(AsmReg::Ax),
+                            asm_ty: AsmType::Word,
+                        },
+                        AsmInstr::Newline,
+                    ]);
+                }
+
+                instrs.extend([
+                    AsmInstr::Comment("Move the remainder into the destination.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(if is_byte { AsmReg::Ax } else { AsmReg::Dx }),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ]);
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
             } => {
                 if operand_ty.is_float() {
                     let cc = match kind {

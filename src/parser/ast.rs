@@ -166,6 +166,7 @@ pub enum BinaryExpressionKind {
     Sub,
     Mul,
     Div,
+    Rem,
     Less,
     Greater,
     LessEqual,

@@ -25,6 +25,50 @@ TEST_CASES = {
         "stderr": ["err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"],
     },
 
+    # Unsigned integer remainder
+    "u8_remainder.q": {
+        "ret": 0,
+        "stdout": ["4", "7", "1", "0", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+    "u16_remainder.q": {
+        "ret": 0,
+        "stdout": ["80", "128", "1", "0", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+    "u32_remainder.q": {
+        "ret": 0,
+        "stdout": ["10240", "65536", "1", "0", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+    "u64_remainder.q": {
+        "ret": 0,
+        "stdout": ["3305635840", "4294967296", "1", "0", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+
+    # Signed integer remainder
+    "i8_remainder.q": {
+        "ret": 0,
+        "stdout": ["-2", "7", "-1", "1", "-3", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+    "i16_remainder.q": {
+        "ret": 0,
+        "stdout": ["-49", "256", "-6", "4", "-7", "0", "0", "0", "0", "0"],
+        "stderr": [],
+    },
+    "i32_remainder.q": {
+        "ret": 0,
+        "stdout": ["-37889", "65536", "-6", "2", "-7", "0", "0", "0", "0", "1"],
+        "stderr": [],
+    },
+    "i64_remainder.q": {
+        "ret": 0,
+        "stdout": ["-3800301569", "4294967296", "-3", "4", "-7", "0", "0", "0", "0", "0"],
+        "stderr": [],
+    },
+
     # Unsigned integer division
     "u8_division.q": {
         "ret": 0,
