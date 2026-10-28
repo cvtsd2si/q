@@ -462,16 +462,15 @@ fn typecheck_expr(
                     | BinaryExpressionKind::NotEqual
             );
 
-            if is_comparison {
-                if let (Some(lhs_ty), Some(rhs_ty)) = (&lhs_hint, &rhs_hint) {
-                    if lhs_ty != rhs_ty {
-                        return Err(TypecheckerError {
-                            msg: format!(
-                                "Comparisons require operands of the same type, got {lhs_ty:?} and {rhs_ty:?}"
-                            ),
-                        });
-                    }
-                }
+            if is_comparison
+                && let (Some(lhs_ty), Some(rhs_ty)) = (&lhs_hint, &rhs_hint)
+                && lhs_ty != rhs_ty
+            {
+                return Err(TypecheckerError {
+                    msg: format!(
+                        "Comparisons require operands of the same type, got {lhs_ty:?} and {rhs_ty:?}"
+                    ),
+                });
             }
 
             let op_hint = merge_types(lhs_hint, rhs_hint)?;
