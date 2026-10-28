@@ -115,6 +115,12 @@ impl std::fmt::Display for AsmInstr {
                     writeln!(f, "shr{} {}", asm_ty.suffix(), dst.as_width(*asm_ty))
                 }
             },
+            AsmInstr::Idiv { op, asm_ty } => {
+                writeln!(f, "idiv{} {}", asm_ty.suffix(), op.as_width(*asm_ty),)
+            }
+            AsmInstr::Div { op, asm_ty } => {
+                writeln!(f, "div{} {}", asm_ty.suffix(), op.as_width(*asm_ty),)
+            }
             AsmInstr::Bin {
                 kind,
                 lhs,
@@ -151,6 +157,13 @@ impl std::fmt::Display for AsmInstr {
                         rhs.as_width(*asm_ty)
                     ),
                 },
+                AsmInstrBinKind::DivDouble => writeln!(
+                    f,
+                    "div{} {}, {}",
+                    asm_ty.suffix(),
+                    lhs.as_width(*asm_ty),
+                    rhs.as_width(*asm_ty)
+                ),
                 AsmInstrBinKind::And => writeln!(
                     f,
                     "and{} {}, {}",
@@ -337,6 +350,13 @@ impl std::fmt::Display for AsmInstr {
                 src.as_width(*asm_ty),
                 src.as_width(*asm_ty),
             ),
+            AsmInstr::Cdq { asm_ty } => match asm_ty {
+                AsmType::Byte => writeln!(f, "cbw"),
+                AsmType::Word => writeln!(f, "cwd"),
+                AsmType::Long => writeln!(f, "cdq"),
+                AsmType::Quad => writeln!(f, "coq"),
+                _ => unreachable!("got: {asm_ty:?}"),
+            },
             AsmInstr::Comment(comment) => writeln!(f, "# {comment}"),
             AsmInstr::Newline => writeln!(f),
             _ => unreachable!(),

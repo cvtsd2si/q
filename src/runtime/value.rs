@@ -210,6 +210,7 @@ macro_rules! impl_arithmetic {
 impl_arithmetic!(Add, add, wrapping_add, +);
 impl_arithmetic!(Sub, sub, wrapping_sub, -);
 impl_arithmetic!(Mul, mul, wrapping_mul, *);
+impl_arithmetic!(Div, div, wrapping_div, /);
 
 impl std::ops::Not for Value {
     type Output = Self;

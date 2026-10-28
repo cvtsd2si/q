@@ -70,6 +70,16 @@ impl RegAllocator {
                 asm_ty: *asm_ty,
             },
 
+            AsmInstr::Div { op, asm_ty } => AsmInstr::Div {
+                op: self.replace_pseudo(op),
+                asm_ty: *asm_ty,
+            },
+
+            AsmInstr::Idiv { op, asm_ty } => AsmInstr::Idiv {
+                op: self.replace_pseudo(op),
+                asm_ty: *asm_ty,
+            },
+
             AsmInstr::Bin {
                 kind,
                 lhs,

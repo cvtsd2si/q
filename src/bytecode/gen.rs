@@ -10,6 +10,7 @@ pub enum Op {
     Add,
     Sub,
     Mul,
+    Div,
     Const(Literal),
     Ret,
     RetVoid,
@@ -182,13 +183,13 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     BinaryExpressionKind::Add => (Op::Add, false, false),
                     BinaryExpressionKind::Sub => (Op::Sub, false, false),
                     BinaryExpressionKind::Mul => (Op::Mul, false, false),
+                    BinaryExpressionKind::Div => (Op::Div, false, false),
                     BinaryExpressionKind::Less => (Op::Lt, false, false),
                     BinaryExpressionKind::Greater => (Op::Lt, true, false),
                     BinaryExpressionKind::LessEqual => (Op::Le, false, false),
                     BinaryExpressionKind::GreaterEqual => (Op::Le, true, false),
                     BinaryExpressionKind::Equal => (Op::Eq, false, false),
                     BinaryExpressionKind::NotEqual => (Op::Eq, false, true),
-                    _ => unreachable!(),
                 };
 
                 let (lhs, rhs) = if swap { (rhs, lhs) } else { (lhs, rhs) };

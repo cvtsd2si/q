@@ -124,6 +124,7 @@ impl Vm {
                 Op::Add => self.handle_op_add(),
                 Op::Sub => self.handle_op_sub(),
                 Op::Mul => self.handle_op_mul(),
+                Op::Div => self.handle_op_div(),
                 Op::Lt => self.handle_op_lt(),
                 Op::Le => self.handle_op_le(),
                 Op::Eq => self.handle_op_eq(),
@@ -374,6 +375,10 @@ impl Vm {
 
     fn handle_op_mul(&mut self) {
         binop!(self.stack, *);
+    }
+
+    fn handle_op_div(&mut self) {
+        binop!(self.stack, /);
     }
 
     fn handle_op_lt(&mut self) {

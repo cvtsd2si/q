@@ -25,6 +25,62 @@ TEST_CASES = {
         "stderr": ["err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"],
     },
 
+    # Unsigned integer division
+    "u8_division.q": {
+        "ret": 0,
+        "stdout": ["28", "0", "127", "85", "200", "0", "1", "1", "0"],
+        "stderr": [],
+    },
+    "u16_division.q": {
+        "ret": 0,
+        "stdout": ["390", "0", "32767", "21845", "50000", "0", "1", "1", "0"],
+        "stderr": [],
+    },
+    "u32_division.q": {
+        "ret": 0,
+        "stdout": ["61035", "0", "2147483647", "1431655765", "4000000000", "0", "1", "1", "0"],
+        "stderr": [],
+    },
+    "u64_division.q": {
+        "ret": 0,
+        "stdout": ["4190951585", "0", "9223372036854775807", "6148914691236517205", "18000000000000000000", "0", "1", "1", "0"],
+        "stderr": [],
+    },
+
+    # Signed integer division
+    "i8_division.q": {
+        "ret": 0,
+        "stdout": ["-14", "0", "33", "-2", "0", "0", "127", "-127", "1", "-42"],
+        "stderr": [],
+    },
+    "i16_division.q": {
+        "ret": 0,
+        "stdout": ["-117", "0", "4285", "-36", "0", "0", "32767", "-32767", "1", "-4681"],
+        "stderr": [],
+    },
+    "i32_division.q": {
+        "ret": 0,
+        "stdout": ["-30517", "0", "285714285", "-9362", "0", "0", "2147483647", "-2147483647", "1", "-306783378"],
+        "stderr": [],
+    },
+    "i64_division.q": {
+        "ret": 0,
+        "stdout": ["-2095475792", "0", "1285714285714285714", "-613566756", "0", "0", "9223372036854775807", "-9223372036854775807", "1", "-1317624576693539401"],
+        "stderr": [],
+    },
+
+    # Floating-point division
+    "f32_division.q": {
+        "ret": 0,
+        "stdout": ["3", "-2", "-6", "-0.5", "5", "0", "1", "0.5", "7.5"],
+        "stderr": [],
+    },
+    "f64_division.q": {
+        "ret": 0,
+        "stdout": ["5.25", "-14", "-0.375", "4", "0", "1", "8388608.5", "0.25", "21"],
+        "stderr": [],
+    },
+
     # Unsigned integer multiplication
     "u8_multiplication.q": {
         "ret": 0,
@@ -384,7 +440,7 @@ TEST_CASES = {
 
     "float_negation.q": {
         "ret": 0,
-        "stdout": ["-42.5", "-17.25"],
+        "stdout": ["-42.5", "-17.25", "42.5", "17.25"],
         "stderr": [],
     },
     "fixup_cvtsi2ss_imm.q": {
