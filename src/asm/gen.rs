@@ -2681,9 +2681,7 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
                 Literal::Int64(int64) => Ok(AsmOp::Imm(*int64)),
                 Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
                 Literal::Float32(_) | Literal::Float64(_) => {
-                    let name = ctx.intern_float(*konst);
-
-                    Ok(AsmOp::Data(name, 0))
+                    Ok(AsmOp::Data(ctx.intern_float(*konst), 0))
                 }
             },
             IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
@@ -2736,7 +2734,9 @@ pub fn insert_epilogue<T>(body: &mut T)
 where
     T: AsmSink,
 {
-    body.sink(AsmInstr::Comment("Restore the previous stack frame.".into()));
+    body.sink(AsmInstr::Comment(
+        "Restore the previous stack frame.".into(),
+    ));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
