@@ -2714,7 +2714,7 @@ pub fn insert_prologue<T>(body: &mut T)
 where
     T: AsmSink,
 {
-    body.sink(AsmInstr::Comment("Establish a stack frame".into()));
+    body.sink(AsmInstr::Comment("Establish a stack frame.".into()));
     body.sink(AsmInstr::Push(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Sp),
@@ -2736,7 +2736,7 @@ pub fn insert_epilogue<T>(body: &mut T)
 where
     T: AsmSink,
 {
-    body.sink(AsmInstr::Comment("Restore the previous stack frame".into()));
+    body.sink(AsmInstr::Comment("Restore the previous stack frame.".into()));
     body.sink(AsmInstr::Mov {
         src: AsmOp::Reg(AsmReg::Bp),
         dst: AsmOp::Reg(AsmReg::Sp),
