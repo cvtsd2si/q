@@ -17,7 +17,39 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
-    
+
+    # i32 comparisons
+    "less.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+    "lessequal.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+    "greater.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+    "greaterequal.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+    "equal.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+    "notequal.q": {
+        "ret": 0,
+        "stdout": ["0"],
+        "stderr": [],
+    },
+
     # Unsigned -> Unsigned
     "u8_to_u16.q": {
         "ret": 0,

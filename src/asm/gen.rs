@@ -654,20 +654,34 @@ impl IRInstr {
                 };
 
                 let instrs = vec![
+                    AsmInstr::Comment(format!("Comparison op {kind:?}")),
+                    AsmInstr::Comment(
+                        "'cmp' computes `dst - src`, and updates the processor's status flags"
+                            .into(),
+                    ),
+                    AsmInstr::Comment("(ZF, SF, OF)".into()),
                     AsmInstr::Cmp {
                         src: rhs.codegen(ctx)?,
                         dst: lhs.codegen(ctx)?,
                         asm_ty: (*operand_ty).into(),
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Zero-initialize the dst.".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
                         dst: dst.codegen(ctx)?,
                         asm_ty: AsmType::Quad,
                     },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!(
+                        "Then, `{}` writes `1` if the previous comparison satisfied the {kind:?} condition.",
+                        format!("set{cc:?}").to_lowercase()
+                    )),
                     AsmInstr::Setcc {
                         cc,
                         dst: dst.codegen(ctx)?,
                     },
+                    AsmInstr::Newline,
                 ];
 
                 Ok(instrs)
@@ -1022,15 +1036,21 @@ impl IRInstr {
             }
 
             IRInstr::Jz { cond, target } => Ok(vec![
+                AsmInstr::Comment("`jz`".into()),
+                AsmInstr::Comment("Compare condition against 0.".into()),
                 AsmInstr::Cmp {
                     src: AsmOp::Imm(0),
                     dst: cond.codegen(ctx)?,
                     asm_ty: AsmType::Quad,
                 },
+                AsmInstr::Newline,
+                AsmInstr::Comment("Jump to target label if the previous instr compared true.".into()),
+                AsmInstr::Comment("Otherwise, fall through below.".into()),
                 AsmInstr::Jmpcc {
                     cc: ConditionCode::E,
                     target: format!(".L{}_{}", func_name, target),
                 },
+                AsmInstr::Newline,
             ]),
 
             IRInstr::Jmp { target } => Ok(vec![AsmInstr::Jmp {
