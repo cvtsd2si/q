@@ -152,12 +152,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(ops)
             }
 
-            IRInstr::Unary {
-                kind,
-                src,
-                dst,
-                operand_ty: _,
-            } => {
+            IRInstr::Unary { kind, src, dst, .. } => {
                 let op = match kind {
                     UnaryExpressionKind::Negate => Op::Neg,
                     UnaryExpressionKind::LogicalNot | UnaryExpressionKind::BitwiseNot => Op::Not,
@@ -214,18 +209,18 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 Ok(ops)
             }
 
-            IRInstr::Ret { val, ret_ty: _ } => match val {
+            IRInstr::Ret { val, .. } => match val {
                 Some(v) => Ok(vec![v.load_op(ctx), Op::Ret]),
                 None => Ok(vec![Op::RetVoid]),
             },
 
             IRInstr::Print { val, .. } => Ok(vec![val.load_op(ctx), Op::Print]),
 
-            IRInstr::Jz { cond, target: _ } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
+            IRInstr::Jz { cond, .. } => Ok(vec![cond.load_op(ctx), Op::Jz(usize::MAX)]),
 
-            IRInstr::Jmp { target: _ } => Ok(vec![Op::Jmp(usize::MAX)]),
+            IRInstr::Jmp { .. } => Ok(vec![Op::Jmp(usize::MAX)]),
 
-            IRInstr::Label(_target) => Ok(vec![]),
+            IRInstr::Label(_) => Ok(vec![]),
 
             IRInstr::Call {
                 target, args, dst, ..
