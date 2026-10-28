@@ -25,6 +25,62 @@ TEST_CASES = {
         "stderr": ["err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"],
     },
 
+    # Unsigned integer multiplication
+    "u8_multiplication.q": {
+        "ret": 0,
+        "stdout": ["255", "255", "0", "255", "0", "15", "119"],
+        "stderr": [],
+    },
+    "u16_multiplication.q": {
+        "ret": 0,
+        "stdout": ["65535", "65535", "0", "65535", "0", "255", "32896"],
+        "stderr": [],
+    },
+    "u32_multiplication.q": {
+        "ret": 0,
+        "stdout": ["4294967295", "4294967295", "0", "4294967295", "0", "65535", "2147516416"],
+        "stderr": [],
+    },
+    "u64_multiplication.q": {
+        "ret": 0,
+        "stdout": ["18446744073709551615", "18446744073709551615", "0", "18446744073709551615", "0", "4294967295", "281474976776192"],
+        "stderr": [],
+    },
+
+    # Signed integer multiplication
+    "i8_multiplication.q": {
+        "ret": 0,
+        "stdout": ["-84", "-84", "60", "-35", "0", "-128", "127"],
+        "stderr": [],
+    },
+    "i16_multiplication.q": {
+        "ret": 0,
+        "stdout": ["-32640", "-32640", "128", "-255", "0", "-32768", "32767"],
+        "stderr": [],
+    },
+    "i32_multiplication.q": {
+        "ret": 0,
+        "stdout": ["-2147395600", "-2147395600", "46340", "-46340", "0", "-2147483647", "2147483647"],
+        "stderr": [],
+    },
+    "i64_multiplication.q": {
+        "ret": 0,
+        "stdout": ["-9223372030926249001", "-9223372030926249001", "3037000499", "-3037000499", "0", "-9223372036854775807", "9223372036854775807"],
+        "stderr": [],
+    },
+
+    # Floating-point multiplication
+    "f32_multiplication.q": {
+        "ret": 0,
+        "stdout": ["3.75", "3.75", "-1.875", "-3.125", "1.5625", "0.75", "1.25"],
+        "stderr": [],
+    },
+    "f64_multiplication.q": {
+        "ret": 0,
+        "stdout": ["3.125", "3.125", "-1.875", "-3.75", "2.25", "0.625", "8388608.5"],
+        "stderr": [],
+    },
+
     # integer comparisons
     "u8_comparisons.q": {
         "ret": 0,

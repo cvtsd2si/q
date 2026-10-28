@@ -135,6 +135,22 @@ impl std::fmt::Display for AsmInstr {
                     lhs.as_width(*asm_ty),
                     rhs.as_width(*asm_ty)
                 ),
+                AsmInstrBinKind::Mul => match asm_ty {
+                    AsmType::Byte | AsmType::Word | AsmType::Long | AsmType::Quad => writeln!(
+                        f,
+                        "imul{} {}, {}",
+                        asm_ty.suffix(),
+                        lhs.as_width(*asm_ty),
+                        rhs.as_width(*asm_ty)
+                    ),
+                    AsmType::Float | AsmType::Double => writeln!(
+                        f,
+                        "mul{} {}, {}",
+                        asm_ty.suffix(),
+                        lhs.as_width(*asm_ty),
+                        rhs.as_width(*asm_ty)
+                    ),
+                },
                 AsmInstrBinKind::And => writeln!(
                     f,
                     "and{} {}, {}",

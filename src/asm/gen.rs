@@ -271,6 +271,7 @@ impl RtFn {
 pub enum AsmInstrBinKind {
     Add,
     Sub,
+    Mul,
     And,
     Or,
     Xor,
@@ -607,10 +608,15 @@ impl IRInstr {
                 rhs,
                 dst,
                 operand_ty,
-            } if matches!(kind, BinaryExpressionKind::Add | BinaryExpressionKind::Sub) => {
+            } if matches!(
+                kind,
+                BinaryExpressionKind::Add | BinaryExpressionKind::Sub | BinaryExpressionKind::Mul
+            ) =>
+            {
                 let kind = match kind {
                     BinaryExpressionKind::Add => AsmInstrBinKind::Add,
                     BinaryExpressionKind::Sub => AsmInstrBinKind::Sub,
+                    BinaryExpressionKind::Mul => AsmInstrBinKind::Mul,
                     _ => unimplemented!(),
                 };
 

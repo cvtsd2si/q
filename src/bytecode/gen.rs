@@ -9,6 +9,7 @@ use crate::{
 pub enum Op {
     Add,
     Sub,
+    Mul,
     Const(Literal),
     Ret,
     RetVoid,
@@ -180,6 +181,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 let (op, swap, negate) = match kind {
                     BinaryExpressionKind::Add => (Op::Add, false, false),
                     BinaryExpressionKind::Sub => (Op::Sub, false, false),
+                    BinaryExpressionKind::Mul => (Op::Mul, false, false),
                     BinaryExpressionKind::Less => (Op::Lt, false, false),
                     BinaryExpressionKind::Greater => (Op::Lt, true, false),
                     BinaryExpressionKind::LessEqual => (Op::Le, false, false),
