@@ -79,10 +79,7 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::Pop(val) => writeln!(f, "popq {}", val.as_width(AsmType::Quad)),
             AsmInstr::Push(val) => writeln!(f, "pushq {}", val.as_width(AsmType::Quad)),
             AsmInstr::Mov { src, dst, asm_ty } => {
-                let is_src_xmm = src.clone().is_xmm();
-                let is_dst_xmm = dst.clone().is_xmm();
-
-                let mnemonic = match (is_src_xmm, is_dst_xmm, asm_ty.size()) {
+                let mnemonic = match (src.is_xmm(), dst.is_xmm(), asm_ty.size()) {
                     /* GPR, immediate, or memory operands.  */
                     (false, false, 1) => "movb",
                     (false, false, 2) => "movw",
