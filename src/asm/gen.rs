@@ -652,106 +652,221 @@ impl IRInstr {
             }
 
             IRInstr::Bin {
-                kind,
+                kind: BinaryExpressionKind::Div,
                 lhs,
                 rhs,
                 dst,
                 operand_ty,
-            } if matches!(kind, BinaryExpressionKind::Div) => {
-                if operand_ty.is_float() {
-                    let instrs = vec![
-                        AsmInstr::Comment("Floating-point division.".into()),
-                        AsmInstr::Mov {
-                            src: lhs.codegen(ctx)?,
-                            dst: dst.codegen(ctx)?,
-                            asm_ty: (*operand_ty).into(),
-                        },
-                        AsmInstr::Bin {
-                            kind: AsmInstrBinKind::DivDouble,
-                            lhs: rhs.codegen(ctx)?,
-                            rhs: dst.codegen(ctx)?,
-                            asm_ty: (*operand_ty).into(),
-                        },
-                    ];
+            } if matches!((*operand_ty).into(), AsmType::Float | AsmType::Double) => {
+                let instrs = vec![
+                    AsmInstr::Comment("Floating-point division.".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Bin {
+                        kind: AsmInstrBinKind::DivDouble,
+                        lhs: rhs.codegen(ctx)?,
+                        rhs: dst.codegen(ctx)?,
+                        asm_ty: (*operand_ty).into(),
+                    },
+                ];
 
-                    Ok(instrs)
-                } else {
-                    let mut instrs = vec![
-                        AsmInstr::Comment(format!(
-                            "Integer division (signed: {})",
-                            operand_ty.is_signed()
-                        )),
-                        AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
-                        AsmInstr::Mov {
-                            src: lhs.codegen(ctx)?,
-                            dst: AsmOp::Reg(AsmReg::Ax),
-                            asm_ty: (*operand_ty).into(),
-                        },
-                        AsmInstr::Newline,
-                    ];
-
-                    if operand_ty.is_signed() {
-                        instrs.extend([
-                            AsmInstr::Comment("For signed division, we sign-extend Reg::Ax into Reg::Dx".into()),
-                            AsmInstr::Cdq { asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                            AsmInstr::Comment("Then, we use the one-operand 'idiv' with the divisor as the operand.".into()),
-                            AsmInstr::Idiv { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                            AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
-                            AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                        ]);
-
-                        Ok(instrs)
-                    } else {
-                        if operand_ty.size_of() == 1 {
-                            instrs.extend([
-                                AsmInstr::Comment("For unsigned 8-bit division, we zero-extend %al to %eax, which also clear %ah".into()),
-                                AsmInstr::Movzx { src: AsmOp::Reg(AsmReg::Ax), src_ty: AsmType::Byte, dst: AsmOp::Reg(AsmReg::Ax), dst_ty: AsmType::Long },
-                                AsmInstr::Newline,
-                                AsmInstr::Comment("Then, we use the one-operand 'div' with the divisor as the operand.".into()),
-                                AsmInstr::Div { op: rhs.codegen(ctx)?, asm_ty: AsmType::Byte },
-                                AsmInstr::Newline,
-                                AsmInstr::Comment("Then, after the division, the quotient is in %al, and the remainder is in %ah".into()),
-                                AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: AsmType::Byte },
-                                AsmInstr::Newline,
-                            ]);
-
-                            return Ok(instrs);
-                        }
-
-                        instrs.extend([
-                            AsmInstr::Comment("For unsigned division, we zero out Reg::Dx, because".into()),
-                            AsmInstr::Comment("unsigned division interprets all bits as positive values.".into()),
-                            AsmInstr::Mov { src: AsmOp::Imm(0), dst: AsmOp::Reg(AsmReg::Dx), asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                            AsmInstr::Comment("Then, we use the one-operand 'div' with the divisor as the operand.".into()),
-                            AsmInstr::Div { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                            AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
-                            AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
-                            AsmInstr::Newline,
-                        ]);
-
-                        Ok(instrs)
-                    }
-                }
+                Ok(instrs)
             }
 
             IRInstr::Bin {
-                kind,
+                kind: BinaryExpressionKind::Div,
                 lhs,
                 rhs,
                 dst,
                 operand_ty,
-            } if matches!(kind, BinaryExpressionKind::Rem) => {
-                let asm_ty: AsmType = (*operand_ty).into();
-                let is_byte = asm_ty == AsmType::Byte;
-                let is_signed = operand_ty.is_signed();
+            } if matches!((*operand_ty).into(), AsmType::Byte) && operand_ty.is_signed() => {
+                let instrs = vec![
+                    AsmInstr::Comment(format!(
+                        "Integer division (signed: {})",
+                        operand_ty.is_signed()
+                    )),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("For signed division, we sign-extend Reg::Ax into Reg::Dx".into()),
+                    AsmInstr::Cdq { asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, we use the one-operand 'idiv' with the divisor as the operand.".into()),
+                    AsmInstr::Idiv { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
+                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                ];
 
-                let mut instrs = vec![
-                    AsmInstr::Comment(format!("Integer remainder (signed: {is_signed})")),
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Div,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if matches!((*operand_ty).into(), AsmType::Byte) && !operand_ty.is_signed() => {
+                let instrs = vec![
+                    AsmInstr::Comment(format!(
+                        "Integer division (signed: {})",
+                        operand_ty.is_signed()
+                    )),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Comment("For unsigned 8-bit division, we zero-extend %al to %eax, which also clear %ah".into()),
+                    AsmInstr::Movzx { src: AsmOp::Reg(AsmReg::Ax), src_ty: AsmType::Byte, dst: AsmOp::Reg(AsmReg::Ax), dst_ty: AsmType::Long },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, we use the one-operand 'div' with the divisor as the operand.".into()),
+                    AsmInstr::Div { op: rhs.codegen(ctx)?, asm_ty: AsmType::Byte },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, after the division, the quotient is in %al, and the remainder is in %ah".into()),
+                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: AsmType::Byte },
+                    AsmInstr::Newline,
+                ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Div,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if operand_ty.is_signed() => {
+                let instrs = vec![
+                    AsmInstr::Comment(format!(
+                        "Integer division (signed: {})",
+                        operand_ty.is_signed()
+                    )),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Comment("For signed division, we sign-extend Reg::Ax into Reg::Dx".into()),
+                    AsmInstr::Cdq { asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, we use the one-operand 'idiv' with the divisor as the operand.".into()),
+                    AsmInstr::Idiv { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
+                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Div,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if !operand_ty.is_signed() => {
+                let instrs = vec![
+                    AsmInstr::Comment(format!(
+                        "Integer division (signed: {})",
+                        operand_ty.is_signed()
+                    )),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Comment("For unsigned division, we zero out Reg::Dx, because".into()),
+                    AsmInstr::Comment("unsigned division interprets all bits as positive values.".into()),
+                    AsmInstr::Mov { src: AsmOp::Imm(0), dst: AsmOp::Reg(AsmReg::Dx), asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, we use the one-operand 'div' with the divisor as the operand.".into()),
+                    AsmInstr::Div { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
+                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Newline,
+                ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Rem,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if operand_ty.is_signed() && AsmType::from(*operand_ty) == AsmType::Byte => {
+                let asm_ty: AsmType = (*operand_ty).into();
+
+                Ok(vec![
+                    AsmInstr::Comment("Signed 8-bit int rem.".into()),
+                    AsmInstr::Comment("Move the dividend into %al".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Sign-extend %al into %ax for signed 8-bit division.".into()),
+                    AsmInstr::Movsx {
+                        src: AsmOp::Reg(AsmReg::Ax),
+                        src_ty: AsmType::Byte,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        dst_ty: AsmType::Word,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Perform signed division using idiv.".into()),
+                    AsmInstr::Idiv {
+                        op: rhs.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Extract the 8-bit rem from %ah into %al.".into()),
+                    AsmInstr::Shift {
+                        kind: AsmInstrShiftKind::Sar,
+                        src: AsmOp::Imm(8),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: AsmType::Word,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the rem into the dst.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Ax),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ])
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Rem,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if operand_ty.is_signed() => {
+                let asm_ty: AsmType = (*operand_ty).into();
+
+                Ok(vec![
+                    AsmInstr::Comment("Signed int rem (larger than Byte)".into()),
                     AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
@@ -759,100 +874,114 @@ impl IRInstr {
                         asm_ty,
                     },
                     AsmInstr::Newline,
-                ];
-
-                if is_signed {
-                    if is_byte {
-                        instrs.extend([
-                            AsmInstr::Comment(
-                                "Sign-extend AL into AX for signed 8-bit division.".into(),
-                            ),
-                            AsmInstr::Movsx {
-                                src: AsmOp::Reg(AsmReg::Ax),
-                                src_ty: AsmType::Byte,
-                                dst: AsmOp::Reg(AsmReg::Ax),
-                                dst_ty: AsmType::Word,
-                            },
-                            AsmInstr::Newline,
-                        ]);
-                    } else {
-                        instrs.extend([
-                            AsmInstr::Comment("Sign-extend Reg::Ax into Reg::Dx.".into()),
-                            AsmInstr::Cdq { asm_ty },
-                            AsmInstr::Newline,
-                        ]);
-                    }
-
-                    instrs.extend([
-                        AsmInstr::Comment("Perform signed division using idiv.".into()),
-                        AsmInstr::Idiv {
-                            op: rhs.codegen(ctx)?,
-                            asm_ty,
-                        },
-                        AsmInstr::Newline,
-                    ]);
-                } else {
-                    if is_byte {
-                        instrs.extend([
-                            AsmInstr::Comment("Zero-extend %al into %eax, clearing %ah.".into()),
-                            AsmInstr::Movzx {
-                                src: AsmOp::Reg(AsmReg::Ax),
-                                src_ty: AsmType::Byte,
-                                dst: AsmOp::Reg(AsmReg::Ax),
-                                dst_ty: AsmType::Long,
-                            },
-                            AsmInstr::Newline,
-                        ]);
-                    } else {
-                        instrs.extend([
-                            AsmInstr::Comment("Clear Reg::Dx for unsigned division.".into()),
-                            AsmInstr::Mov {
-                                src: AsmOp::Imm(0),
-                                dst: AsmOp::Reg(AsmReg::Dx),
-                                asm_ty,
-                            },
-                            AsmInstr::Newline,
-                        ]);
-                    }
-
-                    instrs.extend([
-                        AsmInstr::Comment("Perform unsigned division using div.".into()),
-                        AsmInstr::Div {
-                            op: rhs.codegen(ctx)?,
-                            asm_ty,
-                        },
-                        AsmInstr::Newline,
-                    ]);
-                }
-
-                if is_byte {
-                    instrs.extend([
-                        AsmInstr::Comment("Extract the 8-bit remainder from %ah into %al.".into()),
-                        AsmInstr::Shift {
-                            kind: if is_signed {
-                                AsmInstrShiftKind::Sar
-                            } else {
-                                AsmInstrShiftKind::Shr
-                            },
-                            src: AsmOp::Imm(8),
-                            dst: AsmOp::Reg(AsmReg::Ax),
-                            asm_ty: AsmType::Word,
-                        },
-                        AsmInstr::Newline,
-                    ]);
-                }
-
-                instrs.extend([
-                    AsmInstr::Comment("Move the remainder into the destination.".into()),
+                    AsmInstr::Comment("Sign-extend Reg::Ax into Reg::Dx.".into()),
+                    AsmInstr::Cdq { asm_ty },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Perform signed division using idiv.".into()),
+                    AsmInstr::Idiv {
+                        op: rhs.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the rem into the dst.".into()),
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(if is_byte { AsmReg::Ax } else { AsmReg::Dx }),
+                        src: AsmOp::Reg(AsmReg::Dx),
                         dst: dst.codegen(ctx)?,
                         asm_ty,
                     },
                     AsmInstr::Newline,
-                ]);
+                ])
+            }
 
-                Ok(instrs)
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Rem,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } if AsmType::from(*operand_ty) == AsmType::Byte => {
+                let asm_ty: AsmType = (*operand_ty).into();
+
+                Ok(vec![
+                    AsmInstr::Comment("Unsigned 8-bit int rem.".into()),
+                    AsmInstr::Comment("Move the dividend into %al".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Zero-extend %al into %eax, clearing %ah.".into()),
+                    AsmInstr::Movzx {
+                        src: AsmOp::Reg(AsmReg::Ax),
+                        src_ty: AsmType::Byte,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        dst_ty: AsmType::Long,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Perform unsigned division using div.".into()),
+                    AsmInstr::Div {
+                        op: rhs.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Extract the 8-bit rem from %ah into %al.".into()),
+                    AsmInstr::Shift {
+                        kind: AsmInstrShiftKind::Shr,
+                        src: AsmOp::Imm(8),
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty: AsmType::Word,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the rem into the dst.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Ax),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ])
+            }
+
+            IRInstr::Bin {
+                kind: BinaryExpressionKind::Rem,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
+            } => {
+                let asm_ty: AsmType = (*operand_ty).into();
+
+                Ok(vec![
+                    AsmInstr::Comment("Unsigned int rem (larger than Byte)".into()),
+                    AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(AsmReg::Ax),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Clear Reg::Dx for unsigned division.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(AsmReg::Dx),
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Perform unsigned division using div.".into()),
+                    AsmInstr::Div {
+                        op: rhs.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Move the rem into the dst.".into()),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(AsmReg::Dx),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty,
+                    },
+                    AsmInstr::Newline,
+                ])
             }
 
             IRInstr::Bin {
