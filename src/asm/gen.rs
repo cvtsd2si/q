@@ -1044,7 +1044,9 @@ impl IRInstr {
                     asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Newline,
-                AsmInstr::Comment("Jump to target label if the previous instr compared true.".into()),
+                AsmInstr::Comment(
+                    "Jump to target label if the previous instr compared true.".into(),
+                ),
                 AsmInstr::Comment("Otherwise, fall through below.".into()),
                 AsmInstr::Jmpcc {
                     cc: ConditionCode::E,

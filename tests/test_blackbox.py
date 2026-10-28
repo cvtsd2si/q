@@ -18,6 +18,13 @@ TEST_CASES = {
         "stderr": [],
     },
 
+    # comparison among diff types
+    "comparison_diff_types.q": {
+        "ret": 1,
+        "stdout": [],
+        "stderr": ["err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"],
+    },
+
     # i32 comparisons
     "less.q": {
         "ret": 0,
