@@ -158,7 +158,7 @@ impl std::fmt::Display for AsmInstr {
                 ),
             },
             AsmInstr::Cmp { src, dst, asm_ty } => {
-                let instr = match asm_ty {
+                let mnemonic = match asm_ty {
                     AsmType::Byte => "cmpb",
                     AsmType::Word => "cmpw",
                     AsmType::Long => "cmpl",
@@ -168,7 +168,7 @@ impl std::fmt::Display for AsmInstr {
                 };
                 writeln!(
                     f,
-                    "{instr} {}, {}",
+                    "{mnemonic} {}, {}",
                     src.as_width(*asm_ty),
                     dst.as_width(*asm_ty)
                 )

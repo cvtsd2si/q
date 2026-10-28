@@ -213,6 +213,10 @@ pub enum ConditionCode {
     Be,
     A,
     Ae,
+
+    // Parity
+    P,
+    Np,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -242,6 +246,8 @@ impl std::fmt::Display for ConditionCode {
             ConditionCode::Be => write!(f, "be"),
             ConditionCode::A => write!(f, "a"),
             ConditionCode::Ae => write!(f, "ae"),
+            ConditionCode::P => write!(f, "p"),
+            ConditionCode::Np => write!(f, "np"),
         }
     }
 }
@@ -634,52 +640,131 @@ impl IRInstr {
                 dst,
                 operand_ty,
             } => {
-                let cc = match (*kind, !operand_ty.is_signed()) {
-                    (BinaryExpressionKind::Equal, _) => ConditionCode::E,
-                    (BinaryExpressionKind::NotEqual, _) => ConditionCode::Ne,
-                    (BinaryExpressionKind::Less, false) => ConditionCode::L,
-                    (BinaryExpressionKind::LessEqual, false) => ConditionCode::Le,
-                    (BinaryExpressionKind::Greater, false) => ConditionCode::G,
-                    (BinaryExpressionKind::GreaterEqual, false) => ConditionCode::Ge,
-                    (BinaryExpressionKind::Less, true) => ConditionCode::B,
-                    (BinaryExpressionKind::LessEqual, true) => ConditionCode::Be,
-                    (BinaryExpressionKind::Greater, true) => ConditionCode::A,
-                    (BinaryExpressionKind::GreaterEqual, true) => ConditionCode::Ae,
-                    _ => unreachable!("got: {kind:?} {}", !operand_ty.is_signed()),
-                };
+                if operand_ty.is_float() {
+                    let cc = match kind {
+                        BinaryExpressionKind::Less => ConditionCode::B,
+                        BinaryExpressionKind::Greater => ConditionCode::A,
+                        BinaryExpressionKind::LessEqual => ConditionCode::Be,
+                        BinaryExpressionKind::GreaterEqual => ConditionCode::Ae,
+                        BinaryExpressionKind::Equal => ConditionCode::E,
+                        BinaryExpressionKind::NotEqual => ConditionCode::Ne,
+                        _ => unreachable!("got: {kind:?}"),
+                    };
 
-                let instrs = vec![
-                    AsmInstr::Comment(format!("Comparison op {kind:?}")),
-                    AsmInstr::Comment(
-                        "'cmp' computes `dst - src`, and updates the processor's status flags"
-                            .into(),
-                    ),
-                    AsmInstr::Comment("(ZF, SF, OF)".into()),
-                    AsmInstr::Cmp {
-                        src: rhs.codegen(ctx)?,
-                        dst: lhs.codegen(ctx)?,
-                        asm_ty: (*operand_ty).into(),
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Zero-initialize the dst.".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(0),
-                        dst: dst.codegen(ctx)?,
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment(format!(
-                        "Then, `{}` writes `1` if the previous comparison satisfied the {kind:?} condition.",
-                        format!("set{cc:?}").to_lowercase()
-                    )),
-                    AsmInstr::Setcc {
-                        cc,
-                        dst: dst.codegen(ctx)?,
-                    },
-                    AsmInstr::Newline,
-                ];
+                    let mut instrs = vec![
+                        AsmInstr::Comment("Compare the two floating-point values.".into()),
+                        AsmInstr::Comment("The processor sets CF, ZF, and PF.".into()),
+                        AsmInstr::Cmp {
+                            src: rhs.codegen(ctx)?,
+                            dst: lhs.codegen(ctx)?,
+                            asm_ty: (*operand_ty).into(),
+                        },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment("Zero-initialize the dst.".into()),
+                        AsmInstr::Mov {
+                            src: AsmOp::Imm(0),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Long,
+                        },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment(
+                            "Update byte in dst if one of the conditions is true.".into(),
+                        ),
+                        AsmInstr::Setcc {
+                            cc,
+                            dst: dst.codegen(ctx)?,
+                        },
+                    ];
 
-                Ok(instrs)
+                    if *kind == BinaryExpressionKind::NotEqual {
+                        instrs.extend([
+                            AsmInstr::Comment(format!(
+                                "For {kind:?}, we also need to check the P flag."
+                            )),
+                            AsmInstr::Setcc {
+                                cc: ConditionCode::P,
+                                dst: AsmOp::Reg(AsmReg::R10),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Combine the result using the OR semantics.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::Or,
+                                lhs: AsmOp::Reg(AsmReg::R10),
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Byte,
+                            },
+                            AsmInstr::Newline,
+                        ]);
+                    } else {
+                        instrs.extend([
+                            AsmInstr::Comment(format!(
+                                "For {kind:?}, we also need to check the NP flag."
+                            )),
+                            AsmInstr::Setcc {
+                                cc: ConditionCode::Np,
+                                dst: AsmOp::Reg(AsmReg::R10),
+                            },
+                            AsmInstr::Newline,
+                            AsmInstr::Comment("Combine the result using the And semantics.".into()),
+                            AsmInstr::Bin {
+                                kind: AsmInstrBinKind::And,
+                                lhs: AsmOp::Reg(AsmReg::R10),
+                                rhs: dst.codegen(ctx)?,
+                                asm_ty: AsmType::Byte,
+                            },
+                            AsmInstr::Newline,
+                        ]);
+                    }
+
+                    Ok(instrs)
+                } else {
+                    let cc = match (*kind, !operand_ty.is_signed()) {
+                        (BinaryExpressionKind::Equal, _) => ConditionCode::E,
+                        (BinaryExpressionKind::NotEqual, _) => ConditionCode::Ne,
+                        (BinaryExpressionKind::Less, false) => ConditionCode::L,
+                        (BinaryExpressionKind::LessEqual, false) => ConditionCode::Le,
+                        (BinaryExpressionKind::Greater, false) => ConditionCode::G,
+                        (BinaryExpressionKind::GreaterEqual, false) => ConditionCode::Ge,
+                        (BinaryExpressionKind::Less, true) => ConditionCode::B,
+                        (BinaryExpressionKind::LessEqual, true) => ConditionCode::Be,
+                        (BinaryExpressionKind::Greater, true) => ConditionCode::A,
+                        (BinaryExpressionKind::GreaterEqual, true) => ConditionCode::Ae,
+                        _ => unreachable!("got: {kind:?} {}", !operand_ty.is_signed()),
+                    };
+
+                    let instrs = vec![
+                        AsmInstr::Comment(format!("Comparison op {kind:?}")),
+                        AsmInstr::Comment(
+                            "'cmp' computes `dst - src`, and updates the processor's status flags"
+                                .into(),
+                        ),
+                        AsmInstr::Comment("(ZF, SF, OF)".into()),
+                        AsmInstr::Cmp {
+                            src: rhs.codegen(ctx)?,
+                            dst: lhs.codegen(ctx)?,
+                            asm_ty: (*operand_ty).into(),
+                        },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment("Zero-initialize the dst.".into()),
+                        AsmInstr::Mov {
+                            src: AsmOp::Imm(0),
+                            dst: dst.codegen(ctx)?,
+                            asm_ty: AsmType::Quad,
+                        },
+                        AsmInstr::Newline,
+                        AsmInstr::Comment(format!(
+                            "Then, `{}` writes `1` if the previous comparison satisfied the {kind:?} condition.",
+                            format!("set{cc:?}").to_lowercase()
+                        )),
+                        AsmInstr::Setcc {
+                            cc,
+                            dst: dst.codegen(ctx)?,
+                        },
+                        AsmInstr::Newline,
+                    ];
+
+                    Ok(instrs)
+                }
             }
 
             IRInstr::Unary {

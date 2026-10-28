@@ -160,7 +160,7 @@ pub enum UnaryExpressionKind {
     BitwiseNot,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BinaryExpressionKind {
     Add,
     Sub,
