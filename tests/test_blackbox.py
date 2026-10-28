@@ -25,6 +25,48 @@ TEST_CASES = {
         "stderr": ["err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"],
     },
 
+    # integer comparisons
+    "u8_comparisons.q": {
+        "ret": 0,
+        "stdout": ["true", "true", "false", "false", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "u16_comparisons.q": {
+        "ret": 0,
+        "stdout": ["false", "false", "true", "true", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "u32_comparisons.q": {
+        "ret": 0,
+        "stdout": ["true", "true", "false", "false", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "u64_comparisons.q": {
+        "ret": 0,
+        "stdout": ["false", "false", "true", "true", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "i8_comparisons.q": {
+        "ret": 0,
+        "stdout": ["true", "true", "false", "false", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "i16_comparisons.q": {
+        "ret": 0,
+        "stdout": ["false", "false", "true", "true", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "i32_comparisons.q": {
+        "ret": 0,
+        "stdout": ["true", "true", "false", "false", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+    "i64_comparisons.q": {
+        "ret": 0,
+        "stdout": ["false", "false", "true", "true", "false", "true", "true", "false"],
+        "stderr": [],
+    },
+
     # float comparisons
     "f32_comparisons.q": {
         "ret": 0,
