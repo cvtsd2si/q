@@ -50,7 +50,7 @@ pub enum AsmInstr {
     },
     Shift {
         kind: AsmInstrShiftKind,
-        amount: AsmOp,
+        src: AsmOp,
         dst: AsmOp,
         asm_ty: AsmType,
     },
@@ -834,7 +834,7 @@ impl IRInstr {
                             } else {
                                 AsmInstrShiftKind::Shr
                             },
-                            amount: AsmOp::Imm(8),
+                            src: AsmOp::Imm(8),
                             dst: AsmOp::Reg(AsmReg::Ax),
                             asm_ty: AsmType::Word,
                         },
@@ -911,7 +911,7 @@ impl IRInstr {
                     AsmInstr::Comment("Perform the shift using CL.".into()),
                     AsmInstr::Shift {
                         kind: shift_kind,
-                        amount: AsmOp::Reg(AsmReg::Cx),
+                        src: AsmOp::Reg(AsmReg::Cx),
                         dst: AsmOp::Reg(AsmReg::R10),
                         asm_ty,
                     },
@@ -1121,7 +1121,7 @@ impl IRInstr {
                                 });
                                 instrs.push(AsmInstr::Shift {
                                     kind: AsmInstrShiftKind::Shl,
-                                    amount: AsmOp::Imm(63),
+                                    src: AsmOp::Imm(63),
                                     dst: AsmOp::Reg(AsmReg::R10),
                                     asm_ty: AsmType::Quad,
                                 });

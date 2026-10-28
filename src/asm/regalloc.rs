@@ -105,12 +105,12 @@ impl RegAllocator {
 
             AsmInstr::Shift {
                 kind,
-                amount,
+                src,
                 dst,
                 asm_ty,
             } => AsmInstr::Shift {
                 kind: *kind,
-                amount: amount.clone(),
+                src: src.clone(),
                 dst: self.replace_pseudo(dst),
                 asm_ty: *asm_ty,
             },

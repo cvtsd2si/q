@@ -233,57 +233,43 @@ impl std::fmt::Display for AsmInstr {
             ),
             AsmInstr::Shift {
                 kind,
-                amount: AsmOp::Imm(amount),
+                src: AsmOp::Imm(amount),
                 dst,
                 asm_ty,
-            } => match kind {
-                AsmInstrShiftKind::Shl => writeln!(
+            } => {
+                let mnemonic = match kind {
+                    AsmInstrShiftKind::Shl => "shl",
+                    AsmInstrShiftKind::Shr => "shr",
+                    AsmInstrShiftKind::Sar => "sar",
+                };
+
+                writeln!(
                     f,
-                    "shl{} $0x{amount:x}, {}",
+                    "{mnemonic}{} $0x{amount:x}, {}",
                     asm_ty.suffix(),
                     dst.as_width(*asm_ty)
-                ),
-                AsmInstrShiftKind::Shr => writeln!(
-                    f,
-                    "shr{} $0x{amount:x}, {}",
-                    asm_ty.suffix(),
-                    dst.as_width(*asm_ty)
-                ),
-                AsmInstrShiftKind::Sar => writeln!(
-                    f,
-                    "sar{} $0x{amount:x}, {}",
-                    asm_ty.suffix(),
-                    dst.as_width(*asm_ty)
-                ),
-            },
+                )
+            }
             AsmInstr::Shift {
                 kind,
-                amount,
+                src,
                 dst,
                 asm_ty,
-            } => match kind {
-                AsmInstrShiftKind::Shl => writeln!(
+            } => {
+                let mnemonic = match kind {
+                    AsmInstrShiftKind::Shl => "shl",
+                    AsmInstrShiftKind::Shr => "shr",
+                    AsmInstrShiftKind::Sar => "sar",
+                };
+
+                writeln!(
                     f,
-                    "shl{} {}, {}",
+                    "{mnemonic}{} {}, {}",
                     asm_ty.suffix(),
-                    amount.as_width(*asm_ty),
+                    src.as_width(*asm_ty),
                     dst.as_width(*asm_ty)
-                ),
-                AsmInstrShiftKind::Shr => writeln!(
-                    f,
-                    "shr{} {}, {}",
-                    asm_ty.suffix(),
-                    amount.as_width(*asm_ty),
-                    dst.as_width(*asm_ty)
-                ),
-                AsmInstrShiftKind::Sar => writeln!(
-                    f,
-                    "sar{} {}, {}",
-                    asm_ty.suffix(),
-                    amount.as_width(*asm_ty),
-                    dst.as_width(*asm_ty)
-                ),
-            },
+                )
+            }
             AsmInstr::Movsx {
                 src,
                 src_ty,
