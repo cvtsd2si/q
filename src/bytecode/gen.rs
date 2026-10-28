@@ -372,7 +372,7 @@ impl IRVal {
 
     fn store_op<U: Ctx>(&self, ctx: &U) -> Op {
         match self {
-            IRVal::Const(_konst) => unreachable!(),
+            IRVal::Const(_) => unreachable!(),
             IRVal::Var { name, .. } => {
                 if let Some(idx) = ctx.get::<String>(name) {
                     Op::Deepset(idx)
