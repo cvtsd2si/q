@@ -634,12 +634,7 @@ impl IRInstr {
                 dst,
                 operand_ty,
             } => {
-                let is_unsigned = matches!(
-                    *operand_ty,
-                    Type::UInt8 | Type::UInt16 | Type::UInt32 | Type::UInt64
-                );
-
-                let cc = match (*kind, is_unsigned) {
+                let cc = match (*kind, !operand_ty.is_signed()) {
                     (BinaryExpressionKind::Equal, _) => ConditionCode::E,
                     (BinaryExpressionKind::NotEqual, _) => ConditionCode::Ne,
                     (BinaryExpressionKind::Less, false) => ConditionCode::L,
@@ -650,7 +645,7 @@ impl IRInstr {
                     (BinaryExpressionKind::LessEqual, true) => ConditionCode::Be,
                     (BinaryExpressionKind::Greater, true) => ConditionCode::A,
                     (BinaryExpressionKind::GreaterEqual, true) => ConditionCode::Ae,
-                    _ => unreachable!("got: {kind:?} {is_unsigned:?}"),
+                    _ => unreachable!("got: {kind:?} {}", !operand_ty.is_signed()),
                 };
 
                 let instrs = vec![
