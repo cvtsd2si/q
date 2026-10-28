@@ -684,25 +684,22 @@ impl IRInstr {
                 operand_ty,
             } if matches!((*operand_ty).into(), AsmType::Byte) && operand_ty.is_signed() => {
                 let instrs = vec![
-                    AsmInstr::Comment(format!(
-                        "Integer division (signed: {})",
-                        operand_ty.is_signed()
-                    )),
+                    AsmInstr::Comment("Signed 8-bit int div".into()),
                     AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: AsmOp::Reg(AsmReg::Ax),
-                        asm_ty: (*operand_ty).into(),
+                        asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("For signed division, we sign-extend Reg::Ax into Reg::Dx".into()),
-                    AsmInstr::Cdq { asm_ty: (*operand_ty).into() },
+                    AsmInstr::Cdq { asm_ty: AsmType::Byte },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Then, we use the one-operand 'idiv' with the divisor as the operand.".into()),
-                    AsmInstr::Idiv { op: rhs.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Idiv { op: rhs.codegen(ctx)?, asm_ty: AsmType::Byte },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Then, after the division, the quotient is in Reg::Ax, and the remainder is in Reg::Dx".into()),
-                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: (*operand_ty).into() },
+                    AsmInstr::Mov { src: AsmOp::Reg(AsmReg::Ax), dst: dst.codegen(ctx)?, asm_ty: AsmType::Byte },
                     AsmInstr::Newline,
                 ];
 
@@ -717,15 +714,12 @@ impl IRInstr {
                 operand_ty,
             } if matches!((*operand_ty).into(), AsmType::Byte) && !operand_ty.is_signed() => {
                 let instrs = vec![
-                    AsmInstr::Comment(format!(
-                        "Integer division (signed: {})",
-                        operand_ty.is_signed()
-                    )),
+                    AsmInstr::Comment("Unsigned 8-bit int div".into()),
                     AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: AsmOp::Reg(AsmReg::Ax),
-                        asm_ty: (*operand_ty).into(),
+                        asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Comment("For unsigned 8-bit division, we zero-extend %al to %eax, which also clear %ah".into()),
                     AsmInstr::Movzx { src: AsmOp::Reg(AsmReg::Ax), src_ty: AsmType::Byte, dst: AsmOp::Reg(AsmReg::Ax), dst_ty: AsmType::Long },
@@ -749,10 +743,7 @@ impl IRInstr {
                 operand_ty,
             } if operand_ty.is_signed() => {
                 let instrs = vec![
-                    AsmInstr::Comment(format!(
-                        "Integer division (signed: {})",
-                        operand_ty.is_signed()
-                    )),
+                    AsmInstr::Comment("Signed int division (larger than Byte)".into()),
                     AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
@@ -781,10 +772,7 @@ impl IRInstr {
                 operand_ty,
             } if !operand_ty.is_signed() => {
                 let instrs = vec![
-                    AsmInstr::Comment(format!(
-                        "Integer division (signed: {})",
-                        operand_ty.is_signed()
-                    )),
+                    AsmInstr::Comment("Unsigned int division (larger than Byte)".into()),
                     AsmInstr::Comment("Move the dividend into Reg::Ax".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
@@ -812,16 +800,14 @@ impl IRInstr {
                 rhs,
                 dst,
                 operand_ty,
-            } if operand_ty.is_signed() && AsmType::from(*operand_ty) == AsmType::Byte => {
-                let asm_ty: AsmType = (*operand_ty).into();
-
+            } if matches!((*operand_ty).into(), AsmType::Byte) && operand_ty.is_signed() => {
                 Ok(vec![
                     AsmInstr::Comment("Signed 8-bit int rem.".into()),
                     AsmInstr::Comment("Move the dividend into %al".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
                         dst: AsmOp::Reg(AsmReg::Ax),
-                        asm_ty,
+                        asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Sign-extend %al into %ax for signed 8-bit division.".into()),
@@ -835,7 +821,7 @@ impl IRInstr {
                     AsmInstr::Comment("Perform signed division using idiv.".into()),
                     AsmInstr::Idiv {
                         op: rhs.codegen(ctx)?,
-                        asm_ty,
+                        asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Extract the 8-bit rem from %ah into %al.".into()),
@@ -850,7 +836,7 @@ impl IRInstr {
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Ax),
                         dst: dst.codegen(ctx)?,
-                        asm_ty,
+                        asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Newline,
                 ])
