@@ -220,19 +220,12 @@ macro_rules! impl_shift {
 
                 let payload = match (self.tag, rhs.tag) {
                     (Int8, Int8) => (self.payload as i8).$wrapping(shift) as u8 as u64,
-
                     (Int16, Int16) => (self.payload as i16).$wrapping(shift) as u16 as u64,
-
                     (Int32, Int32) => (self.payload as i32).$wrapping(shift) as u32 as u64,
-
                     (Int64, Int64) => (self.payload as i64).$wrapping(shift) as u64,
-
                     (UInt8, UInt8) => (self.payload as u8).$wrapping(shift) as u64,
-
                     (UInt16, UInt16) => (self.payload as u16).$wrapping(shift) as u64,
-
                     (UInt32, UInt32) => (self.payload as u32).$wrapping(shift) as u64,
-
                     (UInt64, UInt64) => self.payload.$wrapping(shift),
 
                     _ => panic!(
@@ -249,6 +242,40 @@ macro_rules! impl_shift {
         }
     };
 }
+
+macro_rules! impl_bitwise {
+    ($trait:ident, $method:ident, $op:tt) => {
+        impl std::ops::$trait for Value {
+            type Output = Self;
+
+            fn $method(self, rhs: Self) -> Self::Output {
+                use ValueTag::*;
+
+                let mask = match (self.tag, rhs.tag) {
+                    (Int8, Int8) | (UInt8, UInt8) => u8::MAX as u64,
+                    (Int16, Int16) | (UInt16, UInt16) => u16::MAX as u64,
+                    (Int32, Int32) | (UInt32, UInt32) => u32::MAX as u64,
+                    (Int64, Int64) | (UInt64, UInt64) => u64::MAX,
+                    (Bool, Bool) => 1,
+
+                    _ => panic!(
+                        "Unsupported bitwise operation: {:?} and {:?}",
+                        self.tag, rhs.tag
+                    ),
+                };
+
+                Self {
+                    tag: self.tag,
+                    payload: (self.payload $op rhs.payload) & mask,
+                }
+            }
+        }
+    };
+}
+
+impl_bitwise!(BitOr, bitor, |);
+impl_bitwise!(BitAnd, bitand, &);
+impl_bitwise!(BitXor, bitxor, ^);
 
 impl_shift!(Shl, shl, wrapping_shl);
 impl_shift!(Shr, shr, wrapping_shr);

@@ -289,6 +289,22 @@ pub enum AsmInstrBinKind {
     Xor,
 }
 
+impl From<BinaryExpressionKind> for AsmInstrBinKind {
+    fn from(value: BinaryExpressionKind) -> Self {
+        match value {
+            BinaryExpressionKind::Add => AsmInstrBinKind::Add,
+            BinaryExpressionKind::Sub => AsmInstrBinKind::Sub,
+            BinaryExpressionKind::Mul => AsmInstrBinKind::Mul,
+            BinaryExpressionKind::BitwiseAnd => AsmInstrBinKind::And,
+            BinaryExpressionKind::BitwiseOr => AsmInstrBinKind::Or,
+            BinaryExpressionKind::BitwiseXor => AsmInstrBinKind::Xor,
+            BinaryExpressionKind::Or => AsmInstrBinKind::Or,
+            BinaryExpressionKind::And => AsmInstrBinKind::And,
+            _ => unimplemented!("got {value:?}"),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum AsmOp {
     Pseudo { name: String, ty: Type },
@@ -977,6 +993,36 @@ impl IRInstr {
                 rhs,
                 dst,
                 operand_ty,
+            } if matches!(
+                kind,
+                BinaryExpressionKind::BitwiseAnd
+                    | BinaryExpressionKind::BitwiseOr
+                    | BinaryExpressionKind::BitwiseXor
+            ) =>
+            {
+                let instrs = vec![
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty: (*operand_ty).into(),
+                    },
+                    AsmInstr::Bin {
+                        kind: (*kind).into(),
+                        lhs: rhs.codegen(ctx)?,
+                        rhs: dst.codegen(ctx)?,
+                        asm_ty: (*operand_ty).into(),
+                    },
+                ];
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                operand_ty,
             } if matches!(kind, BinaryExpressionKind::Shl | BinaryExpressionKind::Shr) => {
                 let asm_ty: AsmType = (*operand_ty).into();
                 let is_signed = operand_ty.is_signed();
@@ -1532,7 +1578,7 @@ impl IRInstr {
                 AsmInstr::Cmp {
                     src: AsmOp::Imm(0),
                     dst: cond.codegen(ctx)?,
-                    asm_ty: AsmType::Quad,
+                    asm_ty: AsmType::Byte,
                 },
                 AsmInstr::Newline,
                 AsmInstr::Comment(

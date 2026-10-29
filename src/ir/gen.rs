@@ -618,6 +618,107 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         }
 
         Expression::Binary {
+            kind: BinaryExpressionKind::And,
+            lhs,
+            rhs,
+            ..
+        } => {
+            let tmp = mktmp();
+
+            let false_label = format!("And.{tmp}.shortcircuit");
+            let end_label = format!("And.{tmp}.end");
+
+            let result = mkirvar(Type::Boolean);
+
+            let lhs = irfy_expr_and_cvt(instrs, lhs);
+            instrs.push(IRInstr::Jz {
+                cond: lhs.clone(),
+                target: false_label.clone(),
+            });
+
+            let rhs = irfy_expr_and_cvt(instrs, rhs);
+            instrs.push(IRInstr::Jz {
+                cond: rhs.clone(),
+                target: false_label.clone(),
+            });
+
+            instrs.push(IRInstr::Cpy {
+                src: IRVal::Const(Literal::Bool(true)),
+                src_ty: Type::Boolean,
+                dst: result.clone(),
+            });
+
+            instrs.push(IRInstr::Jmp {
+                target: end_label.clone(),
+            });
+
+            instrs.push(IRInstr::Label(false_label.clone()));
+
+            instrs.push(IRInstr::Cpy {
+                src: IRVal::Const(Literal::Bool(false)),
+                src_ty: Type::Boolean,
+                dst: result.clone(),
+            });
+
+            instrs.push(IRInstr::Label(end_label));
+
+            ExpRes::Plain(result)
+        }
+
+        Expression::Binary {
+            kind: BinaryExpressionKind::Or,
+            lhs,
+            rhs,
+            ..
+        } => {
+            let tmp = mktmp();
+
+            let true_label = format!("Or.{tmp}.shortcircuit");
+            let end_label = format!("Or.{tmp}.end");
+
+            let result = mkirvar(Type::Boolean);
+            instrs.push(IRInstr::Cpy {
+                src: IRVal::Const(Literal::Bool(false)),
+                src_ty: Type::Boolean,
+                dst: result.clone(),
+            });
+
+            let lhs = irfy_expr_and_cvt(instrs, lhs);
+            instrs.push(IRInstr::Jz {
+                cond: lhs.clone(),
+                target: true_label.clone(),
+            });
+
+            instrs.push(IRInstr::Cpy {
+                src: IRVal::Const(Literal::Bool(true)),
+                src_ty: Type::Boolean,
+                dst: result.clone(),
+            });
+
+            instrs.push(IRInstr::Jmp {
+                target: end_label.clone(),
+            });
+
+            instrs.push(IRInstr::Label(true_label));
+
+            let rhs = irfy_expr_and_cvt(instrs, rhs);
+            instrs.push(IRInstr::Jz {
+                cond: rhs.clone(),
+                target: end_label.clone(),
+            });
+
+            instrs.push(IRInstr::Cpy {
+                src: IRVal::Const(Literal::Bool(true)),
+                src_ty: Type::Boolean,
+                dst: result.clone(),
+            });
+
+            instrs.push(IRInstr::Label(end_label));
+
+            ExpRes::Plain(result)
+        }
+
+        Expression::Binary {
             kind, lhs, rhs, ty, ..
         } => {
             let operand_ty = lhs.ty().unwrap();

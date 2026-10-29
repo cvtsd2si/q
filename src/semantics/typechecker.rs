@@ -410,8 +410,6 @@ fn typecheck_expr(
                         | Type::Int32
                         | Type::UInt64
                         | Type::Int64
-                        | Type::Float32
-                        | Type::Float64
                 ),
             };
 
@@ -438,6 +436,80 @@ fn typecheck_expr(
                 kind,
                 expr: expr.into(),
                 ty: Some(result_ty),
+                span,
+            })
+        }
+
+        Expression::Binary {
+            kind,
+            lhs,
+            rhs,
+            span,
+            ..
+        } if matches!(
+            kind,
+            BinaryExpressionKind::BitwiseOr
+                | BinaryExpressionKind::BitwiseAnd
+                | BinaryExpressionKind::BitwiseXor
+        ) =>
+        {
+            let lhs_hint = known_ty(typechecker, &lhs)?;
+            let rhs_hint = known_ty(typechecker, &rhs)?;
+
+            let op_hint = merge_types(lhs_hint, rhs_hint)?;
+
+            let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
+
+            if !operand_ty.is_int() {
+                return Err(TypecheckerError {
+                    msg: format!("Bitwise operators require int operands, got {operand_ty:?}"),
+                });
+            }
+
+            let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
+            let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
+
+            if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
+                return Err(TypecheckerError {
+                    msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                });
+            }
+
+            Ok(Expression::Binary {
+                kind,
+                lhs: lhs.into(),
+                rhs: rhs.into(),
+                ty: Some(operand_ty),
+                span,
+            })
+        }
+
+        Expression::Binary {
+            kind,
+            lhs,
+            rhs,
+            span,
+            ..
+        } if matches!(kind, BinaryExpressionKind::Or | BinaryExpressionKind::And) => {
+            let lhs = typecheck_expr(typechecker, *lhs, Some(Type::Boolean))?;
+            let rhs = typecheck_expr(typechecker, *rhs, Some(Type::Boolean))?;
+
+            let lhs_ty = lhs.ty().unwrap();
+            let rhs_ty = rhs.ty().unwrap();
+
+            if lhs_ty != Type::Boolean || rhs_ty != Type::Boolean {
+                return Err(TypecheckerError {
+                    msg: format!(
+                        "Logical operators require scalar operands, got {lhs_ty:?} and {rhs_ty:?}"
+                    ),
+                });
+            }
+
+            Ok(Expression::Binary {
+                kind,
+                lhs: lhs.into(),
+                rhs: rhs.into(),
+                ty: Some(Type::Boolean),
                 span,
             })
         }
@@ -775,6 +847,8 @@ fn known_ty(
                     | BinaryExpressionKind::GreaterEqual
                     | BinaryExpressionKind::Equal
                     | BinaryExpressionKind::NotEqual
+                    | BinaryExpressionKind::Or
+                    | BinaryExpressionKind::And
             ) {
                 Ok(Some(Type::Boolean))
             } else {

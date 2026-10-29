@@ -126,6 +126,9 @@ impl Vm {
                 Op::Mul => self.handle_op_mul(),
                 Op::Div => self.handle_op_div(),
                 Op::Rem => self.handle_op_rem(),
+                Op::BitOr => self.handle_op_bitor(),
+                Op::BitAnd => self.handle_op_bitand(),
+                Op::BitXor => self.handle_op_bitxor(),
                 Op::Shl => self.handle_op_shl(),
                 Op::Shr => self.handle_op_shr(),
                 Op::Lt => self.handle_op_lt(),
@@ -386,6 +389,18 @@ impl Vm {
 
     fn handle_op_rem(&mut self) {
         binop!(self.stack, %);
+    }
+
+    fn handle_op_bitor(&mut self) {
+        binop!(self.stack, |);
+    }
+
+    fn handle_op_bitand(&mut self) {
+        binop!(self.stack, &);
+    }
+
+    fn handle_op_bitxor(&mut self) {
+        binop!(self.stack, ^);
     }
 
     fn handle_op_shl(&mut self) {

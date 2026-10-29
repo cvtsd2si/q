@@ -17,6 +17,118 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    # f32 bitwise not
+    "f32_not.q": {
+        "ret": 1,
+        "stdout": [],
+        "stderr": ["err: typechecker: Invalid operand type Float32 for unary BitwiseNot"],
+    },
+    # f64 bitwise not
+    "f64_not.q": {
+        "ret": 1,
+        "stdout": [],
+        "stderr": ["err: typechecker: Invalid operand type Float64 for unary BitwiseNot"],
+    },
+     # bitwise u8
+    "bitwise_u8.q": {
+        "ret": 0,
+        "stdout": ["136", "238", "102"],
+        "stderr": [],
+    },
+    # bitwise u16
+    "bitwise_u16.q": {
+        "ret": 0,
+        "stdout": ["34952", "61166", "26214"],
+        "stderr": [],
+    },
+    # bitwise u32
+    "bitwise_u32.q": {
+        "ret": 0,
+        "stdout": ["2290649224", "4008636142", "1717986918"],
+        "stderr": [],
+    },
+    # bitwise u64
+    "bitwise_u64.q": {
+        "ret": 0,
+        "stdout": [
+            "9838263505978427528",
+            "17216961135462248174",
+            "7378697629483820646",
+        ],
+        "stderr": [],
+    },
+    # bitwise i8
+    "bitwise_i8.q": {
+        "ret": 0,
+        "stdout": ["-120", "-18", "102"],
+        "stderr": [],
+    },
+    # bitwise i16
+    "bitwise_i16.q": {
+        "ret": 0,
+        "stdout": ["-30584", "-4370", "26214"],
+        "stderr": [],
+    },
+    # bitwise i32
+    "bitwise_i32.q": {
+        "ret": 0,
+        "stdout": ["-2004318072", "-286331154", "1717986918"],
+        "stderr": [],
+    },
+    # bitwise i64
+    "bitwise_i64.q": {
+        "ret": 0,
+        "stdout": [
+            "-8608480567731124088",
+            "-1229782938247303442",
+            "7378697629483820646",
+        ],
+        "stderr": [],
+    },
+    # logical short circuit
+    "logical_short_circuit.q": {
+        "ret": 0,
+        "stdout": ["false", "true", "999", "true", "999", "true"],
+        "stderr": [],
+    },
+    # logical operator precedence
+    "logical_operator_precedence.q": {
+        "ret": 0,
+        "stdout": ["true", "false", "true", "true", "true", "true", "false"],
+        "stderr": [],
+    },
+    # logical nested
+    "logical_nested.q": {
+        "ret": 0,
+        "stdout": [
+            "true",
+            "false",
+            "false",
+            "true",
+            "false",
+            "true",
+            "true",
+            "false",
+            "true",
+            "false",
+            "true",
+            "false",
+            "true",
+        ],
+        "stderr": [],
+    },
+    # logical and
+    "and.q": {
+        "ret": 0,
+        "stdout": ["false", "false", "false", "true"],
+        "stderr": [],
+    },
+    # logical or
+    "or.q": {
+        "ret": 0,
+        "stdout": ["false", "true", "true", "true"],
+        "stderr": [],
+    },
     # comparison among diff types
     "comparison_diff_types.q": {
         "ret": 1,

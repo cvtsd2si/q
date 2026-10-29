@@ -12,6 +12,9 @@ pub enum Op {
     Mul,
     Div,
     Rem,
+    BitOr,
+    BitAnd,
+    BitXor,
     Shl,
     Shr,
     Const(Literal),
@@ -190,12 +193,16 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                     BinaryExpressionKind::Rem => (Op::Rem, false, false),
                     BinaryExpressionKind::Shl => (Op::Shl, false, false),
                     BinaryExpressionKind::Shr => (Op::Shr, false, false),
+                    BinaryExpressionKind::BitwiseOr => (Op::BitOr, false, false),
+                    BinaryExpressionKind::BitwiseAnd => (Op::BitAnd, false, false),
+                    BinaryExpressionKind::BitwiseXor => (Op::BitXor, false, false),
                     BinaryExpressionKind::Less => (Op::Lt, false, false),
                     BinaryExpressionKind::Greater => (Op::Lt, true, false),
                     BinaryExpressionKind::LessEqual => (Op::Le, false, false),
                     BinaryExpressionKind::GreaterEqual => (Op::Le, true, false),
                     BinaryExpressionKind::Equal => (Op::Eq, false, false),
                     BinaryExpressionKind::NotEqual => (Op::Eq, false, true),
+                    _ => unreachable!("got: {kind:?}"),
                 };
 
                 let (lhs, rhs) = if swap { (rhs, lhs) } else { (lhs, rhs) };

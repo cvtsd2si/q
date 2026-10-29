@@ -460,7 +460,7 @@ impl<'src> Parser<'src> {
     }
 
     fn assignment(&mut self) -> Result<Expression, ParserError> {
-        let mut result = self.equality()?;
+        let mut result = self.or()?;
         let begin = result.span();
 
         while self.check_many_greedy(&[TokenKind::Equal]) {
@@ -469,6 +469,115 @@ impl<'src> Parser<'src> {
 
             result = Expression::Assign {
                 lhs: result.clone().into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn bitwise_or(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.bitwise_xor()?;
+        let begin = result.span();
+
+        while self.check(TokenKind::Pipe) {
+            self.consume(TokenKind::Pipe)?;
+
+            let right = self.bitwise_xor()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: BinaryExpressionKind::BitwiseOr,
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn bitwise_xor(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.bitwise_and()?;
+        let begin = result.span();
+
+        while self.check(TokenKind::Caret) {
+            self.consume(TokenKind::Caret)?;
+
+            let right = self.bitwise_and()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: BinaryExpressionKind::BitwiseXor,
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn or(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.and()?;
+        let begin = result.span();
+
+        while self.check(TokenKind::DoublePipe) {
+            self.consume(TokenKind::DoublePipe)?;
+
+            let right = self.and()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: BinaryExpressionKind::Or,
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+
+        Ok(result)
+    }
+
+    fn and(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.bitwise_or()?;
+        let begin = result.span();
+
+        while self.check(TokenKind::DoubleAmpersand) {
+            self.consume(TokenKind::DoubleAmpersand)?;
+
+            let right = self.bitwise_or()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: BinaryExpressionKind::And,
+                lhs: result.into(),
+                rhs: right.into(),
+                ty: None,
+                span: begin + end,
+            };
+        }
+        Ok(result)
+    }
+
+    fn bitwise_and(&mut self) -> Result<Expression, ParserError> {
+        let mut result = self.equality()?;
+        let begin = result.span();
+
+        while self.check(TokenKind::Ampersand) {
+            self.consume(TokenKind::Ampersand)?;
+
+            let right = self.equality()?;
+            let end = right.span();
+
+            result = Expression::Binary {
+                kind: BinaryExpressionKind::BitwiseAnd,
+                lhs: result.into(),
                 rhs: right.into(),
                 ty: None,
                 span: begin + end,
