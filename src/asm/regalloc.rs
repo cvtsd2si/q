@@ -110,7 +110,7 @@ impl RegAllocator {
                 asm_ty,
             } => AsmInstr::Shift {
                 kind: *kind,
-                src: src.clone(),
+                src: self.replace_pseudo(src),
                 dst: self.replace_pseudo(dst),
                 asm_ty: *asm_ty,
             },
