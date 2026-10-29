@@ -1,4 +1,5 @@
 use q::bytecode::r#gen::BytecodeProg;
+use q::ir::cfg::Cfg;
 use q::ir::r#gen::{Codegen, CodegenContext, irfy};
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
@@ -68,6 +69,15 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
 
     let ir = irfy(&typechecked_ast);
 
+    if opts.ir_graph {
+        for func in &ir.funcs {
+            let cfg = Cfg::build(func)?;
+            let path = format!("{}.dot", func.name);
+
+            std::fs::write(path, cfg.to_dot(func))?;
+        }
+    }
+
     if opts.ir {
         println!("{:#?}", ir);
         return Ok(0);
@@ -107,6 +117,9 @@ struct Opt {
 
     #[structopt(name = "ir", long)]
     ir: bool,
+
+    #[structopt(name = "ir-graph", long)]
+    ir_graph: bool,
 
     #[structopt(name = "bytecode", long)]
     bytecode: bool,

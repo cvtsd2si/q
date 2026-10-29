@@ -101,7 +101,7 @@ pub enum IRVal {
     Var { name: String, ty: Type },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum IRInstr {
     Cpy {
         src: IRVal,
@@ -247,6 +247,218 @@ impl IRInstr {
             _ => None,
         }
     }
+}
+
+impl std::fmt::Display for IRVal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Var { name, .. } => write!(f, "{name}"),
+
+            Self::Const(literal) => match literal {
+                Literal::Bool(v) => write!(f, "{v}"),
+                Literal::UInt8(v) => write!(f, "{v}"),
+                Literal::Int8(v) => write!(f, "{v}"),
+                Literal::UInt16(v) => write!(f, "{v}"),
+                Literal::Int16(v) => write!(f, "{v}"),
+                Literal::UInt32(v) => write!(f, "{v}"),
+                Literal::Int32(v) => write!(f, "{v}"),
+                Literal::UInt64(v) => write!(f, "{v}"),
+                Literal::Int64(v) => write!(f, "{v}"),
+                Literal::Float32(v) => write!(f, "{v}"),
+                Literal::Float64(v) => write!(f, "{v}"),
+            },
+        }
+    }
+}
+
+impl std::fmt::Debug for IRInstr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cpy { src, dst, .. } => {
+                write!(f, "{dst} = {src}")
+            }
+
+            Self::Ret { val, .. } => match val {
+                Some(val) => write!(f, "return {val}"),
+                None => write!(f, "return"),
+            },
+
+            Self::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                ..
+            } => {
+                let op = match kind {
+                    BinaryExpressionKind::Add => "+",
+                    BinaryExpressionKind::Sub => "-",
+                    BinaryExpressionKind::Mul => "*",
+                    BinaryExpressionKind::Div => "/",
+                    BinaryExpressionKind::Rem => "%",
+                    BinaryExpressionKind::Shl => "<<",
+                    BinaryExpressionKind::Shr => ">>",
+                    BinaryExpressionKind::BitwiseAnd => "&",
+                    BinaryExpressionKind::BitwiseOr => "|",
+                    BinaryExpressionKind::BitwiseXor => "^",
+                    BinaryExpressionKind::And => "&&",
+                    BinaryExpressionKind::Or => "||",
+                    BinaryExpressionKind::Less => "<",
+                    BinaryExpressionKind::Greater => ">",
+                    BinaryExpressionKind::LessEqual => "<=",
+                    BinaryExpressionKind::GreaterEqual => ">=",
+                    BinaryExpressionKind::Equal => "==",
+                    BinaryExpressionKind::NotEqual => "!=",
+                };
+
+                write!(f, "{dst} = {lhs} {op} {rhs}")
+            }
+
+            Self::Unary { kind, src, dst, .. } => {
+                let op = match kind {
+                    UnaryExpressionKind::Negate => "-",
+                    UnaryExpressionKind::LogicalNot => "!",
+                    UnaryExpressionKind::BitwiseNot => "~",
+                };
+
+                write!(f, "{dst} = {op}{src}")
+            }
+
+            Self::Print { val, .. } => {
+                write!(f, "print {val}")
+            }
+
+            Self::Jmp { target } => {
+                write!(f, "jmp {target}")
+            }
+
+            Self::Jz { cond, target } => {
+                write!(f, "jz {cond}, {target}")
+            }
+
+            Self::Label(name) => {
+                write!(f, "{name}:")
+            }
+
+            Self::Call {
+                target, args, dst, ..
+            } => {
+                write!(f, "{dst} = call {target}(")?;
+
+                for (i, arg) in args.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{arg}")?;
+                }
+
+                write!(f, ")")
+            }
+
+            Self::SignExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "sext", src, dst, src_ty, dst_ty),
+
+            Self::ZeroExtend {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "zext", src, dst, src_ty, dst_ty),
+
+            Self::Truncate {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "trunc", src, dst, src_ty, dst_ty),
+
+            Self::DoubleToInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "double_to_int", src, dst, src_ty, dst_ty),
+
+            Self::IntToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "int_to_double", src, dst, src_ty, dst_ty),
+
+            Self::DoubleToUInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "double_to_uint", src, dst, src_ty, dst_ty),
+
+            Self::UIntToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "uint_to_double", src, dst, src_ty, dst_ty),
+
+            Self::DoubleToFloat {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "double_to_float", src, dst, src_ty, dst_ty),
+
+            Self::FloatToDouble {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "float_to_double", src, dst, src_ty, dst_ty),
+
+            Self::FloatToInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "float_to_int", src, dst, src_ty, dst_ty),
+
+            Self::IntToFloat {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "int_to_float", src, dst, src_ty, dst_ty),
+
+            Self::FloatToUInt {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "float_to_uint", src, dst, src_ty, dst_ty),
+
+            Self::UIntToFloat {
+                src,
+                dst,
+                src_ty,
+                dst_ty,
+            } => fmt_conversion(f, "uint_to_float", src, dst, src_ty, dst_ty),
+        }
+    }
+}
+
+fn fmt_conversion(
+    f: &mut std::fmt::Formatter<'_>,
+    name: &str,
+    src: &IRVal,
+    dst: &IRVal,
+    src_ty: &Type,
+    dst_ty: &Type,
+) -> std::fmt::Result {
+    write!(f, "{dst} = {name}({src}: {src_ty:?} -> {dst_ty:?})")
 }
 
 #[derive(Debug)]
