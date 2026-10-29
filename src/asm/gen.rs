@@ -527,6 +527,7 @@ impl IRInstr {
                             /* Float32 payload bits are already in %eax.  */
                             /* Float64 payload bits are already in %rax.  */
                             /* No additional extension is needed.  */
+                            // FIXME: add this as AsmInstr::Comment
                         }
 
                         /* already 64 bits  */
