@@ -491,7 +491,7 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
         }
 
         for instr in &self.body {
-            body.extend(instr.codegen_with(ctx, self.ret_ty, &self.name)?);
+            body.extend(instr.codegen_with(ctx, &self.name)?);
         }
 
         Ok(AsmFunc {
@@ -506,7 +506,6 @@ impl IRInstr {
     fn codegen_with(
         &self,
         ctx: &mut CodegenContext,
-        _ret_ty: Option<Type>,
         func_name: &str,
     ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {

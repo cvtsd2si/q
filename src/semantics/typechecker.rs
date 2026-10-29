@@ -520,22 +520,20 @@ fn typecheck_expr(
             rhs,
             ty: _,
             span,
-        } => {
+        } if matches!(
+            kind,
+            BinaryExpressionKind::Less
+                | BinaryExpressionKind::Greater
+                | BinaryExpressionKind::LessEqual
+                | BinaryExpressionKind::GreaterEqual
+                | BinaryExpressionKind::Equal
+                | BinaryExpressionKind::NotEqual
+        ) =>
+        {
             let lhs_hint = known_ty(typechecker, &lhs)?;
             let rhs_hint = known_ty(typechecker, &rhs)?;
 
-            let is_comparison = matches!(
-                kind,
-                BinaryExpressionKind::Less
-                    | BinaryExpressionKind::Greater
-                    | BinaryExpressionKind::LessEqual
-                    | BinaryExpressionKind::GreaterEqual
-                    | BinaryExpressionKind::Equal
-                    | BinaryExpressionKind::NotEqual
-            );
-
-            if is_comparison
-                && let (Some(lhs_ty), Some(rhs_ty)) = (&lhs_hint, &rhs_hint)
+            if let (Some(lhs_ty), Some(rhs_ty)) = (&lhs_hint, &rhs_hint)
                 && lhs_ty != rhs_ty
             {
                 return Err(TypecheckerError {
@@ -547,18 +545,7 @@ fn typecheck_expr(
 
             let op_hint = merge_types(lhs_hint, rhs_hint)?;
 
-            let operand_ty = if is_comparison {
-                op_hint
-            } else {
-                merge_types(expected_ty, op_hint)?
-            }
-            .unwrap_or_else(|| default_numeric_ty(&lhs));
-
-            if !operand_ty.is_numeric() {
-                return Err(TypecheckerError {
-                    msg: format!("Arithmetic requires numeric operands, got {operand_ty:?}"),
-                });
-            }
+            let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
 
             let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
@@ -569,17 +556,49 @@ fn typecheck_expr(
                 });
             }
 
-            let result_ty = if is_comparison {
-                Type::Boolean
-            } else {
-                operand_ty
-            };
+            Ok(Expression::Binary {
+                kind,
+                lhs: lhs.into(),
+                rhs: rhs.into(),
+                ty: Some(Type::Boolean),
+                span,
+            })
+        }
+
+        Expression::Binary {
+            kind,
+            lhs,
+            rhs,
+            span,
+            ..
+        } => {
+            let lhs_hint = known_ty(typechecker, &lhs)?;
+            let rhs_hint = known_ty(typechecker, &rhs)?;
+
+            let op_hint = merge_types(lhs_hint, rhs_hint)?;
+
+            let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
+
+            let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
+            let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
+
+            if !operand_ty.is_numeric() {
+                return Err(TypecheckerError {
+                    msg: format!("Arithmetic requires numeric operands, got {operand_ty:?}"),
+                });
+            }
+
+            if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
+                return Err(TypecheckerError {
+                    msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                });
+            }
 
             Ok(Expression::Binary {
                 kind,
                 lhs: lhs.into(),
                 rhs: rhs.into(),
-                ty: Some(result_ty),
+                ty: Some(operand_ty),
                 span,
             })
         }
