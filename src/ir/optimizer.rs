@@ -141,6 +141,14 @@ fn fold_binary(kind: BinaryExpressionKind, a: Literal, b: Literal) -> Option<Lit
     let av = Value::from(a);
     let bv = Value::from(b);
 
+    /* Do not crash the compiler because an expression would fail at runtime.  */
+    if is_int
+        && bv.payload == 0
+        && matches!(kind, BinaryExpressionKind::Div | BinaryExpressionKind::Rem)
+    {
+        return None;
+    }
+
     let result: Value = match kind {
         BinaryExpressionKind::Add if is_numeric => av + bv,
         BinaryExpressionKind::Sub if is_numeric => av - bv,
@@ -149,11 +157,11 @@ fn fold_binary(kind: BinaryExpressionKind, a: Literal, b: Literal) -> Option<Lit
         BinaryExpressionKind::Rem if is_int => av % bv,
         BinaryExpressionKind::Shl if is_int => av << bv,
         BinaryExpressionKind::Shr if is_int => av >> bv,
-        BinaryExpressionKind::BitwiseAnd if is_int || is_bool => av & bv,
-        BinaryExpressionKind::BitwiseOr if is_int || is_bool => av | bv,
-        BinaryExpressionKind::BitwiseXor if is_int || is_bool => av ^ bv,
-        BinaryExpressionKind::And if is_bool => av & bv,
-        BinaryExpressionKind::Or if is_bool => av | bv,
+        BinaryExpressionKind::BitwiseAnd if is_int => av & bv,
+        BinaryExpressionKind::BitwiseOr if is_int => av | bv,
+        BinaryExpressionKind::BitwiseXor if is_int => av ^ bv,
+        BinaryExpressionKind::And if is_bool => ((av.payload != 0) && (bv.payload != 0)).into(),
+        BinaryExpressionKind::Or if is_bool => ((av.payload != 0) || (bv.payload != 0)).into(),
         BinaryExpressionKind::Equal => (av == bv).into(),
         BinaryExpressionKind::NotEqual => (av != bv).into(),
         BinaryExpressionKind::Less if is_numeric => (av < bv).into(),
