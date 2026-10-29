@@ -7,7 +7,11 @@ use crate::ir::{
 
 #[derive(Debug, Default)]
 pub struct BlockLiveness {
+    /* Variables whose current values may be needed
+     * when entering this block.  */
     pub live_in: HashSet<String>,
+    /* Variables whose current values may be needed
+     * after leaving this block.  */
     pub live_out: HashSet<String>,
 }
 
@@ -44,17 +48,56 @@ impl Liveness {
             block_use_defs.push(block_ud);
         }
 
-        for (id, ud) in block_use_defs.iter().enumerate() {
-            println!("Block {id}:");
-            println!("\tUSES = {:?}", ud.uses);
-            println!("\tDEFS = {:?}", ud.defs);
+        let mut blocks: Vec<BlockLiveness> = (0..cfg.blocks.len())
+            .map(|_| BlockLiveness::default())
+            .collect();
+
+        /* Fixed-point iteration.  */
+        let mut iterations = 0;
+        loop {
+            iterations += 1;
+
+            let mut changed = false;
+
+            /* Visit the loop backwards, since liveness is a backward dataflow
+             * analysis.  The information flows from successors to predecessors.  */
+            for id in (0..cfg.blocks.len()).rev() {
+                /* OUT[B] = union of IN[S] for every successor S.  */
+                let mut live_out = HashSet::new();
+
+                for successor in &cfg.blocks[id].succs {
+                    live_out.extend(blocks[successor.0].live_in.iter().cloned());
+                }
+
+                /* IN[B] = USE[B] U (OUT[B] - DEF[B])  */
+
+                /* First, include everything used before being defined.  */
+                let mut live_in = block_use_defs[id].uses.clone();
+
+                /* Then, add variables that are live-out but not defined inside this block.  */
+                for var in &live_out {
+                    if !block_use_defs[id].defs.contains(var) {
+                        live_in.insert(var.clone());
+                    }
+                }
+
+                /* If either set differs from its previous value, update it.  */
+                if blocks[id].live_in != live_in || blocks[id].live_out != live_out {
+                    blocks[id].live_in = live_in;
+                    blocks[id].live_out = live_out;
+
+                    changed = true;
+                }
+            }
+
+            if !changed {
+                break;
+            }
         }
 
-        Self {
-            blocks: (0..cfg.blocks.len())
-                .map(|_| BlockLiveness::default())
-                .collect(),
-        }
+        println!("Liveness converged after {iterations} attempts.");
+
+        Self { blocks }
     }
 }
 
