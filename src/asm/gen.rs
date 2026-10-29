@@ -482,10 +482,7 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
                     name: param.name.clone(),
                     ty: param.ty,
                 },
-                asm_ty: match param.ty {
-                    Type::Float32 => AsmType::Long,
-                    _ => AsmType::Quad,
-                },
+                asm_ty: param.ty.into(),
             });
             body.push(AsmInstr::Newline);
         }
