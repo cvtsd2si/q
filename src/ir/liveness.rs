@@ -15,9 +15,20 @@ pub struct BlockLiveness {
     pub live_out: HashSet<String>,
 }
 
+#[derive(Debug, Default)]
+pub struct InstrLiveness {
+    /* Variables whose current values may be needed
+     * when executing this instruction.  */
+    pub live_in: HashSet<String>,
+    /* Variables whose current values may be needed
+     * after executing this instruction.  */
+    pub live_out: HashSet<String>,
+}
+
 #[derive(Debug)]
 pub struct Liveness {
     pub blocks: Vec<BlockLiveness>,
+    pub instrs: Vec<InstrLiveness>,
 }
 
 impl Liveness {
@@ -97,7 +108,131 @@ impl Liveness {
 
         println!("Liveness converged after {iterations} attempts.");
 
-        Self { blocks }
+        /* Calculate instruction-level liveness.  */
+        let mut instrs: Vec<InstrLiveness> = (0..func.body.len())
+            .map(|_| InstrLiveness::default())
+            .collect();
+
+        /* Consider:
+         *
+         * ```
+         * 0: a = 10
+         * 1: b = 20
+         * 2: c = a + b
+         * 3: print c
+         * ```
+         *
+         * We're working backward from instr #3.
+         * Nothing happens afterward, so LIVE_OUT[3] = {}.
+         * However, `print c` needs `c`, therefore LIVE_IN[3] = {c}.
+         *
+         * Now, move backward to instr #2.
+         *
+         *  live = {c}
+         *
+         * First, we save LIVE_OUT:
+         *
+         *  instrs[2].live_out = live.clone()
+         *
+         * Next, we remove defs:
+         *
+         *  live.retain(|var| !ud.defs.contains(var);
+         *
+         * Since instr #2 defines `c`, we remove it:
+         *
+         *  live = {}
+         *
+         * Since instr #2 uses `a` and `b`, we add them:
+         *
+         *  live = {a, b}
+         *
+         * We save this as LIVE_IN for instr #2:
+         *
+         *  instrs[2].live_in = live.clone()
+         *
+         * Now, move backward to instr #1.
+         *
+         *  live = {a, b}
+         *
+         * First, we save LIVE_OUT:
+         *
+         *  instrs[1].live_out = live.clone()
+         *
+         * Next, we remove defs:
+         *
+         *  live.retain(|var| !ud.defs.contains(var);
+         *
+         * Since instr #1 defines `b`, we remove it:
+         *
+         *  live = {a}
+         *
+         * Instr #1 does not use anything, so we do not add anything.
+         *
+         *  live = {a}
+         *
+         * We save this as LIVE_IN for instr #1:
+         *
+         *  instrs[1].live_in = live.clone()
+         *
+         * Now, we move backward to instr #0:
+         *
+         *  live = {a}
+         *
+         * First, we save LIVE_OUT:
+         *
+         *  instrs[0].live_out = live.clone()
+         *
+         * Next, we remove defs:
+         *
+         *  live.retain(|var| !ud.defs.contains(var);
+         *
+         * Since instr #0 defines `a`, we remove it:
+         *
+         *  live = {}
+         *
+         * Instr #0 does not use anything, so we do not add anything.
+         *
+         *  live = {}
+         *
+         * There are no more instructions to move backward to, so we're done here.
+         *
+         * Complete result:
+         *
+         * ```                  LIVE_IN         LIVE_OUT
+         * 0: a = 10            {}              {a}
+         * 1: b = 20            {a}             {a, b}
+         * 2: c = a + b         {a, b}          {c}
+         * 3: print c           {c}             {}
+         * ```
+         */
+        for (id, block) in cfg.blocks.iter().enumerate() {
+            /* Start with this block's LIVE_OUT set, which currently correctly
+             * represents the variables needed after the block ends.  */
+            let mut live = blocks[id].live_out.clone();
+
+            /* Walk through the instructions backward.  */
+            for idx in block.range.clone().rev() {
+                /* Get current instruction's uses and defs.  */
+                let ud = func.body[idx].use_def();
+
+                /* Record LIVE_OUT for this instruction.  */
+                instrs[idx].live_out = live.clone();
+
+                /* Remove variables defined by this instruction.  */
+                live.retain(|var| !ud.defs.contains(var));
+
+                /* Add variables used by this instruction.  */
+                live.extend(ud.uses);
+
+                /* Record LIVE_IN for this instruction.  */
+                instrs[idx].live_in = live.clone();
+            }
+
+            /* This invariant must hold.  */
+            assert_eq!(live, blocks[id].live_in);
+        }
+
+        Self { blocks, instrs }
     }
 }
 
