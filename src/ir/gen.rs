@@ -14,6 +14,7 @@ pub trait Codegen<T, U> {
 
 #[derive(Debug)]
 pub struct CodegenContext {
+    pub current_fn: String,
     pub locals: HashMap<String, usize>,
     pub funcs: HashMap<String, usize>,
     pub static_consts: Vec<IRStaticConst>,
@@ -23,6 +24,7 @@ pub struct CodegenContext {
 impl CodegenContext {
     pub fn new() -> Self {
         Self {
+            current_fn: String::new(),
             locals: HashMap::new(),
             funcs: HashMap::new(),
             static_consts: Vec::new(),

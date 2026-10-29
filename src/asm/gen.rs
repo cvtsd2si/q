@@ -488,7 +488,7 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
         }
 
         for instr in &self.body {
-            body.extend(instr.codegen_with(ctx, &self.name)?);
+            body.extend::<Vec<AsmInstr>>(instr.codegen(ctx)?);
         }
 
         Ok(AsmFunc {
@@ -499,11 +499,10 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
     }
 }
 
-impl IRInstr {
-    fn codegen_with(
+impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
+    fn codegen(
         &self,
         ctx: &mut CodegenContext,
-        func_name: &str,
     ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
         match self {
             IRInstr::Cpy { src, src_ty, dst } => Ok(vec![
@@ -1560,7 +1559,7 @@ impl IRInstr {
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::Ne,
-                        target: format!("{}_rt_err", func_name),
+                        target: format!("{}_rt_err", ctx.current_fn),
                     },
                     AsmInstr::Newline,
                 ]);
@@ -1583,18 +1582,19 @@ impl IRInstr {
                 AsmInstr::Comment("Otherwise, fall through below.".into()),
                 AsmInstr::Jmpcc {
                     cc: ConditionCode::E,
-                    target: format!(".L{}_{}", func_name, target),
+                    target: format!(".L{}_{}", ctx.current_fn, target),
                 },
                 AsmInstr::Newline,
             ]),
 
             IRInstr::Jmp { target } => Ok(vec![AsmInstr::Jmp {
-                target: format!(".L{}_{}", func_name, target),
+                target: format!(".L{}_{}", ctx.current_fn, target),
             }]),
 
-            IRInstr::Label(target) => {
-                Ok(vec![AsmInstr::Label(format!(".L{}_{}", func_name, target))])
-            }
+            IRInstr::Label(target) => Ok(vec![AsmInstr::Label(format!(
+                ".L{}_{}",
+                ctx.current_fn, target
+            ))]),
 
             IRInstr::Call {
                 target,
@@ -1741,8 +1741,8 @@ impl IRInstr {
 
                 let id = mktmp();
 
-                let fallback_label = format!(".L{func_name}_call_fallback_{id}");
-                let done_label = format!(".L{func_name}_call_done_{id}");
+                let fallback_label = format!(".L{}_call_fallback_{id}", ctx.current_fn);
+                let done_label = format!(".L{}_call_done_{id}", ctx.current_fn);
 
                 body.extend([
                     AsmInstr::Comment(format!(
@@ -1857,7 +1857,7 @@ impl IRInstr {
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::E,
-                        target: format!("{func_name}_rt_err"),
+                        target: format!("{}_rt_err", ctx.current_fn),
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(
@@ -2028,7 +2028,7 @@ impl IRInstr {
                     },
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::Ne,
-                        target: format!("{}_rt_err", func_name),
+                        target: format!("{}_rt_err", ctx.current_fn),
                     },
                     AsmInstr::Newline,
                 ]);
@@ -2137,8 +2137,8 @@ impl IRInstr {
                     AsmType::Quad => {
                         let tmp = mktmp();
 
-                        let l1 = format!(".L{func_name}_UintToDoubleQuad1_{tmp}");
-                        let l2 = format!(".L{func_name}_UintToDoubleQuad2_{tmp}");
+                        let l1 = format!(".L{}_UintToDoubleQuad1_{tmp}", ctx.current_fn);
+                        let l2 = format!(".L{}_UintToDoubleQuad2_{tmp}", ctx.current_fn);
 
                         Ok(vec![
                             AsmInstr::Comment("Convert UInt64 to Float64.".into()),        
@@ -2310,8 +2310,8 @@ impl IRInstr {
 
                         let tmp = mktmp();
 
-                        let l1 = format!(".L{func_name}_DoubleToUInt1_{tmp}");
-                        let l2 = format!(".L{func_name}_DoubleToUInt2_{tmp}");
+                        let l1 = format!(".L{}_DoubleToUInt1_{tmp}", ctx.current_fn);
+                        let l2 = format!(".L{}_DoubleToUInt2_{tmp}", ctx.current_fn);
 
                         Ok(vec![
                             AsmInstr::Comment("Convert Double to UInt64.".into()),
@@ -2493,8 +2493,8 @@ impl IRInstr {
 
                         let tmp = mktmp();
 
-                        let l1 = format!(".L{func_name}_FloatToUInt1_{tmp}");
-                        let l2 = format!(".L{func_name}_FloatToUInt2_{tmp}");
+                        let l1 = format!(".L{}_FloatToUInt1_{tmp}", ctx.current_fn);
+                        let l2 = format!(".L{}_FloatToUInt2_{tmp}", ctx.current_fn);
 
                         Ok(vec![
                             AsmInstr::Comment("Convert Float to UInt64.".into()),
@@ -2611,8 +2611,8 @@ impl IRInstr {
                     AsmType::Quad => {
                         let tmp = mktmp();
 
-                        let l1 = format!(".L{func_name}_UIntToFloat1_{tmp}");
-                        let l2 = format!(".L{func_name}_UIntToFloat2_{tmp}");
+                        let l1 = format!(".L{}_UIntToFloat1_{tmp}", ctx.current_fn);
+                        let l2 = format!(".L{}_UIntToFloat2_{tmp}", ctx.current_fn);
 
                         Ok(vec![
                             AsmInstr::Comment("Convert UInt64 to Float32.".into()),        
