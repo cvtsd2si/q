@@ -1,6 +1,7 @@
 use q::bytecode::r#gen::BytecodeProg;
 use q::ir::cfg::Cfg;
 use q::ir::r#gen::{Codegen, CodegenContext, irfy};
+use q::ir::liveness::Liveness;
 use q::lexer::tokenizer::Tokenizer;
 use q::parser::recursive_descent::Parser;
 use q::runtime::vm::Vm;
@@ -75,6 +76,9 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
             let path = format!("{}.dot", func.name);
 
             std::fs::write(path, cfg.to_dot(func))?;
+
+            let liveness = Liveness::analyze(func, &cfg);
+            println!("{liveness:#?}");
         }
     }
 
