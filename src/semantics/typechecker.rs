@@ -820,9 +820,7 @@ fn merge_types(a: Option<Type>, b: Option<Type>) -> Result<Option<Type>, Typeche
         (Some(a), Some(b)) if a != b => Err(TypecheckerError {
             msg: format!("Cannot merge types: {a:?} != {b:?}"),
         }),
-
         (Some(ty), _) | (_, Some(ty)) => Ok(Some(ty)),
-
         (None, None) => Ok(None),
     }
 }
