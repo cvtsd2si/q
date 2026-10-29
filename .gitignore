@@ -3,3 +3,5 @@
 env/
 __pycache__/
 spam.q
+*.png
+*.dot

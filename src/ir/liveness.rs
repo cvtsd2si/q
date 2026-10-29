@@ -106,7 +106,9 @@ impl Liveness {
             }
         }
 
-        println!("Liveness converged after {iterations} attempts.");
+        if cfg!(debug_assertions) {
+            eprintln!("Liveness converged after {iterations} attempts.");
+        }
 
         /* Calculate instruction-level liveness.  */
         let mut instrs: Vec<InstrLiveness> = (0..func.body.len())

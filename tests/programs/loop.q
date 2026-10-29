@@ -1,13 +1,10 @@
-fn main() -> i64 {
-    let x: i64 = 0;
-    loop {
-        print x;
-
-	x = x + 1;
-
-	if (x == 5) {
-	    break;
-	}
+fn main() {
+    let i: i32 = 0;
+    let sum: i32 = 0;
+    while (i < 5) {
+        let snapshot: i32 = i;
+        sum = sum + snapshot;
+        i = i + 1;
     }
-    ret 0;
+    print sum;
 }
