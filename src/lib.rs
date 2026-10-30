@@ -10,12 +10,7 @@ pub mod parser {
     pub mod recursive_descent;
 }
 
-pub mod ir {
-    pub mod cfg;
-    pub mod r#gen;
-    pub mod liveness;
-    pub mod optimizer;
-}
+pub mod ir;
 
 pub mod asm {
     pub mod emitter;

@@ -442,3 +442,22 @@ pub fn print_value(value: Value) -> std::io::Result<()> {
 
     writeln!(stdout, "{value}")
 }
+
+impl From<Value> for Literal {
+    fn from(value: Value) -> Self {
+        match value.tag {
+            ValueTag::Bool => Literal::Bool(value.payload != 0),
+            ValueTag::UInt8 => Literal::UInt8(value.payload as u8),
+            ValueTag::Int8 => Literal::Int8(value.payload as i8),
+            ValueTag::UInt16 => Literal::UInt16(value.payload as u16),
+            ValueTag::Int16 => Literal::Int16(value.payload as i16),
+            ValueTag::UInt32 => Literal::UInt32(value.payload as u32),
+            ValueTag::Int32 => Literal::Int32(value.payload as i32),
+            ValueTag::UInt64 => Literal::UInt64(value.payload),
+            ValueTag::Int64 => Literal::Int64(value.payload as i64),
+            ValueTag::Float32 => Literal::Float32(f32::from_bits(value.payload as u32)),
+            ValueTag::Float64 => Literal::Float64(f64::from_bits(value.payload)),
+            _ => unreachable!(),
+        }
+    }
+}

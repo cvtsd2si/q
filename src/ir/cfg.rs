@@ -50,12 +50,11 @@ impl Cfg {
                     /* A label always starts a block.  */
                     leaders.insert(idx);
                 }
-                IRInstr::Jz { .. } | IRInstr::Jmp { .. } | IRInstr::Ret { .. } => {
+                IRInstr::Jz { .. } | IRInstr::Jmp { .. } | IRInstr::Ret { .. }
                     /* IRInstr after one of these always starts a new block.  */
-                    if idx + 1 < func.body.len() {
+                    if idx + 1 < func.body.len() => {
                         leaders.insert(idx + 1);
                     }
-                }
                 _ => {}
             }
         }
@@ -71,8 +70,8 @@ impl Cfg {
              * or the end of the function if there are no more leaders.  */
             let end = leaders.get(idx + 1).copied().unwrap_or(func.body.len());
 
-            for instr_idx in start..end {
-                instr_to_block[instr_idx] = BlockId(idx);
+            for item in instr_to_block.iter_mut().take(end).skip(start) {
+                *item = BlockId(idx);
             }
 
             blocks.push(BasicBlock {
