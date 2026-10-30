@@ -35,6 +35,11 @@ impl Regalloc for AsmFunc {
         /* Compute liveness.  */
         let liveness = Liveness::<AsmLocation>::analyze(&self.body, &cfg);
 
+        /* Generate a Vec which is filled up with a BTreeSet<String> for each asm instr.
+         * The BTreeSet<String> represents a collection of pseudo regs which must surive
+         * that instruction.
+         *
+         * NOTE: This is populated only for call instrs.  */
         let live_through_calls: Vec<BTreeSet<String>> = self
             .body
             .iter()
@@ -44,16 +49,21 @@ impl Regalloc for AsmFunc {
                     return BTreeSet::new();
                 }
 
+                /* live_in contains the values which are needed when
+                 * the instruction begins.  */
                 let live_in = &liveness.instrs[idx].live_in;
+                /* live_out contains the values which are needed when
+                 * after the instructions.  */
                 let live_out = &liveness.instrs[idx].live_out;
 
+                /* live_in n live_out
+                 *
+                 * If the value happens to be in the both sets, then
+                 * this means it must survive the call.  */
                 live_in
                     .iter()
-                    .filter_map(|location| match location {
-                        AsmLocation::Pseudo(name) if live_out.contains(location) => {
-                            Some(name.clone())
-                        }
-
+                    .filter_map(|x| match x {
+                        AsmLocation::Pseudo(name) if live_out.contains(x) => Some(name.clone()),
                         _ => None,
                     })
                     .collect()
@@ -63,10 +73,11 @@ impl Regalloc for AsmFunc {
         /* Build the interference graph.  */
         let graph = InterferenceGraph::build(&self.body, &liveness);
 
-        /* Determine register classes.  */
-        let classes = collect_reg_classes(&self.body).map_err(|e| RegAllocError { msg: e })?;
+        /* For each pseudo reg, figure out which register class it belongs to.  */
+        let reg_classes = collect_reg_classes(&self.body).map_err(|e| RegAllocError { msg: e })?;
 
-        /* Collect move candidates once.  */
+        /* Collect both pseudo-to-pseudo and pseudo-to-physical
+         * (and vice-versa), aka "precolored" move candidates once.  */
         let moves = collect_moves(&self.body);
         let precolored_moves = collect_precolored_moves(&self.body);
 
@@ -79,12 +90,12 @@ impl Regalloc for AsmFunc {
 
             /* Attempt pseudo-to-pseudo coalescing.  */
             for mov in &moves {
-                coalescing.try_coalesce(mov, &classes);
+                coalescing.try_coalesce(mov, &reg_classes);
             }
 
             /* Attempt pseudo-to-precolored coalescing.  */
             for (name, reg) in &precolored_moves {
-                coalescing.try_coalesce_precolored(name, *reg, &classes);
+                coalescing.try_coalesce_precolored(name, *reg, &reg_classes);
             }
 
             /* A successful merge removes exactly one graph node.
@@ -96,9 +107,15 @@ impl Regalloc for AsmFunc {
             }
         }
 
-        /* Collect spill costs for surviving graph nodes.  */
+        /* Collect spill costs for original pseudo registers.  */
         let original_costs = collect_spill_costs(&self.body);
 
+        /* Combine the spill costs of pseudo registers that were
+         * merged during coalescing.
+         *
+         * NOTE: This is necessary because after coalescing, multiple
+         * pseudo registers could be represented by a single node in
+         * the interference graph.  */
         let mut spill_costs = BTreeMap::new();
 
         for (name, cost) in original_costs {
@@ -110,7 +127,7 @@ impl Regalloc for AsmFunc {
         }
 
         /* Color the coalesced graph.  */
-        let (colored, spilled) = coalescing.graph.color(&classes, &spill_costs);
+        let (colored, spilled) = coalescing.graph.color(&reg_classes, &spill_costs);
 
         /* Assign stack slots to spilled representatives.  */
         let spill_sizes = collect_spill_sizes(&self.body, &coalescing.representative);
@@ -129,12 +146,14 @@ impl Regalloc for AsmFunc {
 
                 /* This pseudo belongs to a surviving pseudo node.  */
                 InterferenceNode::Pseudo(rep) => {
+                    /* The representative was successfully colored.  */
                     if let Some(&reg) = colored.get(rep) {
                         assignments.insert(name.clone(), reg);
+                    /* The representative was spilled to the stack.  */
                     } else if let Some(&offset) = spill_slots.get(rep) {
                         slots.insert(name.clone(), offset);
                     } else {
-                        panic!("No allocation for {name}, representative {rep}");
+                        panic!("No allocation for {name}, representative {rep}"); // FIXME: don't panic
                     }
                 }
             }
@@ -147,7 +166,6 @@ impl Regalloc for AsmFunc {
         }
 
         /* Insert caller-save / caller-restore instructions. */
-
         let old_body = std::mem::take(&mut self.body);
 
         let mut new_body = Vec::new();
@@ -158,13 +176,13 @@ impl Regalloc for AsmFunc {
                 continue;
             }
 
-            // Get pseudo-registers live across this call.
+            /* Get pseudo-registers live across this call.  */
             let live = &live_through_calls[idx];
 
-            // Convert pseudo-registers to physical registers.
-            //
-            // Spilled values don't need saving here because
-            // they're already stored in the stack frame.
+            /* Convert pseudo-registers to physical registers.
+             *
+             * Spilled values don't need saving here because
+             * they're already stored in the stack frame.  */
             let regs: Vec<AsmReg> = live
                 .iter()
                 .filter_map(|name| assignments.get(name).copied())
@@ -173,16 +191,16 @@ impl Regalloc for AsmFunc {
                 .into_iter()
                 .collect();
 
-            // Generate the preservation sequences.
+            /* Generate the preservation sequences.  */
             let (save, restore) = call_save_restore(&regs);
 
-            // Save registers.
+            /* Save registers.  */
             new_body.extend(save);
 
-            // Execute the original call.
+            /* Execute the original call.  */
             new_body.push(instr);
 
-            // Restore registers.
+            /* Restore registers.  */
             new_body.extend(restore);
         }
 
@@ -576,30 +594,15 @@ fn assign_spill_slots(
     (slots, space)
 }
 
+/// Iterate through the instructions, and for each individual instruction, gather up the pseudo
+/// registers it contains, and determine their register classes.
 fn collect_reg_classes(instructions: &[AsmInstr]) -> Result<BTreeMap<String, RegClass>, String> {
     let mut classes = BTreeMap::new();
 
     for instr in instructions {
         for operand in instr.operands().into_iter().flatten() {
-            let AsmOp::Pseudo { name, ty } = operand else {
-                continue;
-            };
-
-            let class = RegClass::of_type(ty);
-
-            match classes.get(name) {
-                Some(existing) if *existing != class => {
-                    return Err(format!(
-                        "Pseudo-register `{name}` has conflicting \
-                         register classes: {existing:?} and {class:?}"
-                    ));
-                }
-
-                None => {
-                    classes.insert(name.clone(), class);
-                }
-
-                _ => {}
+            if let AsmOp::Pseudo { name, ty } = operand {
+                classes.insert(name.clone(), RegClass::of_type(ty));
             }
         }
     }

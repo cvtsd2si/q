@@ -206,25 +206,16 @@ impl Coalescing {
     }
 }
 
+/// Iterate through the instructions and collect pseudo-to-pseudo moves.
 pub fn collect_moves(instructions: &[AsmInstr]) -> Vec<Move> {
     let mut moves = Vec::new();
 
     for instr in instructions {
         if let AsmInstr::Mov {
-            src:
-                AsmOp::Pseudo {
-                    name: src,
-                    ty: src_ty,
-                },
-            dst:
-                AsmOp::Pseudo {
-                    name: dst,
-                    ty: dst_ty,
-                },
+            src: AsmOp::Pseudo { name: src, .. },
+            dst: AsmOp::Pseudo { name: dst, .. },
             ..
         } = instr
-            && src != dst
-            && RegClass::of_type(src_ty) == RegClass::of_type(dst_ty)
         {
             moves.push(Move {
                 src: src.clone(),
@@ -307,18 +298,18 @@ fn can_coalesce_george(
     })
 }
 
+/// Iterate through the instructions and collect pseudo-to-physical (or vice-versa),
+/// aka "precolored" moves.
 pub fn collect_precolored_moves(instructions: &[AsmInstr]) -> Vec<(String, AsmReg)> {
     let mut moves = Vec::new();
 
     for instr in instructions {
         match instr {
-            // mov pseudo, physical_register
             AsmInstr::Mov {
                 src: AsmOp::Pseudo { name, .. },
                 dst: AsmOp::Reg(reg),
                 ..
             }
-            // mov physical_register, pseudo
             | AsmInstr::Mov {
                 src: AsmOp::Reg(reg),
                 dst: AsmOp::Pseudo { name, .. },
