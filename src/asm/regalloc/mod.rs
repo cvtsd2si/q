@@ -3,11 +3,7 @@ mod interference;
 
 use self::{
     coalescing::{Coalescing, collect_moves, collect_precolored_moves},
-    interference::InterferenceNode,
-};
-use crate::asm::abi::{
-    GP_PUSH_BYTES, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_RT, SSE_CALL_SAVE_TY,
-    SYSV_STACK_ALIGNMENT, call_live_in_regs, rt_arg_regs,
+    interference::{InterferenceGraph, InterferenceNode},
 };
 use crate::{
     analysis::{
@@ -15,9 +11,12 @@ use crate::{
         liveness::{Liveness, LivenessInstruction, UseDef},
     },
     asm::{
-        abi::{CALLER_SAVED, needs_caller_save},
+        abi::{
+            CALLER_SAVED, GP_PUSH_BYTES, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG,
+            JIT_RT, SSE_CALL_SAVE_TY, SYSV_STACK_ALIGNMENT, call_live_in_regs, needs_caller_save,
+            rt_arg_regs,
+        },
         r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrUnaryKind, AsmOp, AsmReg, AsmType},
-        regalloc::interference::InterferenceGraph,
     },
     parser::ast::Type,
 };
@@ -223,6 +222,191 @@ impl Regalloc for AsmFunc {
         }
 
         Ok(self)
+    }
+}
+
+/// Iterate through the instructions, and for each individual instruction, gather up the pseudo
+/// registers it contains, and determine their register classes.
+fn collect_reg_classes(instructions: &[AsmInstr]) -> Result<BTreeMap<String, RegClass>, String> {
+    let mut classes = BTreeMap::new();
+
+    for instr in instructions {
+        for operand in instr.operands().into_iter().flatten() {
+            if let AsmOp::Pseudo { name, ty } = operand {
+                classes.insert(name.clone(), RegClass::of_type(ty));
+            }
+        }
+    }
+
+    Ok(classes)
+}
+
+fn collect_spill_costs(instructions: &[AsmInstr]) -> BTreeMap<String, usize> {
+    let mut costs = BTreeMap::new();
+
+    for instr in instructions {
+        let ud = instr.use_def();
+
+        for location in ud.uses.iter().chain(ud.defs.iter()) {
+            if let AsmLocation::Pseudo(name) = location {
+                *costs.entry(name.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    costs
+}
+
+fn collect_spill_sizes(
+    instructions: &[AsmInstr],
+    representative: &BTreeMap<String, InterferenceNode>,
+) -> BTreeMap<String, usize> {
+    let mut sizes = BTreeMap::<String, usize>::new();
+
+    for instr in instructions {
+        for operand in instr.operands().into_iter().flatten() {
+            if let AsmOp::Pseudo { name, ty } = operand
+                && let Some(InterferenceNode::Pseudo(rep)) = representative.get(name)
+            {
+                let size = (*ty).size_of();
+                sizes
+                    .entry(rep.clone())
+                    .and_modify(|existing| *existing = (*existing).max(size))
+                    .or_insert(size);
+            }
+        }
+    }
+
+    sizes
+}
+
+fn assign_spill_slots(
+    spilled: &BTreeSet<String>,
+    sizes: &BTreeMap<String, usize>,
+    existing_space: usize,
+) -> (BTreeMap<String, isize>, usize) {
+    let mut used = existing_space.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
+    let mut slots = BTreeMap::new();
+
+    for name in spilled {
+        let size = *sizes.get(name).expect("Missing size for spilled pseudo");
+        assert!(
+            size.is_power_of_two(),
+            "Unsupported spill-slot size: {size}"
+        );
+
+        // Align the beginning of each variable's slot, not every slot to 8.
+        used = used.div_ceil(size) * size;
+        used += size;
+        slots.insert(name.clone(), -(used as isize));
+    }
+
+    // The frame stays SYSV_STACK_ALIGNMENT-byte aligned, even though its slots are packed.
+    let space = used.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
+
+    (slots, space)
+}
+
+fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
+    let mut gp = Vec::new();
+    let mut sse = Vec::new();
+
+    for &reg in regs {
+        if reg.is_xmm() {
+            sse.push(reg);
+        } else {
+            gp.push(reg);
+        }
+    }
+
+    // Each GP push consumes 8 bytes.
+    let gp_bytes = gp.len() * GP_PUSH_BYTES;
+
+    // Each scalar SSE save consumes 8 bytes.
+    let sse_bytes = sse.len() * SSE_CALL_SAVE_TY.size();
+
+    // Ensure the total stack adjustment is a multiple of SYSV_STACK_ALIGNMENT.
+    let total = (gp_bytes + sse_bytes).div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
+
+    // GP registers are saved using push.
+    // SSE registers and alignment padding use sub %rsp.
+    let stack_bytes = total - gp_bytes;
+
+    let mut save = Vec::new();
+    let mut restore = Vec::new();
+
+    // 1. Save GP registers.
+    for &reg in &gp {
+        save.push(AsmInstr::Push(AsmOp::Reg(reg)));
+    }
+
+    // 2. Reserve SSE slots and alignment padding.
+    if stack_bytes != 0 {
+        save.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Sub,
+            lhs: AsmOp::Imm(stack_bytes as i64),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+            asm_ty: AsmType::Quad,
+        });
+    }
+
+    // 3. Save XMM registers.
+    for (idx, &reg) in sse.iter().enumerate() {
+        save.push(AsmInstr::Mov {
+            src: AsmOp::Reg(reg),
+            dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
+            asm_ty: SSE_CALL_SAVE_TY,
+        });
+    }
+
+    /* Function call here.  */
+
+    // 4. Restore XMM registers.
+    for (idx, &reg) in sse.iter().enumerate().rev() {
+        restore.push(AsmInstr::Mov {
+            src: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
+            dst: AsmOp::Reg(reg),
+            asm_ty: AsmType::Double,
+        });
+    }
+
+    // 5. Release SSE slots and alignment padding.
+    if stack_bytes != 0 {
+        restore.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Add,
+            lhs: AsmOp::Imm(stack_bytes as i64),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+            asm_ty: AsmType::Quad,
+        });
+    }
+
+    // 6. Restore GP registers in reverse order.
+    for &reg in gp.iter().rev() {
+        restore.push(AsmInstr::Pop(AsmOp::Reg(reg)));
+    }
+
+    (save, restore)
+}
+
+fn is_redundant_move(instr: &AsmInstr) -> bool {
+    match instr {
+        AsmInstr::Mov {
+            src: AsmOp::Reg(src),
+            dst: AsmOp::Reg(dst),
+            asm_ty,
+        } => {
+            // A 32-bit GP move also zeroes the upper 32 bits.
+            // Conservatively retain all Long self-moves.
+            src == dst && *asm_ty != AsmType::Long
+        }
+
+        AsmInstr::Mov {
+            src: AsmOp::Mem(src_base, src_offset),
+            dst: AsmOp::Mem(dst_base, dst_offset),
+            ..
+        } => src_base == dst_base && src_offset == dst_offset,
+
+        _ => false,
     }
 }
 
@@ -567,110 +751,6 @@ impl AsmInstr {
     }
 }
 
-fn assign_spill_slots(
-    spilled: &BTreeSet<String>,
-    sizes: &BTreeMap<String, usize>,
-    existing_space: usize,
-) -> (BTreeMap<String, isize>, usize) {
-    let mut used = existing_space.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
-    let mut slots = BTreeMap::new();
-
-    for name in spilled {
-        let size = *sizes.get(name).expect("Missing size for spilled pseudo");
-        assert!(
-            size.is_power_of_two(),
-            "Unsupported spill-slot size: {size}"
-        );
-
-        // Align the beginning of each variable's slot, not every slot to 8.
-        used = used.div_ceil(size) * size;
-        used += size;
-        slots.insert(name.clone(), -(used as isize));
-    }
-
-    // The frame stays SYSV_STACK_ALIGNMENT-byte aligned, even though its slots are packed.
-    let space = used.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
-
-    (slots, space)
-}
-
-/// Iterate through the instructions, and for each individual instruction, gather up the pseudo
-/// registers it contains, and determine their register classes.
-fn collect_reg_classes(instructions: &[AsmInstr]) -> Result<BTreeMap<String, RegClass>, String> {
-    let mut classes = BTreeMap::new();
-
-    for instr in instructions {
-        for operand in instr.operands().into_iter().flatten() {
-            if let AsmOp::Pseudo { name, ty } = operand {
-                classes.insert(name.clone(), RegClass::of_type(ty));
-            }
-        }
-    }
-
-    Ok(classes)
-}
-
-fn collect_spill_costs(instructions: &[AsmInstr]) -> BTreeMap<String, usize> {
-    let mut costs = BTreeMap::new();
-
-    for instr in instructions {
-        let ud = instr.use_def();
-
-        for location in ud.uses.iter().chain(ud.defs.iter()) {
-            if let AsmLocation::Pseudo(name) = location {
-                *costs.entry(name.clone()).or_insert(0) += 1;
-            }
-        }
-    }
-
-    costs
-}
-
-fn is_redundant_move(instr: &AsmInstr) -> bool {
-    match instr {
-        AsmInstr::Mov {
-            src: AsmOp::Reg(src),
-            dst: AsmOp::Reg(dst),
-            asm_ty,
-        } => {
-            // A 32-bit GP move also zeroes the upper 32 bits.
-            // Conservatively retain all Long self-moves.
-            src == dst && *asm_ty != AsmType::Long
-        }
-
-        AsmInstr::Mov {
-            src: AsmOp::Mem(src_base, src_offset),
-            dst: AsmOp::Mem(dst_base, dst_offset),
-            ..
-        } => src_base == dst_base && src_offset == dst_offset,
-
-        _ => false,
-    }
-}
-
-fn collect_spill_sizes(
-    instructions: &[AsmInstr],
-    representative: &BTreeMap<String, InterferenceNode>,
-) -> BTreeMap<String, usize> {
-    let mut sizes = BTreeMap::<String, usize>::new();
-
-    for instr in instructions {
-        for operand in instr.operands().into_iter().flatten() {
-            if let AsmOp::Pseudo { name, ty } = operand
-                && let Some(InterferenceNode::Pseudo(rep)) = representative.get(name)
-            {
-                let size = (*ty).size_of();
-                sizes
-                    .entry(rep.clone())
-                    .and_modify(|existing| *existing = (*existing).max(size))
-                    .or_insert(size);
-            }
-        }
-    }
-
-    sizes
-}
-
 fn is_call(instr: &AsmInstr) -> bool {
     matches!(
         instr,
@@ -689,85 +769,4 @@ impl std::fmt::Display for RegAllocError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "regalloc: {}", self.msg)
     }
-}
-
-fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
-    let mut gp = Vec::new();
-    let mut sse = Vec::new();
-
-    for &reg in regs {
-        if reg.is_xmm() {
-            sse.push(reg);
-        } else {
-            gp.push(reg);
-        }
-    }
-
-    // Each GP push consumes 8 bytes.
-    let gp_bytes = gp.len() * GP_PUSH_BYTES;
-
-    // Each scalar SSE save consumes 8 bytes.
-    let sse_bytes = sse.len() * SSE_CALL_SAVE_TY.size();
-
-    // Ensure the total stack adjustment is a multiple of SYSV_STACK_ALIGNMENT.
-    let total = (gp_bytes + sse_bytes).div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
-
-    // GP registers are saved using push.
-    // SSE registers and alignment padding use sub %rsp.
-    let stack_bytes = total - gp_bytes;
-
-    let mut save = Vec::new();
-    let mut restore = Vec::new();
-
-    // 1. Save GP registers.
-    for &reg in &gp {
-        save.push(AsmInstr::Push(AsmOp::Reg(reg)));
-    }
-
-    // 2. Reserve SSE slots and alignment padding.
-    if stack_bytes != 0 {
-        save.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Sub,
-            lhs: AsmOp::Imm(stack_bytes as i64),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-            asm_ty: AsmType::Quad,
-        });
-    }
-
-    // 3. Save XMM registers.
-    for (idx, &reg) in sse.iter().enumerate() {
-        save.push(AsmInstr::Mov {
-            src: AsmOp::Reg(reg),
-            dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
-            asm_ty: SSE_CALL_SAVE_TY,
-        });
-    }
-
-    /* Function call here.  */
-
-    // 4. Restore XMM registers.
-    for (idx, &reg) in sse.iter().enumerate().rev() {
-        restore.push(AsmInstr::Mov {
-            src: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
-            dst: AsmOp::Reg(reg),
-            asm_ty: AsmType::Double,
-        });
-    }
-
-    // 5. Release SSE slots and alignment padding.
-    if stack_bytes != 0 {
-        restore.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Add,
-            lhs: AsmOp::Imm(stack_bytes as i64),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-            asm_ty: AsmType::Quad,
-        });
-    }
-
-    // 6. Restore GP registers in reverse order.
-    for &reg in gp.iter().rev() {
-        restore.push(AsmInstr::Pop(AsmOp::Reg(reg)));
-    }
-
-    (save, restore)
 }
