@@ -1,6 +1,7 @@
 mod constant_folding;
 mod constant_propagation;
 mod copy_propagation;
+mod dataflow;
 mod dead_store_elimination;
 mod unreachable_code_elimination;
 mod visit_reads;

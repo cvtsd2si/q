@@ -1,140 +1,34 @@
 use std::collections::HashMap;
 
 use crate::{
-    ir::{
-        cfg::Cfg,
-        r#gen::{IRFunc, IRInstr, IRVal},
-    },
+    ir::r#gen::{IRFunc, IRInstr, IRVal},
     parser::ast::Type,
 };
 
-use super::visit_reads::visit_reads;
+use super::{
+    dataflow::run_forward,
+    visit_reads::visit_reads,
+};
 
 type CopyFacts = HashMap<String, (String, Type)>;
 
 pub(super) fn run(func: &mut IRFunc) -> bool {
-    let cfg = Cfg::build(func).unwrap();
-    let n = cfg.blocks.len();
-
-    if n == 0 {
-        return false;
-    }
-
-    let mut reachable = vec![false; n];
-    let mut stack = vec![0usize];
-
-    while let Some(block_idx) = stack.pop() {
-        if reachable[block_idx] {
-            continue;
-        }
-
-        reachable[block_idx] = true;
-
-        for successor in &cfg.blocks[block_idx].succs {
-            stack.push(successor.0);
-        }
-    }
-
-    let mut out: Vec<CopyFacts> = vec![HashMap::new(); n];
-
-    loop {
-        let mut analysis_changed = false;
-
-        for (idx, block) in cfg.blocks.iter().enumerate() {
-            if !reachable[idx] {
-                continue;
-            }
-
-            let mut facts = incoming_copies(idx, &cfg, &out, &reachable);
-
-            /* Simulate each instruction to determine
-             * which copies are valid at the block exit.  */
-            for i in block.range.clone() {
-                transfer_copy(&func.body[i], &mut facts);
-            }
-
-            if out[idx] != facts {
-                out[idx] = facts;
-                analysis_changed = true;
-            }
-        }
-
-        if !analysis_changed {
-            break;
-        }
-    }
-
-    let mut changed = false;
-
-    for (idx, block) in cfg.blocks.iter().enumerate() {
-        if !reachable[idx] {
-            continue;
-        }
-
-        let mut facts = incoming_copies(idx, &cfg, &out, &reachable);
-
-        for i in block.range.clone() {
-            let instr = &mut func.body[i];
-
-            visit_reads(instr, |val| {
-                let replacement = match val {
-                    IRVal::Var { name, ty } => {
-                        facts.get(name.as_str()).and_then(|(source, source_ty)| {
-                            if *ty == *source_ty && name.as_str() != source.as_str() {
-                                Some(IRVal::Var {
-                                    name: source.clone(),
-                                    ty: *source_ty,
-                                })
-                            } else {
-                                None
-                            }
-                        })
-                    }
-
-                    IRVal::Const(_) => None,
-                };
-
-                if let Some(replacement) = replacement {
-                    *val = replacement;
-                    changed = true;
-                }
-            });
-
-            /* Update copy information after the instruction,
-             * accounting for the rewritten operands.  */
-            transfer_copy(instr, &mut facts);
-        }
-    }
-
-    changed
+    run_forward::<CopyFacts>(
+        func,
+        intersect_copies,
+        |a, b| a == b,
+        transfer_copy,
+        rewrite_copies,
+    )
 }
 
-fn incoming_copies(block: usize, cfg: &Cfg, out: &[CopyFacts], reachable: &[bool]) -> CopyFacts {
-    /* Function entry starts without any copy information.  */
-    if block == 0 {
-        return HashMap::new();
-    }
-
-    /* Only consider reachable predecessors.  */
-    let mut preds = cfg.blocks[block]
-        .preds
-        .iter()
-        .map(|id| id.0)
-        .filter(|&id| reachable[id]);
-
-    let Some(first) = preds.next() else {
-        return HashMap::new();
-    };
-
-    /* Start with the first predecessor's facts.  */
-    let mut facts = out[first].clone();
-
-    /* Intersect with every other reachable predecessor.  */
-    for pred in preds {
-        facts.retain(|name, source| out[pred].get(name) == Some(source));
-    }
-
-    facts
+fn intersect_copies(
+    facts: &mut CopyFacts,
+    other: &CopyFacts,
+) {
+    facts.retain(|name, source| {
+        other.get(name) == Some(source)
+    });
 }
 
 fn transfer_copy(instr: &IRInstr, facts: &mut CopyFacts) {
@@ -171,4 +65,29 @@ fn transfer_copy(instr: &IRInstr, facts: &mut CopyFacts) {
     if let Some(source) = new_copy {
         facts.insert(dst.clone(), source);
     }
+}
+
+fn rewrite_copies(
+    instr: &mut IRInstr,
+    facts: &CopyFacts,
+) -> bool {
+    let mut changed = false;
+
+    visit_reads(instr, |val| {
+        if let IRVal::Var { name, ty } = val
+            && let Some((source, source_ty)) =
+                facts.get(name.as_str())
+            && *ty == *source_ty
+            && name.as_str() != source.as_str()
+        {
+            *val = IRVal::Var {
+                name: source.clone(),
+                ty: *source_ty,
+            };
+
+            changed = true;
+        }
+    });
+
+    changed
 }
