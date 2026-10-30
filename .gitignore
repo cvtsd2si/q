@@ -2,6 +2,8 @@
 *.s
 env/
 __pycache__/
+.pytest_cache/
+.ruff_cache/
 spam.q
 *.png
 *.dot

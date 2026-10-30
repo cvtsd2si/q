@@ -1,4 +1,8 @@
 use crate::{
+    asm::abi::{
+        GP_SCRATCH_1, GP_SCRATCH_2, JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD,
+        JIT_RETURN_TAG, JIT_VM, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT, rt_arg_reg,
+    },
     bytecode::r#gen::BytecodeFunc,
     ir::r#gen::{
         Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRStaticConst, IRVal, StaticInit,
@@ -383,6 +387,7 @@ pub enum AsmReg {
     Xmm5,
     Xmm6,
     Xmm7,
+    Xmm14,
     Xmm15,
 }
 
@@ -397,6 +402,7 @@ impl AsmReg {
             Self::Xmm5 => "%xmm5",
             Self::Xmm6 => "%xmm6",
             Self::Xmm7 => "%xmm7",
+            Self::Xmm14 => "%xmm14",
             Self::Xmm15 => "%xmm15",
 
             _ => {
@@ -416,7 +422,7 @@ impl AsmReg {
                     Self::R13 => ["%r13b", "%r13w", "%r13d", "%r13"],
                     Self::R14 => ["%r14b", "%r14w", "%r14d", "%r14"],
                     Self::R15 => ["%r15b", "%r15w", "%r15d", "%r15"],
-                    _ => unreachable!(),
+                    _ => unreachable!("got: {self:?}"),
                 };
 
                 match ty {
@@ -440,6 +446,7 @@ impl AsmReg {
                 | Self::Xmm5
                 | Self::Xmm6
                 | Self::Xmm7
+                | Self::Xmm14
                 | Self::Xmm15
         )
     }
@@ -475,7 +482,10 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
 
         insert_prologue(&mut body);
 
-        body.push(AsmInstr::Comment("%rdi = *const Value (args)".into()));
+        body.push(AsmInstr::Comment(format!(
+            "{} = *const Value (args)",
+            JIT_ARGS.as_width(AsmType::Quad)
+        )));
         body.push(AsmInstr::Newline);
 
         for (idx, param) in self.params.iter().enumerate() {
@@ -483,11 +493,12 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
                 as isize;
 
             body.push(AsmInstr::Comment(format!(
-                "Put {offset}(%rdi) into {}",
-                param.name
+                "Put {offset}({}) into {}",
+                param.name,
+                JIT_ARGS.as_width(AsmType::Quad),
             )));
             body.push(AsmInstr::Mov {
-                src: AsmOp::Mem(AsmReg::Di, offset),
+                src: AsmOp::Mem(JIT_ARGS, offset),
                 dst: AsmOp::Pseudo {
                     name: param.name.clone(),
                     ty: param.ty,
@@ -527,14 +538,14 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
 
             IRInstr::Ret { val, ret_ty } => {
                 let mut instrs = vec![
-                    AsmInstr::Comment("%rax = retval".into()),
+                    AsmInstr::Comment("Store the JIT return payload".into()),
                     AsmInstr::Mov {
                         src: val
                             .as_ref()
                             .map(|val| val.codegen(ctx))
                             .transpose()?
                             .unwrap_or(AsmOp::Imm(0)),
-                        dst: AsmOp::Reg(AsmReg::Ax),
+                        dst: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                         asm_ty: ret_ty.map(|ty| ty.into()).unwrap_or(AsmType::Quad),
                     },
                     AsmInstr::Newline,
@@ -545,8 +556,8 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
 
                     match (src_ty, ty.is_signed()) {
                         (AsmType::Float | AsmType::Double, _) => {
-                            /* Float32 payload bits are already in %eax.  */
-                            /* Float64 payload bits are already in %rax.  */
+                            /* Float32 payload bits already occupy the low 32-bits.  */
+                            /* Float64 payload bits already occupy the full register.  */
                             /* No additional extension is needed.  */
                             // FIXME: add this as AsmInstr::Comment
                         }
@@ -573,7 +584,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         (_, true) => {
                             instrs.extend([
                                 AsmInstr::Comment(
-                                    "Extend retval into %rax before returning from the native fn."
+                                    "Extend the payload register before returning from the native fn."
                                         .into(),
                                 ),
                                 AsmInstr::Comment(format!(
@@ -582,9 +593,9 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                                 )),
                             ]);
                             instrs.push(AsmInstr::Movsx {
-                                src: AsmOp::Reg(AsmReg::Ax),
+                                src: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                                 src_ty,
-                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                                 dst_ty: AsmType::Quad,
                             });
                         }
@@ -593,7 +604,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         (_, false) => {
                             instrs.extend([
                                 AsmInstr::Comment(
-                                    "Extend retval into %rax before returning from the native fn."
+                                    "Extend the payload register before returning from the native fn."
                                         .into(),
                                 ),
                                 AsmInstr::Comment(format!(
@@ -602,9 +613,9 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                                 )),
                             ]);
                             instrs.push(AsmInstr::Movzx {
-                                src: AsmOp::Reg(AsmReg::Ax),
+                                src: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                                 src_ty,
-                                dst: AsmOp::Reg(AsmReg::Ax),
+                                dst: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                                 dst_ty: AsmType::Quad,
                             });
                         }
@@ -613,17 +624,17 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
 
                 instrs.extend([
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rdx = ValueTag".into()),
+                    AsmInstr::Comment("Store the JIT return tag".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(ret_ty.map(ValueTag::from).unwrap_or(ValueTag::Void) as i64),
-                        dst: AsmOp::Reg(AsmReg::Dx),
+                        dst: AsmOp::Reg(JIT_RETURN_TAG),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rcx = JIT_RET".into()),
+                    AsmInstr::Comment("Mark the JIT return kind".into()),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(JIT_RET as i64),
-                        dst: AsmOp::Reg(AsmReg::Cx),
+                        dst: AsmOp::Reg(JIT_RETURN_KIND),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1068,10 +1079,10 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         asm_ty: AsmType::Byte,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("Move the left operand into Reg::R10.".into()),
+                    AsmInstr::Comment("Move the left operand into tmp scratch #2.".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
-                        dst: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(GP_SCRATCH_2),
                         asm_ty,
                     },
                     AsmInstr::Newline,
@@ -1079,13 +1090,13 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     AsmInstr::Shift {
                         kind: shift_kind,
                         src: AsmOp::Reg(AsmReg::Cx),
-                        dst: AsmOp::Reg(AsmReg::R10),
+                        dst: AsmOp::Reg(GP_SCRATCH_2),
                         asm_ty,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Move the shifted result into the destination.".into()),
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R10),
+                        src: AsmOp::Reg(GP_SCRATCH_2),
                         dst: dst.codegen(ctx)?,
                         asm_ty,
                     },
@@ -1122,13 +1133,6 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             asm_ty: (*operand_ty).into(),
                         },
                         AsmInstr::Newline,
-                        AsmInstr::Comment("Zero-initialize the dst.".into()),
-                        AsmInstr::Mov {
-                            src: AsmOp::Imm(0),
-                            dst: dst.codegen(ctx)?,
-                            asm_ty: AsmType::Long,
-                        },
-                        AsmInstr::Newline,
                         AsmInstr::Comment(
                             "Update byte in dst if one of the conditions is true.".into(),
                         ),
@@ -1145,13 +1149,13 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             )),
                             AsmInstr::Setcc {
                                 cc: ConditionCode::P,
-                                dst: AsmOp::Reg(AsmReg::R10),
+                                dst: AsmOp::Reg(GP_SCRATCH_2),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment("Combine the result using the OR semantics.".into()),
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::Or,
-                                lhs: AsmOp::Reg(AsmReg::R10),
+                                lhs: AsmOp::Reg(GP_SCRATCH_2),
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Byte,
                             },
@@ -1164,13 +1168,13 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             )),
                             AsmInstr::Setcc {
                                 cc: ConditionCode::Np,
-                                dst: AsmOp::Reg(AsmReg::R10),
+                                dst: AsmOp::Reg(GP_SCRATCH_2),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment("Combine the result using the And semantics.".into()),
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::And,
-                                lhs: AsmOp::Reg(AsmReg::R10),
+                                lhs: AsmOp::Reg(GP_SCRATCH_2),
                                 rhs: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Byte,
                             },
@@ -1205,13 +1209,6 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             src: rhs.codegen(ctx)?,
                             dst: lhs.codegen(ctx)?,
                             asm_ty: (*operand_ty).into(),
-                        },
-                        AsmInstr::Newline,
-                        AsmInstr::Comment("Zero-initialize the dst.".into()),
-                        AsmInstr::Mov {
-                            src: AsmOp::Imm(0),
-                            dst: dst.codegen(ctx)?,
-                            asm_ty: AsmType::Quad,
                         },
                         AsmInstr::Newline,
                         AsmInstr::Comment(format!(
@@ -1254,11 +1251,11 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         let float_ty: AsmType = (*operand_ty).into();
 
                         instrs.push(AsmInstr::Comment(
-                            "Move the floating-point bits into %r9.".into(),
+                            "Move the floating-point bits into tmp scratch.".into(),
                         ));
                         instrs.push(AsmInstr::Mov {
                             src: dst.clone(),
-                            dst: AsmOp::Reg(AsmReg::R9),
+                            dst: AsmOp::Reg(GP_SCRATCH_1),
                             asm_ty: float_ty,
                         });
                         instrs.push(AsmInstr::Newline);
@@ -1271,7 +1268,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                                 instrs.push(AsmInstr::Bin {
                                     kind: AsmInstrBinKind::Xor,
                                     lhs: AsmOp::Imm(0x8000_0000),
-                                    rhs: AsmOp::Reg(AsmReg::R9),
+                                    rhs: AsmOp::Reg(GP_SCRATCH_1),
                                     asm_ty: AsmType::Long,
                                 });
                                 instrs.push(AsmInstr::Newline);
@@ -1279,17 +1276,17 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
 
                             AsmType::Double => {
                                 instrs.push(AsmInstr::Comment(
-                                    "Construct the f64 sign-bit mask in %r10.".into(),
+                                    "Construct the f64 sign-bit mask in tmp scratch #2.".into(),
                                 ));
                                 instrs.push(AsmInstr::Mov {
                                     src: AsmOp::Imm(1),
-                                    dst: AsmOp::Reg(AsmReg::R10),
+                                    dst: AsmOp::Reg(GP_SCRATCH_2),
                                     asm_ty: AsmType::Quad,
                                 });
                                 instrs.push(AsmInstr::Shift {
                                     kind: AsmInstrShiftKind::Shl,
                                     src: AsmOp::Imm(63),
-                                    dst: AsmOp::Reg(AsmReg::R10),
+                                    dst: AsmOp::Reg(GP_SCRATCH_2),
                                     asm_ty: AsmType::Quad,
                                 });
                                 instrs.push(AsmInstr::Newline);
@@ -1298,8 +1295,8 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                                 ));
                                 instrs.push(AsmInstr::Bin {
                                     kind: AsmInstrBinKind::Xor,
-                                    lhs: AsmOp::Reg(AsmReg::R10),
-                                    rhs: AsmOp::Reg(AsmReg::R9),
+                                    lhs: AsmOp::Reg(GP_SCRATCH_2),
+                                    rhs: AsmOp::Reg(GP_SCRATCH_1),
                                     asm_ty: AsmType::Quad,
                                 });
                                 instrs.push(AsmInstr::Newline);
@@ -1312,7 +1309,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             "Move the negated bits back into the dst.".into(),
                         ));
                         instrs.push(AsmInstr::Mov {
-                            src: AsmOp::Reg(AsmReg::R9),
+                            src: AsmOp::Reg(GP_SCRATCH_1),
                             dst: dst.clone(),
                             asm_ty: float_ty,
                         });
@@ -1347,7 +1344,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             AsmInstr::Mov {
                                 src: AsmOp::Imm(0),
                                 dst: dst.clone(),
-                                asm_ty: AsmType::Quad,
+                                asm_ty: (*operand_ty).into(),
                             },
                             AsmInstr::Newline,
                             AsmInstr::Comment(
@@ -1380,191 +1377,57 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                 let val = val.codegen(ctx)?;
                 let tag = ValueTag::from(*ty) as u64;
 
-                let mut body = vec![
-                    AsmInstr::Comment("Preserve caller-saved regs.".into()),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Align the stack after the three pushes.".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Sub,
-                        lhs: AsmOp::Imm(8),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Sub,
-                        lhs: AsmOp::Imm(64),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm0),
-                        dst: AsmOp::Mem(AsmReg::Sp, 0),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm1),
-                        dst: AsmOp::Mem(AsmReg::Sp, 8),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm2),
-                        dst: AsmOp::Mem(AsmReg::Sp, 16),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm3),
-                        dst: AsmOp::Mem(AsmReg::Sp, 24),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm4),
-                        dst: AsmOp::Mem(AsmReg::Sp, 32),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm5),
-                        dst: AsmOp::Mem(AsmReg::Sp, 40),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm6),
-                        dst: AsmOp::Mem(AsmReg::Sp, 48),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm7),
-                        dst: AsmOp::Mem(AsmReg::Sp, 56),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("%rdi = *mut Vm".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R13),
-                        dst: AsmOp::Reg(AsmReg::Di),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("%rsi = ValueTag".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Imm(tag as i64),
-                        dst: AsmOp::Reg(AsmReg::Si),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                ];
+                let vm_arg = rt_arg_reg(RtFn::Print, 0);
+                let tag_arg = rt_arg_reg(RtFn::Print, 1);
+                let payload_arg = rt_arg_reg(RtFn::Print, 2);
 
-                body.extend([
-                    AsmInstr::Comment("%rdx = payload".into()),
+                let body = vec![
+                    AsmInstr::Comment(format!("{} = *mut Vm", vm_arg.as_width(AsmType::Quad))),
+                    AsmInstr::Mov {
+                        src: AsmOp::Reg(JIT_VM),
+                        dst: AsmOp::Reg(vm_arg),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(format!("{} = payload", payload_arg.as_width(AsmType::Quad))),
                     match (ty.size_of(), ty.is_signed()) {
                         (4, _) if *ty == Type::Float32 => AsmInstr::Mov {
                             src: val,
-                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst: AsmOp::Reg(payload_arg),
                             asm_ty: AsmType::Float,
                         },
                         (1 | 2 | 4, false) => AsmInstr::Movzx {
                             src: val,
                             src_ty: (*ty).into(),
-                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst: AsmOp::Reg(payload_arg),
                             dst_ty: AsmType::Quad,
                         },
                         (1 | 2 | 4, true) => AsmInstr::Movsx {
                             src: val,
                             src_ty: (*ty).into(),
-                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst: AsmOp::Reg(payload_arg),
                             dst_ty: AsmType::Quad,
                         },
                         _ => AsmInstr::Mov {
                             src: val,
-                            dst: AsmOp::Reg(AsmReg::Dx),
+                            dst: AsmOp::Reg(payload_arg),
                             asm_ty: AsmType::Quad,
                         },
                     },
+                    AsmInstr::Comment(format!("{} = ValueTag", tag_arg.as_width(AsmType::Quad))),
+                    AsmInstr::Mov {
+                        src: AsmOp::Imm(tag as i64),
+                        dst: AsmOp::Reg(tag_arg),
+                        asm_ty: AsmType::Quad,
+                    },
                     AsmInstr::Newline,
-                ]);
-
-                body.extend([
                     AsmInstr::CallRt {
                         target: RtFn::Print,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 0),
-                        dst: AsmOp::Reg(AsmReg::Xmm0),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 8),
-                        dst: AsmOp::Reg(AsmReg::Xmm1),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 16),
-                        dst: AsmOp::Reg(AsmReg::Xmm2),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 24),
-                        dst: AsmOp::Reg(AsmReg::Xmm3),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 32),
-                        dst: AsmOp::Reg(AsmReg::Xmm4),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 40),
-                        dst: AsmOp::Reg(AsmReg::Xmm5),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 48),
-                        dst: AsmOp::Reg(AsmReg::Xmm6),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 56),
-                        dst: AsmOp::Reg(AsmReg::Xmm7),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment(
-                        "Restore space reserverd for the caller-saved SSE regs.".into(),
-                    ),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(64),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Restore stack alignment.".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(8),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Restore caller-saved regs.".into()),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
-                    AsmInstr::Newline,
-                    AsmInstr::Comment(
-                        "Check for status.  If %rax != 0, jmp to err handler.".into(),
-                    ),
                     AsmInstr::Test {
-                        src: AsmOp::Reg(AsmReg::Ax),
-                        dst: AsmOp::Reg(AsmReg::Ax),
+                        src: AsmOp::Reg(SYSV_GP_RETURN),
+                        dst: AsmOp::Reg(SYSV_GP_RETURN),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
@@ -1572,7 +1435,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         target: format!("{}_rt_err", ctx.current_fn),
                     },
                     AsmInstr::Newline,
-                ]);
+                ];
 
                 Ok(body)
             }
@@ -1614,6 +1477,12 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
             } => {
                 let func = ctx.get::<BytecodeFunc>(target).unwrap();
 
+                let vm_arg = rt_arg_reg(RtFn::Call, 0);
+                let function_arg = rt_arg_reg(RtFn::Call, 1);
+                let args_arg = rt_arg_reg(RtFn::Call, 2);
+                let count_arg = rt_arg_reg(RtFn::Call, 3);
+                let result_arg = rt_arg_reg(RtFn::Call, 4);
+
                 let argc = args.len();
                 let args_space = argc * std::mem::size_of::<Value>();
                 let args_offset = std::mem::size_of::<Value>();
@@ -1621,74 +1490,11 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                 let retval_offset = 0;
                 let retval_space = std::mem::size_of::<Value>();
 
-                let frame_space = (args_space + retval_space).div_ceil(16) * 16;
+                let frame_space = (args_space + retval_space).div_ceil(SYSV_STACK_ALIGNMENT)
+                    * SYSV_STACK_ALIGNMENT;
 
                 let mut body = vec![
                     AsmInstr::Comment(format!("Call `{target}`.")),
-                    AsmInstr::Comment("Preserve caller saved registers.".into()),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R8)),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R10)),
-                    AsmInstr::Push(AsmOp::Reg(AsmReg::R11)),
-                    AsmInstr::Newline,
-                    /* FIXME: don't hardcode this */
-                    AsmInstr::Comment("Fix alignment after the three pushes.".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Sub,
-                        lhs: AsmOp::Imm(8),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Make space for the SSE register preservation".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Sub,
-                        lhs: AsmOp::Imm(64),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Preserve caller-saved SSE regs.".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm0),
-                        dst: AsmOp::Mem(AsmReg::Sp, 0),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm1),
-                        dst: AsmOp::Mem(AsmReg::Sp, 8),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm2),
-                        dst: AsmOp::Mem(AsmReg::Sp, 16),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm3),
-                        dst: AsmOp::Mem(AsmReg::Sp, 24),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm4),
-                        dst: AsmOp::Mem(AsmReg::Sp, 32),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm5),
-                        dst: AsmOp::Mem(AsmReg::Sp, 40),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm6),
-                        dst: AsmOp::Mem(AsmReg::Sp, 48),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Xmm7),
-                        dst: AsmOp::Mem(AsmReg::Sp, 56),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
                     AsmInstr::Comment(format!(
                         "Reserve {frame_space} bytes for call args ({argc} args) and retval."
                     )),
@@ -1718,7 +1524,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             "Construct Value for arg {idx}: tag={tag:?}, payload follows."
                         )),
                         AsmInstr::Comment(
-                            "Store the tag first as fixup pass might clobber %r9.".into(),
+                            "Store the tag first as fixup pass might clobber it.".into(),
                         ),
                         AsmInstr::Mov {
                             src: AsmOp::Imm(tag as i64),
@@ -1729,16 +1535,21 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             asm_ty: AsmType::Quad,
                         },
                         AsmInstr::Newline,
-                        AsmInstr::Comment(format!("Put arg {idx} into tmp scratch (%r9).")),
+                        AsmInstr::Comment(format!(
+                            "Put arg {idx} into tmp scratch ({}).",
+                            GP_SCRATCH_1.as_width(AsmType::Quad)
+                        )),
                         AsmInstr::Mov {
                             src: arg.codegen(ctx)?,
-                            dst: AsmOp::Reg(AsmReg::R9),
-                            asm_ty: AsmType::Quad,
+                            dst: AsmOp::Reg(GP_SCRATCH_1),
+                            asm_ty: arg_tys[idx].into(),
                         },
                         AsmInstr::Newline,
-                        AsmInstr::Comment("Store %r9 into the payload field.".to_string()),
+                        AsmInstr::Comment(
+                            "Store the scratch value into the payload field.".to_string(),
+                        ),
                         AsmInstr::Mov {
-                            src: AsmOp::Reg(AsmReg::R9),
+                            src: AsmOp::Reg(GP_SCRATCH_1),
                             dst: AsmOp::Mem(
                                 AsmReg::Sp,
                                 (base + std::mem::offset_of!(Value, payload)) as isize,
@@ -1758,12 +1569,13 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     AsmInstr::Comment(format!(
                         "Determine whether `{target}` has already been jitted." 
                     )),
-                    AsmInstr::Comment(
-                        "%r15 = `native_entrypoints`".into()
-                    ),
                     AsmInstr::Comment(format!(
-                        "Load `native_entrypoints[{func}]` from offset {} into %r9.",
-                        func * std::mem::size_of::<usize>()
+                        "{} = `native_entrypoints`", JIT_ENTRYPOINTS.as_width(AsmType::Quad),
+                    )),
+                    AsmInstr::Comment(format!(
+                        "Load `native_entrypoints[{func}]` from offset {} into {}.",
+                        func * std::mem::size_of::<usize>(),
+                        GP_SCRATCH_1.as_width(AsmType::Quad),
                     )),
                     AsmInstr::Comment(
                         "A zero entry means the function has not been jitted.".into(),
@@ -1773,10 +1585,10 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     ),
                     AsmInstr::Mov {
                         src: AsmOp::Mem(
-                            AsmReg::R15,
+                            JIT_ENTRYPOINTS,
                             (func * std::mem::size_of::<usize>()) as isize,
                         ),
-                        dst: AsmOp::Reg(AsmReg::R9),
+                        dst: AsmOp::Reg(GP_SCRATCH_1),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1784,14 +1596,14 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         "Compare the entrypoint against zero.".into(),
                     ),
                     AsmInstr::Comment(
-                        "cmp updates the cpu flags with no changes to %r9.".into(),
+                        "cmp updates the cpu flags with no changes to the call target.".into(),
                     ),
                     AsmInstr::Comment(
-                        "If %r9 == 0, the Zero Flag (ZF) is set.".into()
+                        "If tmp scratch == 0, the Zero Flag (ZF) is set.".into()
                     ),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(0),
-                        dst: AsmOp::Reg(AsmReg::R9),
+                        dst: AsmOp::Reg(GP_SCRATCH_1),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1799,7 +1611,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         "If ZF is set, jump to the Vm fallback and exec the uncompiled function.".into()
                     ),
                     AsmInstr::Comment(
-                        "Otherwise, fall through to the native call path, with %r9 holding the fn addr.".into()
+                        "Otherwise, fall through to the native call path, with the scratch register holding the fn addr.".into()
                     ),
                     AsmInstr::Jmpcc {
                         cc: ConditionCode::E,
@@ -1810,22 +1622,22 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
 
                 body.extend([
                     AsmInstr::Comment(
-                        "The internal ABI expects %rdi to point to an array of Value objects."
+                        "The internal ABI expects its first argument to point to an array of Value objects."
                             .into(),
                     ),
                     AsmInstr::Comment(format!(
                         "This array has already been constructed on the stack, starting at {retval_space}(%rsp)."
                     )),
-                    AsmInstr::Comment("Compute its address and pass that pointer in %rdi.".into()),
+                    AsmInstr::Comment(format!("Compute its address and pass that pointer in {}.", JIT_ARGS.as_width(AsmType::Quad))),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
-                        dst: AsmOp::Reg(AsmReg::Di),
+                        dst: AsmOp::Reg(JIT_ARGS),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Bin {
                         kind: AsmInstrBinKind::Add,
                         lhs: AsmOp::Imm(retval_space as i64),
-                        rhs: AsmOp::Reg(AsmReg::Di),
+                        rhs: AsmOp::Reg(JIT_ARGS),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1833,28 +1645,29 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         "Call the native implementation of `{target}` directly."
                     )),
                     AsmInstr::Comment(
-                        "%r9 holds the entrypoint address loaded from `native_entrypoints`.".into(),
+                        "The scratch register holds the entrypoint address loaded from `native_entrypoints`.".into(),
                     ),
+                    AsmInstr::Comment(format!(
+                        "The callee receives its arguments through the JIT argument register and inherits the",
+
+                    )),
                     AsmInstr::Comment(
-                        "The callee receives its arguments through %rdi and inherits the".into()
-                    ),
-                    AsmInstr::Comment(
-                        "JIT context in %r13 (Vm), %r14 (Rt), and %r15 (`native entrypoints`)."
+                        "JIT context in (Vm, Rt, `native entrypoints`)."
                             .into(),
                     ),
                     AsmInstr::Comment(
-                        "On return: %rax = payload or err code, %rdx = ValueTag, %rcx = JIT exit kind."
+                        "On return: the JIT payload, tag and exit-kind registers carry the result."
                             .into(),
                     ),
-                    AsmInstr::CallIndirect { target: AsmReg::R9, conv: CallConv::Jit },
+                    AsmInstr::CallIndirect { target: GP_SCRATCH_1, conv: CallConv::Jit },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Check whether the callee returned JIT_ERROR.".into()),
                     AsmInstr::Comment(
-                        "cmp sets ZF if %rcx == JIT_ERROR; je then branches to our error handler."
+                        "cmp sets ZF if the exit kind is JIT_ERROR; je then branches to our error handler."
                             .into(),
                     ),
                     AsmInstr::Comment(
-                        "On error, %rax still contains the error code.  The handler propagates".into(),
+                        "On error, the payload register still contains the error code.  The handler propagates".into(),
                     ),
                     AsmInstr::Comment(
                         "it to our caller and restores the stack frame."
@@ -1862,7 +1675,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     ),
                     AsmInstr::Cmp {
                         src: AsmOp::Imm(JIT_ERROR as i64),
-                        dst: AsmOp::Reg(AsmReg::Cx),
+                        dst: AsmOp::Reg(JIT_RETURN_KIND),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
@@ -1871,28 +1684,28 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(
-                        "The native call succeeded.  The return payload is currently in %rax."
+                        "The native call succeeded.  The return payload is in the JIT payload register."
                             .into(),
                     ),
                     AsmInstr::Comment(
-                        "The shared continuation expects the result in %r9 and a runtime".into(),
+                        "The shared continuation expects the result in the scratch register and a runtime".into(),
                     ),
                     AsmInstr::Comment(
-                        "status code in %rax, because that is how jit_call() returns."
+                        "status code in the System V return register, as `jit_call()` does."
                             .into(),
                     ),
                     AsmInstr::Comment(
-                        "Move the payload into %r9 before overwriting %rax with 0 (success)."
+                        "Move the payload into tmp scratch before setting the runtime status 0 (success)."
                             .into(),
                     ),
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::Ax),
-                        dst: AsmOp::Reg(AsmReg::R9),
+                        src: AsmOp::Reg(JIT_RETURN_PAYLOAD),
+                        dst: AsmOp::Reg(GP_SCRATCH_1),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Mov {
                         src: AsmOp::Imm(0),
-                        dst: AsmOp::Reg(AsmReg::Ax),
+                        dst: AsmOp::Reg(SYSV_GP_RETURN),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1911,47 +1724,56 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     "Native entrypoint unavailable; call through the Vm".into(),
                 ));
                 body.extend([
-                    AsmInstr::Comment("%rdi = *mut Vm".into()),
+                    AsmInstr::Comment(format!("{} = *mut Vm", vm_arg.as_width(AsmType::Quad))),
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R13),
-                        dst: AsmOp::Reg(AsmReg::Di),
+                        src: AsmOp::Reg(JIT_VM),
+                        dst: AsmOp::Reg(vm_arg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rsi = fn idx".into()),
+                    AsmInstr::Comment(format!("{} = fn idx", function_arg.as_width(AsmType::Quad))),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(func as i64),
-                        dst: AsmOp::Reg(AsmReg::Si),
+                        dst: AsmOp::Reg(function_arg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rdx = *const Value (ptr to args)".into()),
+                    AsmInstr::Comment(format!(
+                        "{} = *const Value (ptr to args)",
+                        args_arg.as_width(AsmType::Quad)
+                    )),
                     AsmInstr::Lea {
                         src: AsmOp::Mem(AsmReg::Sp, args_offset as isize),
-                        dst: AsmOp::Reg(AsmReg::Dx),
+                        dst: AsmOp::Reg(args_arg),
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%rcx = argc".into()),
+                    AsmInstr::Comment(format!("{} = argc", count_arg.as_width(AsmType::Quad))),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(argc as i64),
-                        dst: AsmOp::Reg(AsmReg::Cx),
+                        dst: AsmOp::Reg(count_arg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("%r8 = ptr to retval".into()),
+                    AsmInstr::Comment(format!(
+                        "{} = ptr to retval",
+                        result_arg.as_width(AsmType::Quad)
+                    )),
                     AsmInstr::Mov {
                         src: AsmOp::Reg(AsmReg::Sp),
-                        dst: AsmOp::Reg(AsmReg::R8),
+                        dst: AsmOp::Reg(result_arg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Invoke the rt trampoline".into()),
                     AsmInstr::CallRt { target: RtFn::Call },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("Read in Value.payload into %r9 scratch.".into()),
+                    AsmInstr::Comment("Read in Value.payload into tmp scratch.".into()),
                     AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, (retval_offset + 8) as isize),
-                        dst: AsmOp::Reg(AsmReg::R9),
+                        src: AsmOp::Mem(
+                            AsmReg::Sp,
+                            (retval_offset + std::mem::offset_of!(Value, payload)) as isize,
+                        ),
+                        dst: AsmOp::Reg(GP_SCRATCH_1),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
@@ -1965,75 +1787,10 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
-                    AsmInstr::Comment("Restore preserved caller-saved SSE regs.".into()),
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 0),
-                        dst: AsmOp::Reg(AsmReg::Xmm0),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 8),
-                        dst: AsmOp::Reg(AsmReg::Xmm1),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 16),
-                        dst: AsmOp::Reg(AsmReg::Xmm2),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 24),
-                        dst: AsmOp::Reg(AsmReg::Xmm3),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 32),
-                        dst: AsmOp::Reg(AsmReg::Xmm4),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 40),
-                        dst: AsmOp::Reg(AsmReg::Xmm5),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 48),
-                        dst: AsmOp::Reg(AsmReg::Xmm6),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Mov {
-                        src: AsmOp::Mem(AsmReg::Sp, 56),
-                        dst: AsmOp::Reg(AsmReg::Xmm7),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment(
-                        "Restore space reserverd for the caller-saved SSE regs.".into(),
-                    ),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(64),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Release alignment padding.".into()),
-                    AsmInstr::Bin {
-                        kind: AsmInstrBinKind::Add,
-                        lhs: AsmOp::Imm(8),
-                        rhs: AsmOp::Reg(AsmReg::Sp),
-                        asm_ty: AsmType::Quad,
-                    },
-                    AsmInstr::Newline,
-                    AsmInstr::Comment("Restore caller-saved regs.".into()),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R11)),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R10)),
-                    AsmInstr::Pop(AsmOp::Reg(AsmReg::R8)),
-                    AsmInstr::Newline,
                     AsmInstr::Comment("Check status.".into()),
                     AsmInstr::Test {
-                        src: AsmOp::Reg(AsmReg::Ax),
-                        dst: AsmOp::Reg(AsmReg::Ax),
+                        src: AsmOp::Reg(SYSV_GP_RETURN),
+                        dst: AsmOp::Reg(SYSV_GP_RETURN),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
@@ -2049,14 +1806,11 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                 };
 
                 body.extend([
-                    AsmInstr::Comment("Store the result into IR dst.".into()),
+                    AsmInstr::Comment("Store the result from tmp scratch into IR dst.".into()),
                     AsmInstr::Mov {
-                        src: AsmOp::Reg(AsmReg::R9),
+                        src: AsmOp::Reg(GP_SCRATCH_1),
                         dst: dst.codegen(ctx)?,
-                        asm_ty: match result_ty {
-                            Type::Float32 => AsmType::Long,
-                            _ => AsmType::Quad,
-                        },
+                        asm_ty: result_ty.into(),
                     },
                     AsmInstr::Newline,
                 ]);
@@ -2344,17 +2098,17 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             AsmInstr::Label(l1.clone()),
                             AsmInstr::Mov {
                                 src: src.codegen(ctx)?,
-                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: AsmOp::Reg(SSE_SCRATCH_1),
                                 asm_ty: AsmType::Quad,
                             },
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::Sub,
                                 lhs: AsmOp::Data(static_const.name.clone(), 0),
-                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                rhs: AsmOp::Reg(SSE_SCRATCH_1),
                                 asm_ty: AsmType::Double,
                             },
                             AsmInstr::Cvttsd2si {
-                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                src: AsmOp::Reg(SSE_SCRATCH_1),
                                 dst: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },
@@ -2527,17 +2281,17 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                             AsmInstr::Label(l1.clone()),
                             AsmInstr::Mov {
                                 src: src.codegen(ctx)?,
-                                dst: AsmOp::Reg(AsmReg::Xmm0),
+                                dst: AsmOp::Reg(SSE_SCRATCH_1),
                                 asm_ty: AsmType::Float,
                             },
                             AsmInstr::Bin {
                                 kind: AsmInstrBinKind::Sub,
                                 lhs: AsmOp::Data(static_const.name.clone(), 0),
-                                rhs: AsmOp::Reg(AsmReg::Xmm0),
+                                rhs: AsmOp::Reg(SSE_SCRATCH_1),
                                 asm_ty: AsmType::Float,
                             },
                             AsmInstr::Cvttss2si {
-                                src: AsmOp::Reg(AsmReg::Xmm0),
+                                src: AsmOp::Reg(SSE_SCRATCH_1),
                                 dst: dst.codegen(ctx)?,
                                 asm_ty: AsmType::Quad,
                             },

@@ -1,5 +1,12 @@
 use crate::{
     asm::{
+        abi::{
+            ENTRY_ARGS_ARG, ENTRY_BODY_ARG, ENTRY_END_PC_ARG, ENTRY_ENTRYPOINTS_RBP_OFFSET,
+            ENTRY_RESULT_OUT_ARG, ENTRY_RT_ARG, ENTRY_VM_ARG, GP_SCRATCH_1, JIT_ARGS,
+            JIT_ENTRY_PRESERVED, JIT_ENTRYPOINTS, JIT_RESULT_STORAGE, JIT_RETURN_KIND,
+            JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_RT, JIT_VM, SYSV_GP_RETURN,
+            SYSV_STACK_ALIGNMENT,
+        },
         emitter::Emit,
         fixup::Fixup,
         r#gen::{
@@ -76,37 +83,48 @@ impl JitCompiler {
             ctx.register::<BytecodeFunc>(&func.name);
         }
 
-        /* Compiled fn emission. */
+        /* Compiled fn emission.  */
         let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
             msg: "jit codegen failed".into(),
         })?;
 
-        /* Append the runtime error handler before register allocation. */
+        /* Append the runtime error handler before register allocation.  */
         asm_func
             .body
             .push(AsmInstr::Label(format!("{}_rt_err", region_func.name)));
 
         asm_func.body.extend(self.mk_rt_err());
 
-        /* Register allocation now sees the complete CFG. */
-        let mut asm_func = asm_func.regalloc(&region_func).fixup();
+        let mut asm_func = asm_func
+            .regalloc()
+            .map_err(|e| JitError { msg: e.msg })?
+            .fixup()
+            .map_err(|e| JitError { msg: e.msg })?;
 
         /* Backpatch the amount of stack space required.  */
-        if let Some(instr) = asm_func
-            .body
-            .iter_mut()
-            .filter(|instr| !matches!(instr, AsmInstr::Comment(_) | AsmInstr::Newline))
-            .nth(2)
-        {
-            match instr {
+        let frame_space = asm_func.space as i64;
+
+        let frame_allocation = asm_func.body.iter_mut().find(|instr| {
+            matches!(
+                instr,
                 AsmInstr::Bin {
                     kind: AsmInstrBinKind::Sub,
-                    lhs,
-                    ..
-                } => {
-                    *lhs = AsmOp::Imm(asm_func.space as i64);
+                    lhs: AsmOp::Imm(0),
+                    rhs: AsmOp::Reg(AsmReg::Sp),
+                    asm_ty: AsmType::Quad,
                 }
-                _ => unreachable!(),
+            )
+        });
+
+        match frame_allocation {
+            Some(AsmInstr::Bin { lhs, .. }) => {
+                *lhs = AsmOp::Imm(frame_space);
+            }
+
+            _ => {
+                return Err(JitError {
+                    msg: "missing stack-frame allocation in generated prologue".into(),
+                });
             }
         }
 
@@ -176,34 +194,23 @@ impl JitCompiler {
 
         insert_prologue(&mut body);
 
-        /*
-         * %rdi = *mut JitResult
-         * %rsi = *mut Vm
-         * %rdx = *const Rt
-         * %rcx = *const Value (args)
-         * %r8  = *const u8 (compiled fn addr)
-         * %r9 = usize (end_pc)
-         * 16(%rbp) = usize (ptr to `native_entrypoints`)
-         */
+        let stack_slot_bytes = AsmType::Quad.size();
+        let saved_bytes = (JIT_ENTRY_PRESERVED.len() + 1) * stack_slot_bytes;
+        let call_padding =
+            (SYSV_STACK_ALIGNMENT - saved_bytes % SYSV_STACK_ALIGNMENT) % SYSV_STACK_ALIGNMENT;
 
-        /* Internal ABI:
-         * %r12 = *mut JitResult
-         * %r13 = *mut Vm
-         * %r14 = *const Rt
-         * %rdx = *const Value (args)
-         */
         body.push(AsmInstr::Comment(
             "As a callee (from Rust Vm's perspective), preserve callee-saved".into(),
         ));
         body.push(AsmInstr::Comment(
             "registers used in the internal ABI.".into(),
         ));
-        body.extend([
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R12)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R13)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R14)),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R15)),
-        ]);
+        body.extend(
+            JIT_ENTRY_PRESERVED
+                .iter()
+                .copied()
+                .map(|reg| AsmInstr::Push(AsmOp::Reg(reg))),
+        );
 
         body.extend([
             AsmInstr::Newline,
@@ -215,71 +222,67 @@ impl JitCompiler {
             ),
             AsmInstr::Comment("aforementioned natively compiled function.".into()),
             AsmInstr::Newline,
-            AsmInstr::Comment("%r9 contains `end_pc`.".into()),
-            AsmInstr::Push(AsmOp::Reg(AsmReg::R9)),
-        ]);
-
-        body.push(AsmInstr::Newline);
-
-        /* FIXME: maintain 16-byte stack alignment before calls.  */
-        body.push(AsmInstr::Comment(
-            "After the five pushes, the stack is misaligned by 8,".into(),
-        ));
-        body.push(AsmInstr::Comment(
-            "so its 16-byte alignment needs restored.".into(),
-        ));
-        body.push(AsmInstr::Bin {
-            kind: AsmInstrBinKind::Sub,
-            lhs: AsmOp::Imm(8),
-            rhs: AsmOp::Reg(AsmReg::Sp),
-            asm_ty: AsmType::Quad,
-        });
-
-        body.push(AsmInstr::Newline);
-
-        body.extend([
-            AsmInstr::Comment("%rdi = *mut JitResult".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Di),
-                dst: AsmOp::Reg(AsmReg::R12),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("%rsi = *mut Vm".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Si),
-                dst: AsmOp::Reg(AsmReg::R13),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("%rsi = *const Rt".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Dx),
-                dst: AsmOp::Reg(AsmReg::R14),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("%rcx = *const Value (args)".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Cx),
-                dst: AsmOp::Reg(AsmReg::Di),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("16(%rbp) = usize (ptr to `native_entrypoints`)".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Mem(AsmReg::Bp, 16),
-                dst: AsmOp::Reg(AsmReg::R15),
-                asm_ty: AsmType::Quad,
-            },
+            AsmInstr::Comment("Save the entry's `end_pc` across the native call.".into()),
+            AsmInstr::Push(AsmOp::Reg(ENTRY_END_PC_ARG)),
         ]);
 
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("%r8 = *const u8 (compiled fn addr)".into()),
+            AsmInstr::Comment("Save the hidden JitResult return pointer.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Reg(ENTRY_RESULT_OUT_ARG),
+                dst: AsmOp::Reg(JIT_RESULT_STORAGE),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Initialize the reserved VM register.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Reg(ENTRY_VM_ARG),
+                dst: AsmOp::Reg(JIT_VM),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Initialize the reserved runtime table register.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Reg(ENTRY_RT_ARG),
+                dst: AsmOp::Reg(JIT_RT),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Forward the argument-array pointer to the JIT ABI.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Reg(ENTRY_ARGS_ARG),
+                dst: AsmOp::Reg(JIT_ARGS),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Load the entrypoint table pointer from the stack argument.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Mem(AsmReg::Bp, ENTRY_ENTRYPOINTS_RBP_OFFSET),
+                dst: AsmOp::Reg(JIT_ENTRYPOINTS),
+                asm_ty: AsmType::Quad,
+            },
+        ]);
+
+        if call_padding != 0 {
+            body.push(AsmInstr::Comment(
+                "Align the stack for the native call.".into(),
+            ));
+            body.push(AsmInstr::Bin {
+                kind: AsmInstrBinKind::Sub,
+                lhs: AsmOp::Imm(call_padding as i64),
+                rhs: AsmOp::Reg(AsmReg::Sp),
+                asm_ty: AsmType::Quad,
+            });
+        }
+
+        body.push(AsmInstr::Newline);
+
+        body.extend([
+            AsmInstr::Comment("Call the compiled function address.".into()),
             AsmInstr::CallIndirect {
-                target: AsmReg::R8,
+                target: ENTRY_BODY_ARG,
                 conv: CallConv::Jit,
             },
         ]);
@@ -288,53 +291,58 @@ impl JitCompiler {
 
         body.extend([
             AsmInstr::Comment("According to the internal ABI, after the call instr".into()),
-            AsmInstr::Comment("%rax, %rcx, %rdx, will have contained the result,".into()),
-            AsmInstr::Comment("while, remember, %r12 contains *mut JitResult.".into()),
+            AsmInstr::Comment(
+                "JIT return registers now contain the exit kind, tag and payload.".into(),
+            ),
+            AsmInstr::Comment("The trampoline still holds the JitResult output pointer.".into()),
         ]);
 
         body.push(AsmInstr::Newline);
 
         body.extend([
-            AsmInstr::Comment("%rcx = JIT_CONTINUE | JIT_RET | JIT_ERROR".into()),
+            AsmInstr::Comment("Store the JIT exit kind.".into()),
             AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Cx),
-                dst: AsmOp::Mem(AsmReg::R12, std::mem::offset_of!(JitResult, kind) as isize),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("8(%rsp) = `next_pc`".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Mem(AsmReg::Sp, 8),
-                dst: AsmOp::Reg(AsmReg::R10),
-                asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-            AsmInstr::Comment("%r10 = `next_pc`".into()),
-            AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::R10),
+                src: AsmOp::Reg(JIT_RETURN_KIND),
                 dst: AsmOp::Mem(
-                    AsmReg::R12,
+                    JIT_RESULT_STORAGE,
+                    std::mem::offset_of!(JitResult, kind) as isize,
+                ),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Read the saved next_pc from the stack.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Mem(AsmReg::Sp, call_padding as isize),
+                dst: AsmOp::Reg(GP_SCRATCH_1),
+                asm_ty: AsmType::Quad,
+            },
+            AsmInstr::Newline,
+            AsmInstr::Comment("Store next_pc in the JitResult.".into()),
+            AsmInstr::Mov {
+                src: AsmOp::Reg(GP_SCRATCH_1),
+                dst: AsmOp::Mem(
+                    JIT_RESULT_STORAGE,
                     std::mem::offset_of!(JitResult, next_pc) as isize,
                 ),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rdx = ValueTag".into()),
+            AsmInstr::Comment("Store the return value tag.".into()),
             AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Dx),
+                src: AsmOp::Reg(JIT_RETURN_TAG),
                 dst: AsmOp::Mem(
-                    AsmReg::R12,
+                    JIT_RESULT_STORAGE,
                     (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, tag))
                         as isize,
                 ),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rax = payload | err code".into()),
+            AsmInstr::Comment("Store the return payload or runtime error.".into()),
             AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::Ax),
+                src: AsmOp::Reg(JIT_RETURN_PAYLOAD),
                 dst: AsmOp::Mem(
-                    AsmReg::R12,
+                    JIT_RESULT_STORAGE,
                     (std::mem::offset_of!(JitResult, value) + std::mem::offset_of!(Value, payload))
                         as isize,
                 ),
@@ -345,35 +353,37 @@ impl JitCompiler {
                 "Return the JitResult ptr according to the SystemV AMD64 ABI.".into(),
             ),
             AsmInstr::Mov {
-                src: AsmOp::Reg(AsmReg::R12),
-                dst: AsmOp::Reg(AsmReg::Ax),
+                src: AsmOp::Reg(JIT_RESULT_STORAGE),
+                dst: AsmOp::Reg(SYSV_GP_RETURN),
                 asm_ty: AsmType::Quad,
             },
         ]);
 
         body.push(AsmInstr::Newline);
 
-        body.extend([
-            AsmInstr::Comment("Release the alignment padding.".into()),
-            AsmInstr::Bin {
+        if call_padding != 0 {
+            body.push(AsmInstr::Bin {
                 kind: AsmInstrBinKind::Add,
-                lhs: AsmOp::Imm(8),
+                lhs: AsmOp::Imm(call_padding as i64),
                 rhs: AsmOp::Reg(AsmReg::Sp),
                 asm_ty: AsmType::Quad,
-            },
-            AsmInstr::Newline,
-        ]);
+            });
+        }
 
-        /*   */
         body.extend([
             AsmInstr::Comment("Restore registers and return to VM.".into()),
-            AsmInstr::Pop(AsmOp::Reg(AsmReg::R9)),
-            AsmInstr::Pop(AsmOp::Reg(AsmReg::R15)),
-            AsmInstr::Pop(AsmOp::Reg(AsmReg::R14)),
-            AsmInstr::Pop(AsmOp::Reg(AsmReg::R13)),
-            AsmInstr::Pop(AsmOp::Reg(AsmReg::R12)),
-            AsmInstr::Newline,
+            AsmInstr::Pop(AsmOp::Reg(ENTRY_END_PC_ARG)),
         ]);
+
+        body.extend(
+            JIT_ENTRY_PRESERVED
+                .iter()
+                .rev()
+                .copied()
+                .map(|reg| AsmInstr::Pop(AsmOp::Reg(reg))),
+        );
+
+        body.push(AsmInstr::Newline);
 
         insert_epilogue(&mut body);
         body.push(AsmInstr::Ret);
@@ -393,17 +403,17 @@ impl JitCompiler {
          *      %rdx = ValueTag::Void  */
         let mut body = vec![
             AsmInstr::Comment("Shared rt err handler.".into()),
-            AsmInstr::Comment("%rcx = JIT_ERROR".into()),
+            AsmInstr::Comment("Set the JIT exit kind to JIT_ERROR.".into()),
             AsmInstr::Mov {
                 src: AsmOp::Imm(JIT_ERROR as i64),
-                dst: AsmOp::Reg(AsmReg::Cx),
+                dst: AsmOp::Reg(JIT_RETURN_KIND),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,
-            AsmInstr::Comment("%rdx = ValueTag".into()),
+            AsmInstr::Comment("Set the return tag to void".into()),
             AsmInstr::Mov {
                 src: AsmOp::Imm(ValueTag::Void as i64),
-                dst: AsmOp::Reg(AsmReg::Dx),
+                dst: AsmOp::Reg(JIT_RETURN_TAG),
                 asm_ty: AsmType::Quad,
             },
             AsmInstr::Newline,

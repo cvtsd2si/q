@@ -91,9 +91,10 @@ impl Cfg {
                     succs.push(resolve_label(target)?);
 
                     if let Some(next) = next
-                        && !succs.contains(&next) {
-                            succs.push(next);
-                        }
+                        && !succs.contains(&next)
+                    {
+                        succs.push(next);
+                    }
                 }
 
                 CfgFlow::Return => {}

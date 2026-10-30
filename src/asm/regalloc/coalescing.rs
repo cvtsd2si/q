@@ -223,12 +223,14 @@ pub fn collect_moves(instructions: &[AsmInstr]) -> Vec<Move> {
                 },
             ..
         } = instr
-            && src != dst && RegClass::of_type(src_ty) == RegClass::of_type(dst_ty) {
-                moves.push(Move {
-                    src: src.clone(),
-                    dst: dst.clone(),
-                });
-            }
+            && src != dst
+            && RegClass::of_type(src_ty) == RegClass::of_type(dst_ty)
+        {
+            moves.push(Move {
+                src: src.clone(),
+                dst: dst.clone(),
+            });
+        }
     }
 
     moves

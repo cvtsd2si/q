@@ -1,24 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::asm::abi::{GP_ALLOCATABLE, SSE_ALLOCATABLE};
 use crate::asm::r#gen::{AsmOp, AsmReg};
 use crate::asm::regalloc::{AsmLocation, RegClass};
 use crate::{
     analysis::liveness::{Liveness, LivenessInstruction},
     asm::r#gen::AsmInstr,
 };
-
-const GP_REGS: &[AsmReg] = &[AsmReg::R8, AsmReg::R11];
-
-const SSE_REGS: &[AsmReg] = &[
-    AsmReg::Xmm0,
-    AsmReg::Xmm1,
-    AsmReg::Xmm2,
-    AsmReg::Xmm3,
-    AsmReg::Xmm4,
-    AsmReg::Xmm5,
-    AsmReg::Xmm6,
-    AsmReg::Xmm7,
-];
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum InterferenceNode {
@@ -297,8 +285,8 @@ impl InterferenceGraph {
 
 pub(super) fn registers_for(class: RegClass) -> &'static [AsmReg] {
     match class {
-        RegClass::Gp => GP_REGS,
-        RegClass::Sse => SSE_REGS,
+        RegClass::Gp => GP_ALLOCATABLE,
+        RegClass::Sse => SSE_ALLOCATABLE,
     }
 }
 

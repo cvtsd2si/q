@@ -1,42 +1,52 @@
-use crate::asm::r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmReg, AsmType};
+use crate::asm::{
+    abi,
+    r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmType},
+    regalloc::RegAllocError,
+};
 use std::collections::VecDeque;
 
 pub trait Fixup {
     type Output;
-    fn fixup(self) -> Self::Output;
+    fn fixup(self) -> Result<Self::Output, RegAllocError>;
 }
 
 impl Fixup for AsmProg {
     type Output = AsmProg;
 
-    fn fixup(self) -> Self::Output {
-        AsmProg {
-            funcs: self.funcs.into_iter().map(|f| f.fixup()).collect(),
+    fn fixup(self) -> Result<Self::Output, RegAllocError> {
+        Ok(AsmProg {
+            funcs: self
+                .funcs
+                .into_iter()
+                .map(|f| f.fixup())
+                .collect::<Result<Vec<_>, _>>()?,
             static_consts: self.static_consts,
-        }
+        })
     }
 }
 
 impl Fixup for AsmFunc {
     type Output = AsmFunc;
 
-    fn fixup(self) -> Self::Output {
-        AsmFunc {
+    fn fixup(self) -> Result<Self::Output, RegAllocError> {
+        Ok(AsmFunc {
             name: self.name,
             body: self
                 .body
                 .into_iter()
-                .flat_map(|instr| instr.fixup())
-                .collect(),
+                .try_fold(Vec::new(), |mut acc, instr| {
+                    acc.extend(instr.fixup()?);
+                    Ok(acc)
+                })?,
             space: self.space,
-        }
+        })
     }
 }
 
 impl Fixup for AsmInstr {
     type Output = Vec<AsmInstr>;
 
-    fn fixup(self) -> Self::Output {
+    fn fixup(self) -> Result<Self::Output, RegAllocError> {
         let mut pending = VecDeque::from([self]);
         let mut output = Vec::new();
 
@@ -57,7 +67,7 @@ impl Fixup for AsmInstr {
             }
         }
 
-        output
+        Ok(output)
     }
 }
 
@@ -67,8 +77,10 @@ impl AsmInstr {
             /* 'mov' cannot move a value from one mem addr to another.  */
             AsmInstr::Mov { src, dst, asm_ty } if is_mem(&src) && is_mem(&dst) => {
                 let scratch = match asm_ty {
-                    AsmType::Float | AsmType::Double => AsmReg::Xmm15,
-                    AsmType::Byte | AsmType::Word | AsmType::Long | AsmType::Quad => AsmReg::R9,
+                    AsmType::Float | AsmType::Double => abi::SSE_SCRATCH_1,
+                    AsmType::Byte | AsmType::Word | AsmType::Long | AsmType::Quad => {
+                        abi::GP_SCRATCH_1
+                    }
                 };
 
                 Ok(vec![
@@ -93,11 +105,11 @@ impl AsmInstr {
             } if is_large(n) && is_mem(&dst) => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Quad,
                 },
@@ -111,11 +123,11 @@ impl AsmInstr {
             } if dst.is_xmm() => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Quad,
                 },
@@ -130,11 +142,11 @@ impl AsmInstr {
             } => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: src_ty,
                 },
                 AsmInstr::Movzx {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     src_ty,
                     dst,
                     dst_ty,
@@ -152,11 +164,11 @@ impl AsmInstr {
                     src_ty,
                     src,
                     dst_ty,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Mov {
                     asm_ty: dst_ty,
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                 },
             ]),
@@ -171,11 +183,11 @@ impl AsmInstr {
             } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Mov {
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: AsmType::Long,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Quad,
                 },
@@ -202,11 +214,11 @@ impl AsmInstr {
             } => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: src_ty,
                 },
                 AsmInstr::Movsx {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     src_ty,
                     dst,
                     dst_ty,
@@ -223,11 +235,11 @@ impl AsmInstr {
                 AsmInstr::Movsx {
                     src,
                     src_ty,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty: dst_ty,
                 },
@@ -242,12 +254,12 @@ impl AsmInstr {
             } if is_large(n) => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty: AsmType::Quad,
                 },
                 AsmInstr::Bin {
                     kind,
-                    lhs: AsmOp::Reg(AsmReg::R9),
+                    lhs: AsmOp::Reg(abi::GP_SCRATCH_1),
                     rhs,
                     asm_ty: AsmType::Quad,
                 },
@@ -262,17 +274,17 @@ impl AsmInstr {
             } if matches!(asm_ty, AsmType::Float | AsmType::Double) && is_mem(&rhs) => Ok(vec![
                 AsmInstr::Mov {
                     src: rhs.clone(),
-                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Bin {
                     kind,
                     lhs,
-                    rhs: AsmOp::Reg(AsmReg::Xmm15),
+                    rhs: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    src: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     dst: rhs,
                     asm_ty,
                 },
@@ -287,12 +299,12 @@ impl AsmInstr {
             } if is_mem(&lhs) && is_mem(&rhs) => Ok(vec![
                 AsmInstr::Mov {
                     src: lhs,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Bin {
                     kind,
-                    lhs: AsmOp::Reg(AsmReg::R9),
+                    lhs: AsmOp::Reg(abi::GP_SCRATCH_1),
                     rhs,
                     asm_ty,
                 },
@@ -306,12 +318,12 @@ impl AsmInstr {
                     AsmInstr::Mov {
                         asm_ty,
                         src: dst,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     },
                     AsmInstr::Cmp {
                         asm_ty,
                         src,
-                        dst: AsmOp::Reg(AsmReg::Xmm15),
+                        dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     },
                 ])
             }
@@ -321,11 +333,11 @@ impl AsmInstr {
                 AsmInstr::Mov {
                     asm_ty,
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Cmp {
                     asm_ty,
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                 },
             ]),
@@ -339,17 +351,17 @@ impl AsmInstr {
                 AsmInstr::Mov {
                     asm_ty: AsmType::Quad,
                     src: AsmOp::Imm(imm1),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Mov {
                     asm_ty: AsmType::Quad,
                     src: AsmOp::Imm(imm2),
-                    dst: AsmOp::Reg(AsmReg::R10),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_2),
                 },
                 AsmInstr::Cmp {
                     asm_ty: AsmType::Quad,
-                    src: AsmOp::Reg(AsmReg::R9),
-                    dst: AsmOp::Reg(AsmReg::R10),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_2),
                 },
             ]),
 
@@ -362,11 +374,11 @@ impl AsmInstr {
                 AsmInstr::Mov {
                     asm_ty: AsmType::Quad,
                     src: AsmOp::Imm(imm1),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Cmp {
                     asm_ty: AsmType::Quad,
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                 },
             ]),
@@ -380,12 +392,12 @@ impl AsmInstr {
                 AsmInstr::Mov {
                     asm_ty,
                     src: AsmOp::Imm(imm),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Cmp {
                     asm_ty,
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
             ]),
 
@@ -397,11 +409,11 @@ impl AsmInstr {
             } => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Cvtsi2sd {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty,
                 },
@@ -411,11 +423,11 @@ impl AsmInstr {
             AsmInstr::Cvtsi2sd { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvtsi2sd {
                     src,
-                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    src: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Double,
                 },
@@ -429,11 +441,11 @@ impl AsmInstr {
             } => Ok(vec![
                 AsmInstr::Mov {
                     src: AsmOp::Imm(n),
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Cvtsi2ss {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty,
                 },
@@ -443,11 +455,11 @@ impl AsmInstr {
             AsmInstr::Cvtsi2ss { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvtsi2ss {
                     src,
-                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    src: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Float,
                 },
@@ -457,11 +469,11 @@ impl AsmInstr {
             AsmInstr::Cvttsd2si { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvttsd2si {
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty,
                 },
@@ -471,11 +483,11 @@ impl AsmInstr {
             AsmInstr::Cvttss2si { src, dst, asm_ty } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvttss2si {
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty,
                 },
@@ -485,10 +497,10 @@ impl AsmInstr {
             AsmInstr::Cvtss2sd { src, dst } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvtss2sd {
                     src,
-                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    src: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Double,
                 },
@@ -498,10 +510,10 @@ impl AsmInstr {
             AsmInstr::Cvtsd2ss { src, dst } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Cvtsd2ss {
                     src,
-                    dst: AsmOp::Reg(AsmReg::Xmm15),
+                    dst: AsmOp::Reg(abi::SSE_SCRATCH_1),
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::Xmm15),
+                    src: AsmOp::Reg(abi::SSE_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Float,
                 },
@@ -511,10 +523,10 @@ impl AsmInstr {
             AsmInstr::Lea { src, dst } if is_mem(&dst) => Ok(vec![
                 AsmInstr::Lea {
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                 },
                 AsmInstr::Mov {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty: AsmType::Quad,
                 },
@@ -524,11 +536,11 @@ impl AsmInstr {
             AsmInstr::Test { src, dst, asm_ty } if is_mem(&src) && is_mem(&dst) => Ok(vec![
                 AsmInstr::Mov {
                     src,
-                    dst: AsmOp::Reg(AsmReg::R9),
+                    dst: AsmOp::Reg(abi::GP_SCRATCH_1),
                     asm_ty,
                 },
                 AsmInstr::Test {
-                    src: AsmOp::Reg(AsmReg::R9),
+                    src: AsmOp::Reg(abi::GP_SCRATCH_1),
                     dst,
                     asm_ty,
                 },

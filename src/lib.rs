@@ -13,6 +13,7 @@ pub mod parser {
 pub mod ir;
 
 pub mod asm {
+    pub mod abi;
     pub mod emitter;
     pub mod fixup;
     pub mod r#gen;

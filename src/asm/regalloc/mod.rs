@@ -1,104 +1,133 @@
 mod coalescing;
 mod interference;
 
-use self::coalescing::{Coalescing, collect_moves, collect_precolored_moves};
-use self::interference::InterferenceNode;
-use crate::analysis::cfg::Cfg;
-use crate::analysis::liveness::{Liveness, LivenessInstruction};
-use crate::asm::r#gen::{AsmInstr, AsmInstrUnaryKind, AsmReg, AsmType, CallConv, RtFn};
-use crate::asm::regalloc::interference::InterferenceGraph;
-use crate::parser::ast::Type;
-use crate::{analysis::liveness::UseDef, asm::r#gen::AsmOp};
-use crate::{asm::r#gen::AsmFunc, ir::r#gen::IRFunc};
+use self::{
+    coalescing::{Coalescing, collect_moves, collect_precolored_moves},
+    interference::InterferenceNode,
+};
+use crate::asm::abi::{
+    GP_PUSH_BYTES, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_RT, SSE_CALL_SAVE_TY,
+    SYSV_STACK_ALIGNMENT, call_live_in_regs, rt_arg_regs,
+};
+use crate::{
+    analysis::{
+        cfg::Cfg,
+        liveness::{Liveness, LivenessInstruction, UseDef},
+    },
+    asm::{
+        abi::{CALLER_SAVED, needs_caller_save},
+        r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrUnaryKind, AsmOp, AsmReg, AsmType},
+        regalloc::interference::InterferenceGraph,
+    },
+    parser::ast::Type,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait Regalloc {
-    fn regalloc(self, ir: &IRFunc) -> AsmFunc;
+    fn regalloc(self) -> Result<AsmFunc, RegAllocError>;
 }
 
 impl Regalloc for AsmFunc {
-    fn regalloc(mut self, _ir: &IRFunc) -> AsmFunc {
-        // 1. Build the control-flow graph.
-        let cfg = Cfg::build(&self.body).expect("Failed to build assembly CFG");
+    fn regalloc(mut self) -> Result<AsmFunc, RegAllocError> {
+        /* Build the control-flow graph.  */
+        let cfg = Cfg::build(&self.body).map_err(|e| RegAllocError { msg: e })?;
 
-        // 2. Compute liveness.
+        /* Compute liveness.  */
         let liveness = Liveness::<AsmLocation>::analyze(&self.body, &cfg);
 
-        // 3. Build the interference graph.
+        let live_through_calls: Vec<BTreeSet<String>> = self
+            .body
+            .iter()
+            .enumerate()
+            .map(|(idx, instr)| {
+                if !is_call(instr) {
+                    return BTreeSet::new();
+                }
+
+                let live_in = &liveness.instrs[idx].live_in;
+                let live_out = &liveness.instrs[idx].live_out;
+
+                live_in
+                    .iter()
+                    .filter_map(|location| match location {
+                        AsmLocation::Pseudo(name) if live_out.contains(location) => {
+                            Some(name.clone())
+                        }
+
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .collect();
+
+        /* Build the interference graph.  */
         let graph = InterferenceGraph::build(&self.body, &liveness);
 
-        // 4. Determine register classes.
-        let classes = collect_reg_classes(&self.body).expect("Failed to collect register classes");
+        /* Determine register classes.  */
+        let classes = collect_reg_classes(&self.body).map_err(|e| RegAllocError { msg: e })?;
 
-        // 5. Coalesce compatible pseudo-registers.
-        let mut coalescing = Coalescing::new(graph);
-
-        // Collect move candidates once.
-        // The instructions themselves do not change during coalescing.
+        /* Collect move candidates once.  */
         let moves = collect_moves(&self.body);
         let precolored_moves = collect_precolored_moves(&self.body);
 
+        /* Coalesce pseudo-registers.  */
+        let mut coalescing = Coalescing::new(graph);
+
         loop {
-            // Remember the number of nodes before this pass.
+            /* Remember the number of nodes before this pass.  */
             let before = coalescing.graph.neighbors.len();
 
-            // Attempt pseudo-to-pseudo coalescing.
-            //
-            // Depending on current representatives, try_coalesce()
-            // may also delegate to George's criterion.
+            /* Attempt pseudo-to-pseudo coalescing.  */
             for mov in &moves {
                 coalescing.try_coalesce(mov, &classes);
             }
 
-            // Attempt pseudo-to-precolored coalescing.
+            /* Attempt pseudo-to-precolored coalescing.  */
             for (name, reg) in &precolored_moves {
                 coalescing.try_coalesce_precolored(name, *reg, &classes);
             }
 
-            // A successful merge removes exactly one graph node.
-            //
-            // If the node count has not changed, this pass made
-            // no progress and we have reached a fixed point.
+            /* A successful merge removes exactly one graph node.
+             *
+             * If the node count has not changed, this pass made
+             * no progress and we have reached a fixed point.  */
             if coalescing.graph.neighbors.len() == before {
                 break;
             }
         }
 
-        // 6. Collect spill costs for surviving graph nodes.
+        /* Collect spill costs for surviving graph nodes.  */
         let original_costs = collect_spill_costs(&self.body);
 
         let mut spill_costs = BTreeMap::new();
 
         for (name, cost) in original_costs {
-            let representative = coalescing
-                .representative
-                .get(&name)
-                .expect("Missing coalescing representative");
-
-            if let InterferenceNode::Pseudo(rep) = representative {
-                *spill_costs.entry(rep.clone()).or_insert(0) += cost;
+            if let Some(rep) = coalescing.representative.get(&name) {
+                if let InterferenceNode::Pseudo(rep) = rep {
+                    *spill_costs.entry(rep.clone()).or_insert(0) += cost;
+                }
             }
         }
 
-        // 7. Color the coalesced graph.
+        /* Color the coalesced graph.  */
         let (colored, spilled) = coalescing.graph.color(&classes, &spill_costs);
 
-        // 8. Assign stack slots to spilled representatives.
+        /* Assign stack slots to spilled representatives.  */
         let spill_sizes = collect_spill_sizes(&self.body, &coalescing.representative);
         let (spill_slots, space) = assign_spill_slots(&spilled, &spill_sizes, self.space);
 
-        // 9. Restore locations for every original pseudo.
+        /* Restore locations for every original pseudo.  */
         let mut assignments = BTreeMap::new();
         let mut slots = BTreeMap::new();
 
         for (name, representative) in &coalescing.representative {
             match representative {
-                // This pseudo was merged into a physical register.
+                /* This pseudo was merged into a physical register.  */
                 InterferenceNode::Reg(reg) => {
                     assignments.insert(name.clone(), *reg);
                 }
 
-                // This pseudo belongs to a surviving pseudo node.
+                /* This pseudo belongs to a surviving pseudo node.  */
                 InterferenceNode::Pseudo(rep) => {
                     if let Some(&reg) = colored.get(rep) {
                         assignments.insert(name.clone(), reg);
@@ -111,18 +140,61 @@ impl Regalloc for AsmFunc {
             }
         }
 
-        // 10. Rewrite assembly operands.
+        /* Rewrite assembly operands.  */
         for instr in &mut self.body {
             instr.rewrite_colored(&assignments);
             instr.rewrite_spilled(&slots);
         }
 
-        // 11. Remove copies between identical physical locations.
+        /* Insert caller-save / caller-restore instructions. */
+
+        let old_body = std::mem::take(&mut self.body);
+
+        let mut new_body = Vec::new();
+
+        for (idx, instr) in old_body.into_iter().enumerate() {
+            if !is_call(&instr) {
+                new_body.push(instr);
+                continue;
+            }
+
+            // Get pseudo-registers live across this call.
+            let live = &live_through_calls[idx];
+
+            // Convert pseudo-registers to physical registers.
+            //
+            // Spilled values don't need saving here because
+            // they're already stored in the stack frame.
+            let regs: Vec<AsmReg> = live
+                .iter()
+                .filter_map(|name| assignments.get(name).copied())
+                .filter(|reg| needs_caller_save(*reg))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+
+            // Generate the preservation sequences.
+            let (save, restore) = call_save_restore(&regs);
+
+            // Save registers.
+            new_body.extend(save);
+
+            // Execute the original call.
+            new_body.push(instr);
+
+            // Restore registers.
+            new_body.extend(restore);
+        }
+
+        self.body = new_body;
+
+        /* Remove moves between identical physical locations.  */
         self.body.retain(|instr| !is_redundant_move(instr));
 
-        // 12. Update the required stack-frame size.
+        /*. Update the required stack-frame size.  */
         self.space = space;
 
+        /* Assert there are no pseudo-registers left.  */
         for instr in &self.body {
             for operand in instr.operands().into_iter().flatten() {
                 assert!(
@@ -132,7 +204,7 @@ impl Regalloc for AsmFunc {
             }
         }
 
-        self
+        Ok(self)
     }
 }
 
@@ -327,7 +399,12 @@ impl LivenessInstruction for AsmInstr {
             }
 
             AsmInstr::Ret => {
-                for reg in [AsmReg::Sp, AsmReg::Ax, AsmReg::Dx, AsmReg::Cx] {
+                for reg in [
+                    AsmReg::Sp,
+                    JIT_RETURN_PAYLOAD,
+                    JIT_RETURN_TAG,
+                    JIT_RETURN_KIND,
+                ] {
                     ud.uses.insert(AsmLocation::Reg(reg));
                 }
 
@@ -335,35 +412,18 @@ impl LivenessInstruction for AsmInstr {
             }
 
             AsmInstr::CallRt { target } => {
-                use AsmReg::*;
-
-                let args: &[AsmReg] = match target {
-                    RtFn::Print => &[Di, Si, Dx],
-                    RtFn::Call => &[Di, Si, Dx, Cx, R8],
-                };
-
-                for &reg in args {
+                for reg in rt_arg_regs(*target) {
                     ud.uses.insert(AsmLocation::Reg(reg));
                 }
 
-                ud.uses.insert(AsmLocation::Reg(R14));
-                ud.uses.insert(AsmLocation::Reg(Sp));
+                ud.uses.insert(AsmLocation::Reg(JIT_RT));
+                ud.uses.insert(AsmLocation::Reg(AsmReg::Sp));
 
                 add_call_clobbers(&mut ud);
             }
 
             AsmInstr::Call { conv, .. } | AsmInstr::CallIndirect { conv, .. } => {
-                use AsmReg::*;
-
-                let args: &[AsmReg] = match conv {
-                    CallConv::SystemV => &[
-                        Di, Si, Dx, Cx, R8, R9, Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7,
-                    ],
-
-                    CallConv::Jit => &[Di, R13, R14, R15],
-                };
-
-                for &reg in args {
+                for reg in call_live_in_regs(*conv) {
                     ud.uses.insert(AsmLocation::Reg(reg));
                 }
 
@@ -371,7 +431,7 @@ impl LivenessInstruction for AsmInstr {
                     ud.uses.insert(AsmLocation::Reg(*target));
                 }
 
-                ud.uses.insert(AsmLocation::Reg(Sp));
+                ud.uses.insert(AsmLocation::Reg(AsmReg::Sp));
 
                 add_call_clobbers(&mut ud);
             }
@@ -384,14 +444,10 @@ impl LivenessInstruction for AsmInstr {
 }
 
 fn add_call_clobbers(ud: &mut UseDef<AsmLocation>) {
-    use AsmReg::*;
-
-    let caller_saved = [
-        Ax, Cx, Dx, Si, Di, R8, R9, R10, R11, Xmm0, Xmm1, Xmm2, Xmm3, Xmm4, Xmm5, Xmm6, Xmm7, Xmm15,
-    ];
-
-    for reg in caller_saved {
-        ud.defs.insert(AsmLocation::Reg(reg));
+    for &reg in CALLER_SAVED {
+        if !needs_caller_save(reg) {
+            ud.defs.insert(AsmLocation::Reg(reg));
+        }
     }
 
     ud.defs.insert(AsmLocation::Flags);
@@ -401,18 +457,20 @@ impl AsmInstr {
     fn rewrite_spilled(&mut self, slots: &BTreeMap<String, isize>) {
         for operand in self.operands_mut().into_iter().flatten() {
             if let AsmOp::Pseudo { name, .. } = operand
-                && let Some(&offset) = slots.get(name) {
-                    *operand = AsmOp::Mem(AsmReg::Bp, offset);
-                }
+                && let Some(&offset) = slots.get(name)
+            {
+                *operand = AsmOp::Mem(AsmReg::Bp, offset);
+            }
         }
     }
 
     fn rewrite_colored(&mut self, assignments: &BTreeMap<String, AsmReg>) {
         for operand in self.operands_mut().into_iter().flatten() {
             if let AsmOp::Pseudo { name, .. } = operand
-                && let Some(&reg) = assignments.get(name) {
-                    *operand = AsmOp::Reg(reg);
-                }
+                && let Some(&reg) = assignments.get(name)
+            {
+                *operand = AsmOp::Reg(reg);
+            }
         }
     }
 
@@ -496,12 +554,15 @@ fn assign_spill_slots(
     sizes: &BTreeMap<String, usize>,
     existing_space: usize,
 ) -> (BTreeMap<String, isize>, usize) {
-    let mut used = existing_space.div_ceil(16) * 16;
+    let mut used = existing_space.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
     let mut slots = BTreeMap::new();
 
     for name in spilled {
         let size = *sizes.get(name).expect("Missing size for spilled pseudo");
-        assert!(size.is_power_of_two(), "Unsupported spill-slot size: {size}");
+        assert!(
+            size.is_power_of_two(),
+            "Unsupported spill-slot size: {size}"
+        );
 
         // Align the beginning of each variable's slot, not every slot to 8.
         used = used.div_ceil(size) * size;
@@ -509,8 +570,8 @@ fn assign_spill_slots(
         slots.insert(name.clone(), -(used as isize));
     }
 
-    // The frame stays 16-byte aligned, even though its slots are packed.
-    let space = used.div_ceil(16) * 16;
+    // The frame stays SYSV_STACK_ALIGNMENT-byte aligned, even though its slots are packed.
+    let space = used.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
 
     (slots, space)
 }
@@ -607,3 +668,103 @@ fn collect_spill_sizes(
     sizes
 }
 
+fn is_call(instr: &AsmInstr) -> bool {
+    matches!(
+        instr,
+        AsmInstr::Call { .. } | AsmInstr::CallIndirect { .. } | AsmInstr::CallRt { .. }
+    )
+}
+
+#[derive(Debug)]
+pub struct RegAllocError {
+    pub msg: String,
+}
+
+impl std::error::Error for RegAllocError {}
+
+impl std::fmt::Display for RegAllocError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "regalloc: {}", self.msg)
+    }
+}
+
+fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
+    let mut gp = Vec::new();
+    let mut sse = Vec::new();
+
+    for &reg in regs {
+        if reg.is_xmm() {
+            sse.push(reg);
+        } else {
+            gp.push(reg);
+        }
+    }
+
+    // Each GP push consumes 8 bytes.
+    let gp_bytes = gp.len() * GP_PUSH_BYTES;
+
+    // Each scalar SSE save consumes 8 bytes.
+    let sse_bytes = sse.len() * SSE_CALL_SAVE_TY.size();
+
+    // Ensure the total stack adjustment is a multiple of SYSV_STACK_ALIGNMENT.
+    let total = (gp_bytes + sse_bytes).div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
+
+    // GP registers are saved using push.
+    // SSE registers and alignment padding use sub %rsp.
+    let stack_bytes = total - gp_bytes;
+
+    let mut save = Vec::new();
+    let mut restore = Vec::new();
+
+    // 1. Save GP registers.
+    for &reg in &gp {
+        save.push(AsmInstr::Push(AsmOp::Reg(reg)));
+    }
+
+    // 2. Reserve SSE slots and alignment padding.
+    if stack_bytes != 0 {
+        save.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Sub,
+            lhs: AsmOp::Imm(stack_bytes as i64),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+            asm_ty: AsmType::Quad,
+        });
+    }
+
+    // 3. Save XMM registers.
+    for (idx, &reg) in sse.iter().enumerate() {
+        save.push(AsmInstr::Mov {
+            src: AsmOp::Reg(reg),
+            dst: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
+            asm_ty: SSE_CALL_SAVE_TY,
+        });
+    }
+
+    /* Function call here.  */
+
+    // 4. Restore XMM registers.
+    for (idx, &reg) in sse.iter().enumerate().rev() {
+        restore.push(AsmInstr::Mov {
+            src: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
+            dst: AsmOp::Reg(reg),
+            asm_ty: AsmType::Double,
+        });
+    }
+
+    // 5. Release SSE slots and alignment padding.
+    if stack_bytes != 0 {
+        restore.push(AsmInstr::Bin {
+            kind: AsmInstrBinKind::Add,
+            lhs: AsmOp::Imm(stack_bytes as i64),
+            rhs: AsmOp::Reg(AsmReg::Sp),
+            asm_ty: AsmType::Quad,
+        });
+    }
+
+    // 6. Restore GP registers in reverse order.
+    for &reg in gp.iter().rev() {
+        restore.push(AsmInstr::Pop(AsmOp::Reg(reg)));
+    }
+
+    (save, restore)
+}

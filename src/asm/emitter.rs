@@ -1,3 +1,4 @@
+use crate::asm::abi::{JIT_RT, RT_CALL_SCRATCH, SYSV_GP_RETURN};
 use crate::{
     asm::r#gen::{
         AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
@@ -215,12 +216,16 @@ impl std::fmt::Display for AsmInstr {
             AsmInstr::CallRt { target } => {
                 let offset = target.offset();
 
-                writeln!(f, "# Load up {target:?} from %r14 into %rax and call it.")?;
-                writeln!(f, "\tmovq 0x{offset:x}(%r14), %rax")?;
-                writeln!(f, "\tcall *%rax")?;
+                let rt = JIT_RT.as_width(AsmType::Quad);
+                let scratch = RT_CALL_SCRATCH.as_width(AsmType::Quad);
+                let retval = SYSV_GP_RETURN.as_width(AsmType::Long);
+
+                writeln!(f, "# Load {target:?} from {rt} into {scratch} and call it.")?;
+                writeln!(f, "\tmovq 0x{offset:x}({rt}), {scratch}")?;
+                writeln!(f, "\tcall *{scratch}")?;
                 writeln!(f)?;
                 writeln!(f, "\t# Zero-extend the retval.")?;
-                writeln!(f, "\tmovl %eax, %eax")
+                writeln!(f, "\tmovl {retval}, {retval}")
             }
             AsmInstr::CallIndirect { target, .. } => {
                 writeln!(f, "call *{}", target.as_width(AsmType::Quad))
