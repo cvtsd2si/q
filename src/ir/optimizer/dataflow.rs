@@ -1,7 +1,5 @@
-use crate::ir::{
-    cfg::Cfg,
-    r#gen::{IRFunc, IRInstr},
-};
+use crate::analysis::cfg::Cfg;
+use crate::ir::r#gen::{IRFunc, IRInstr};
 
 pub(super) fn run_forward<F: Clone + Default>(
     func: &mut IRFunc,
@@ -10,7 +8,7 @@ pub(super) fn run_forward<F: Clone + Default>(
     transfer: fn(&IRInstr, &mut F),
     rewrite: fn(&mut IRInstr, &F) -> bool,
 ) -> bool {
-    let cfg = Cfg::build(func).unwrap();
+    let cfg = Cfg::build(&func.body).unwrap();
     let n = cfg.blocks.len();
 
     if n == 0 {
@@ -27,12 +25,7 @@ pub(super) fn run_forward<F: Clone + Default>(
 
         reachable[block_idx] = true;
 
-        stack.extend(
-            cfg.blocks[block_idx]
-                .succs
-                .iter()
-                .map(|id| id.0),
-        );
+        stack.extend(cfg.blocks[block_idx].succs.iter().map(|id| id.0));
     }
 
     let mut out = vec![F::default(); n];
@@ -45,8 +38,7 @@ pub(super) fn run_forward<F: Clone + Default>(
                 continue;
             }
 
-            let mut facts =
-                incoming(idx, &cfg, &out, &reachable, intersect);
+            let mut facts = incoming(idx, &cfg, &out, &reachable, intersect);
 
             for i in block.range.clone() {
                 transfer(&func.body[i], &mut facts);
@@ -70,8 +62,7 @@ pub(super) fn run_forward<F: Clone + Default>(
             continue;
         }
 
-        let mut facts =
-            incoming(idx, &cfg, &out, &reachable, intersect);
+        let mut facts = incoming(idx, &cfg, &out, &reachable, intersect);
 
         for i in block.range.clone() {
             let instr = &mut func.body[i];

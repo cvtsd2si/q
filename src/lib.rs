@@ -36,3 +36,8 @@ pub mod semantics {
     pub mod resolver;
     pub mod typechecker;
 }
+
+pub mod analysis {
+    pub mod cfg;
+    pub mod liveness;
+}

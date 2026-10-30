@@ -1,7 +1,8 @@
-use crate::ir::{cfg::Cfg, r#gen::IRFunc};
+use crate::analysis::cfg::Cfg;
+use crate::ir::r#gen::IRFunc;
 
 pub(super) fn run(func: &mut IRFunc) -> bool {
-    let cfg = Cfg::build(func).unwrap();
+    let cfg = Cfg::build(&func.body).unwrap();
     let n = cfg.blocks.len();
 
     if n == 0 {

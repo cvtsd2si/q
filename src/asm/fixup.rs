@@ -40,12 +40,11 @@ impl Fixup for AsmInstr {
         let mut pending = VecDeque::from([self]);
         let mut output = Vec::new();
 
-        while let Some(instr) = pending.pop_front() {
-            match instr.clone().rewrite_once() {
-                // FIXME: don't clone
+        while let Some(ref instr) = pending.pop_front() {
+            match instr.to_owned().rewrite_once() {
                 Ok(replacements) => {
                     if cfg!(debug_assertions) {
-                        eprintln!("rewritten {instr:?} to {replacements:?}");
+                        eprintln!("rewritten {instr:?} -> {replacements:?}");
                     }
 
                     for replacement in replacements.into_iter().rev() {
@@ -505,6 +504,33 @@ impl AsmInstr {
                     src: AsmOp::Reg(AsmReg::Xmm15),
                     dst,
                     asm_ty: AsmType::Float,
+                },
+            ]),
+
+            /* 'lea' requires a general-purpose register destination.  */
+            AsmInstr::Lea { src, dst } if is_mem(&dst) => Ok(vec![
+                AsmInstr::Lea {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                },
+                AsmInstr::Mov {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty: AsmType::Quad,
+                },
+            ]),
+
+            /* 'test' cannot have two memory operands.  */
+            AsmInstr::Test { src, dst, asm_ty } if is_mem(&src) && is_mem(&dst) => Ok(vec![
+                AsmInstr::Mov {
+                    src,
+                    dst: AsmOp::Reg(AsmReg::R9),
+                    asm_ty,
+                },
+                AsmInstr::Test {
+                    src: AsmOp::Reg(AsmReg::R9),
+                    dst,
+                    asm_ty,
                 },
             ]),
 

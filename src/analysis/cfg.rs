@@ -3,7 +3,10 @@ use std::{
     ops::Range,
 };
 
-use crate::ir::r#gen::{IRFunc, IRInstr};
+use crate::{
+    asm::r#gen::AsmInstr,
+    ir::r#gen::{IRFunc, IRInstr},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BlockId(pub usize);
@@ -24,51 +27,29 @@ pub struct Cfg {
 }
 
 impl Cfg {
-    pub fn build(func: &IRFunc) -> Result<Self, String> {
-        if func.body.is_empty() {
+    pub fn build<I>(instructions: &[I]) -> Result<Self, String>
+    where
+        I: CfgInstr,
+    {
+        if instructions.is_empty() {
             return Ok(Self {
                 blocks: Vec::new(),
                 instr_to_block: Vec::new(),
             });
         }
 
-        let mut leaders = BTreeSet::new();
-        let mut labels = HashMap::new();
-
-        /* The first IRInstr in the IRFunc always starts a block,
-         * and is therefore considered a leader.  */
-        leaders.insert(0);
-
-        /* Discover block boundaries.  */
-        for (idx, instr) in func.body.iter().enumerate() {
-            match instr {
-                IRInstr::Label(name) => {
-                    if labels.insert(name.as_str(), idx).is_some() {
-                        return Err(format!("Duplicate label: {name}"));
-                    }
-
-                    /* A label always starts a block.  */
-                    leaders.insert(idx);
-                }
-                IRInstr::Jz { .. } | IRInstr::Jmp { .. } | IRInstr::Ret { .. }
-                    /* IRInstr after one of these always starts a new block.  */
-                    if idx + 1 < func.body.len() => {
-                        leaders.insert(idx + 1);
-                    }
-                _ => {}
-            }
-        }
+        let (leaders, labels) = discover_leaders(instructions)?;
 
         let leaders: Vec<usize> = leaders.into_iter().collect();
 
         /* Construct basic blocks.  */
         let mut blocks = Vec::new();
-        let mut instr_to_block = vec![BlockId(0); func.body.len()];
+        let mut instr_to_block = vec![BlockId(0); instructions.len()];
 
         for (idx, &start) in leaders.iter().enumerate() {
             /* The end of the current block is where the next leader begins,
              * or the end of the function if there are no more leaders.  */
-            let end = leaders.get(idx + 1).copied().unwrap_or(func.body.len());
+            let end = leaders.get(idx + 1).copied().unwrap_or(instructions.len());
 
             for item in instr_to_block.iter_mut().take(end).skip(start) {
                 *item = BlockId(idx);
@@ -93,7 +74,7 @@ impl Cfg {
         /* Construct successor edges.  */
         for id in 0..blocks.len() {
             let last_idx = blocks[id].range.end - 1;
-            let last_instr = &func.body[last_idx];
+            let last_instr = &instructions[last_idx];
 
             /* If there exists another block after the current block, return its BlockId,
              * or else return None.  */
@@ -101,32 +82,23 @@ impl Cfg {
 
             let mut succs = Vec::new();
 
-            match last_instr {
-                IRInstr::Jmp { target } => {
+            match last_instr.cfg_flow() {
+                CfgFlow::Jump(target) => {
                     succs.push(resolve_label(target)?);
                 }
 
-                IRInstr::Jz { target, .. } => {
-                    /* IRInstr::Jz, being a conditional jump, has two successors.
-                     *
-                     * The first successor is its jump target, and the second successor
-                     * is the instruction immediately after it in case the execution falls
-                     * through.  */
+                CfgFlow::Branch(target) => {
                     succs.push(resolve_label(target)?);
 
-                    if let Some(next) = next {
-                        /* Prevent inserting a duplicate edge in case the jump target happens
-                         * to be the same as the falltrough block.  */
-                        if !succs.contains(&next) {
+                    if let Some(next) = next
+                        && !succs.contains(&next) {
                             succs.push(next);
                         }
-                    }
                 }
 
-                IRInstr::Ret { .. } => { /* No successors.  */ }
+                CfgFlow::Return => {}
 
-                _ => {
-                    /* Ordinary instr fall-through.  */
+                CfgFlow::Next | CfgFlow::Label(_) => {
                     if let Some(next) = next {
                         succs.push(next);
                     }
@@ -198,5 +170,75 @@ impl Cfg {
             .replace('"', "\\\"")
             .replace('\n', "\\n")
             .replace('\r', "")
+    }
+}
+
+fn discover_leaders<I: CfgInstr>(
+    instructions: &[I],
+) -> Result<(BTreeSet<usize>, HashMap<&str, usize>), String> {
+    let mut leaders = BTreeSet::new();
+    let mut labels = HashMap::new();
+
+    if !instructions.is_empty() {
+        leaders.insert(0);
+    }
+
+    for (idx, instr) in instructions.iter().enumerate() {
+        match instr.cfg_flow() {
+            CfgFlow::Label(name) => {
+                if labels.insert(name, idx).is_some() {
+                    return Err(format!("Duplicate label: {name}"));
+                }
+
+                leaders.insert(idx);
+            }
+
+            CfgFlow::Jump(_) | CfgFlow::Branch(_) | CfgFlow::Return => {
+                if idx + 1 < instructions.len() {
+                    leaders.insert(idx + 1);
+                }
+            }
+
+            CfgFlow::Next => {}
+        }
+    }
+
+    Ok((leaders, labels))
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum CfgFlow<'a> {
+    Label(&'a str),
+    Jump(&'a str),
+    Branch(&'a str),
+    Return,
+    Next,
+}
+
+pub trait CfgInstr {
+    fn cfg_flow(&self) -> CfgFlow<'_>;
+}
+
+impl CfgInstr for IRInstr {
+    fn cfg_flow(&self) -> CfgFlow<'_> {
+        match self {
+            IRInstr::Jz { target, .. } => CfgFlow::Branch(target),
+            IRInstr::Jmp { target } => CfgFlow::Jump(target),
+            IRInstr::Label(name) => CfgFlow::Label(name),
+            IRInstr::Ret { .. } => CfgFlow::Return,
+            _ => CfgFlow::Next,
+        }
+    }
+}
+
+impl CfgInstr for AsmInstr {
+    fn cfg_flow(&self) -> CfgFlow<'_> {
+        match self {
+            AsmInstr::Label(name) => CfgFlow::Label(name),
+            AsmInstr::Jmp { target } => CfgFlow::Jump(target),
+            AsmInstr::Jmpcc { target, .. } => CfgFlow::Branch(target),
+            AsmInstr::Ret => CfgFlow::Return,
+            _ => CfgFlow::Next,
+        }
     }
 }

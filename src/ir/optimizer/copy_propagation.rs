@@ -5,10 +5,7 @@ use crate::{
     parser::ast::Type,
 };
 
-use super::{
-    dataflow::run_forward,
-    visit_reads::visit_reads,
-};
+use super::{dataflow::run_forward, visit_reads::visit_reads};
 
 type CopyFacts = HashMap<String, (String, Type)>;
 
@@ -22,13 +19,8 @@ pub(super) fn run(func: &mut IRFunc) -> bool {
     )
 }
 
-fn intersect_copies(
-    facts: &mut CopyFacts,
-    other: &CopyFacts,
-) {
-    facts.retain(|name, source| {
-        other.get(name) == Some(source)
-    });
+fn intersect_copies(facts: &mut CopyFacts, other: &CopyFacts) {
+    facts.retain(|name, source| other.get(name) == Some(source));
 }
 
 fn transfer_copy(instr: &IRInstr, facts: &mut CopyFacts) {
@@ -67,16 +59,12 @@ fn transfer_copy(instr: &IRInstr, facts: &mut CopyFacts) {
     }
 }
 
-fn rewrite_copies(
-    instr: &mut IRInstr,
-    facts: &CopyFacts,
-) -> bool {
+fn rewrite_copies(instr: &mut IRInstr, facts: &CopyFacts) -> bool {
     let mut changed = false;
 
     visit_reads(instr, |val| {
         if let IRVal::Var { name, ty } = val
-            && let Some((source, source_ty)) =
-                facts.get(name.as_str())
+            && let Some((source, source_ty)) = facts.get(name.as_str())
             && *ty == *source_ty
             && name.as_str() != source.as_str()
         {

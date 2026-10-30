@@ -6,10 +6,7 @@ use crate::{
     runtime::value::Value,
 };
 
-use super::{
-    dataflow::run_forward,
-    visit_reads::visit_reads,
-};
+use super::{dataflow::run_forward, visit_reads::visit_reads};
 
 type ConstantFacts = HashMap<String, Literal>;
 
@@ -23,23 +20,15 @@ pub(super) fn run(func: &mut IRFunc) -> bool {
     )
 }
 
-fn intersect_constants(
-    facts: &mut ConstantFacts,
-    other: &ConstantFacts,
-) {
+fn intersect_constants(facts: &mut ConstantFacts, other: &ConstantFacts) {
     facts.retain(|name, value| {
         other
             .get(name)
-            .is_some_and(|other_value| {
-                same_constant(*value, *other_value)
-            })
+            .is_some_and(|other_value| same_constant(*value, *other_value))
     });
 }
 
-fn rewrite_constants(
-    instr: &mut IRInstr,
-    facts: &ConstantFacts,
-) -> bool {
+fn rewrite_constants(instr: &mut IRInstr, facts: &ConstantFacts) -> bool {
     let mut changed = false;
 
     visit_reads(instr, |val| {

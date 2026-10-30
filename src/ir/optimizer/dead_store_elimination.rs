@@ -1,15 +1,13 @@
 use crate::{
-    ir::{
-        cfg::Cfg,
-        r#gen::{IRFunc, IRInstr, IRVal},
-        liveness::Liveness,
-    },
+    analysis::cfg::Cfg,
+    analysis::liveness::Liveness,
+    ir::r#gen::{IRFunc, IRInstr, IRVal},
     parser::ast::BinaryExpressionKind,
 };
 
 pub(super) fn run(func: &mut IRFunc) -> bool {
-    let cfg = Cfg::build(func).unwrap();
-    let liveness = Liveness::analyze(func, &cfg);
+    let cfg = Cfg::build(&func.body).unwrap();
+    let liveness = Liveness::<String>::analyze(&func.body, &cfg);
 
     let original_len = func.body.len();
     let mut idx = 0;

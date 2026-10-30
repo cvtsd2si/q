@@ -12,6 +12,12 @@ use crate::{
     },
 };
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallConv {
+    SystemV,
+    Jit,
+}
+
 #[derive(Debug)]
 pub struct AsmProg {
     pub funcs: Vec<AsmFunc>,
@@ -79,9 +85,11 @@ pub enum AsmInstr {
     Label(String),
     Call {
         target: String,
+        conv: CallConv,
     },
     CallIndirect {
         target: AsmReg,
+        conv: CallConv,
     },
     CallRt {
         target: RtFn,
@@ -350,7 +358,7 @@ impl std::fmt::Display for AsmOp {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum AsmReg {
     Bp,
     Sp,
@@ -461,6 +469,8 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
 
 impl Codegen<AsmFunc, CodegenContext> for IRFunc {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmFunc, Box<dyn std::error::Error>> {
+        ctx.current_fn = self.name.clone();
+
         let mut body = vec![];
 
         insert_prologue(&mut body);
@@ -1836,7 +1846,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         "On return: %rax = payload or err code, %rdx = ValueTag, %rcx = JIT exit kind."
                             .into(),
                     ),
-                    AsmInstr::CallIndirect { target: AsmReg::R9 },
+                    AsmInstr::CallIndirect { target: AsmReg::R9, conv: CallConv::Jit },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Check whether the callee returned JIT_ERROR.".into()),
                     AsmInstr::Comment(

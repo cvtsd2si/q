@@ -3,7 +3,7 @@ use crate::{
         emitter::Emit,
         fixup::Fixup,
         r#gen::{
-            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmStaticConst, AsmType,
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmStaticConst, AsmType, CallConv,
             insert_epilogue, insert_prologue,
         },
         regalloc::Regalloc,
@@ -76,11 +76,20 @@ impl JitCompiler {
             ctx.register::<BytecodeFunc>(&func.name);
         }
 
-        /* Compiled fn emission.  */
-        let asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
+        /* Compiled fn emission. */
+        let mut asm_func: AsmFunc = region_func.codegen(&mut ctx).map_err(|_| JitError {
             msg: "jit codegen failed".into(),
         })?;
-        let mut asm_func = asm_func.regalloc().fixup();
+
+        /* Append the runtime error handler before register allocation. */
+        asm_func
+            .body
+            .push(AsmInstr::Label(format!("{}_rt_err", region_func.name)));
+
+        asm_func.body.extend(self.mk_rt_err());
+
+        /* Register allocation now sees the complete CFG. */
+        let mut asm_func = asm_func.regalloc(&region_func).fixup();
 
         /* Backpatch the amount of stack space required.  */
         if let Some(instr) = asm_func
@@ -103,17 +112,6 @@ impl JitCompiler {
 
         asm_func.emit(&mut asm_txt).map_err(|_e| JitError {
             msg: "jit code emission failed".into(),
-        })?;
-
-        /* Runtime error handler emission.  */
-        AsmFunc {
-            name: format!("{}_rt_err", region_func.name),
-            body: self.mk_rt_err(),
-            space: 0,
-        }
-        .emit(&mut asm_txt)
-        .map_err(|_| JitError {
-            msg: "jit entry emission failed".into(),
         })?;
 
         for konst in &ctx.static_consts {
@@ -280,7 +278,10 @@ impl JitCompiler {
 
         body.extend([
             AsmInstr::Comment("%r8 = *const u8 (compiled fn addr)".into()),
-            AsmInstr::CallIndirect { target: AsmReg::R8 },
+            AsmInstr::CallIndirect {
+                target: AsmReg::R8,
+                conv: CallConv::Jit,
+            },
         ]);
 
         body.push(AsmInstr::Newline);

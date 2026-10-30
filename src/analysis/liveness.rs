@@ -1,45 +1,83 @@
 use std::collections::HashSet;
+use std::hash::Hash;
 
-use crate::ir::{
-    cfg::Cfg,
-    r#gen::{IRFunc, IRInstr, IRVal},
-};
+use crate::analysis::cfg::Cfg;
+use crate::ir::r#gen::{IRInstr, IRVal};
 
-#[derive(Debug, Default)]
-pub struct BlockLiveness {
-    /* Variables whose current values may be needed
-     * when entering this block.  */
-    pub live_in: HashSet<String>,
-    /* Variables whose current values may be needed
-     * after leaving this block.  */
-    pub live_out: HashSet<String>,
+pub trait LivenessInstruction {
+    type Location: Eq + Hash + Clone;
+    fn use_def(&self) -> UseDef<Self::Location>;
 }
 
-#[derive(Debug, Default)]
-pub struct InstrLiveness {
-    /* Variables whose current values may be needed
-     * when executing this instruction.  */
-    pub live_in: HashSet<String>,
-    /* Variables whose current values may be needed
-     * after executing this instruction.  */
-    pub live_out: HashSet<String>,
+impl LivenessInstruction for IRInstr {
+    type Location = String;
+
+    fn use_def(&self) -> UseDef<Self::Location> {
+        IRInstr::use_def(self)
+    }
 }
 
 #[derive(Debug)]
-pub struct Liveness {
-    pub blocks: Vec<BlockLiveness>,
-    pub instrs: Vec<InstrLiveness>,
+pub struct BlockLiveness<V = String> {
+    /* Variables whose current values may be needed
+     * when entering this block.  */
+    pub live_in: HashSet<V>,
+    /* Variables whose current values may be needed
+     * after leaving this block.  */
+    pub live_out: HashSet<V>,
 }
 
-impl Liveness {
-    pub fn analyze(func: &IRFunc, cfg: &Cfg) -> Self {
+impl<V> Default for BlockLiveness<V> {
+    fn default() -> Self {
+        Self {
+            live_in: HashSet::new(),
+            live_out: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct InstrLiveness<V = String> {
+    /* Variables whose current values may be needed
+     * when executing this instruction.  */
+    pub live_in: HashSet<V>,
+    /* Variables whose current values may be needed
+     * after executing this instruction.  */
+    pub live_out: HashSet<V>,
+}
+
+impl<V> Default for InstrLiveness<V> {
+    fn default() -> Self {
+        Self {
+            live_in: HashSet::new(),
+            live_out: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Liveness<V = String> {
+    pub blocks: Vec<BlockLiveness<V>>,
+    pub instrs: Vec<InstrLiveness<V>>,
+}
+
+impl<V> Liveness<V>
+where
+    V: Eq + Hash + Clone,
+{
+    pub fn analyze<I>(instructions: &[I], cfg: &Cfg) -> Self
+    where
+        I: LivenessInstruction<Location = V>,
+    {
+        assert_eq!(instructions.len(), cfg.instr_to_block.len());
+
         let mut block_use_defs = Vec::new();
 
         for block in &cfg.blocks {
-            let mut block_ud = UseDef::default();
+            let mut block_ud = UseDef::<V>::default();
 
             for idx in block.range.clone() {
-                let instr_ud = func.body[idx].use_def();
+                let instr_ud = instructions[idx].use_def();
 
                 /* Does this instruction use a variable that hasn't already
                  * been defined earlier in this block?
@@ -59,7 +97,7 @@ impl Liveness {
             block_use_defs.push(block_ud);
         }
 
-        let mut blocks: Vec<BlockLiveness> = (0..cfg.blocks.len())
+        let mut blocks: Vec<BlockLiveness<V>> = (0..cfg.blocks.len())
             .map(|_| BlockLiveness::default())
             .collect();
 
@@ -111,7 +149,7 @@ impl Liveness {
         }
 
         /* Calculate instruction-level liveness.  */
-        let mut instrs: Vec<InstrLiveness> = (0..func.body.len())
+        let mut states: Vec<InstrLiveness<V>> = (0..instructions.len())
             .map(|_| InstrLiveness::default())
             .collect();
 
@@ -215,10 +253,10 @@ impl Liveness {
             /* Walk through the instructions backward.  */
             for idx in block.range.clone().rev() {
                 /* Get current instruction's uses and defs.  */
-                let ud = func.body[idx].use_def();
+                let ud = instructions[idx].use_def();
 
                 /* Record LIVE_OUT for this instruction.  */
-                instrs[idx].live_out = live.clone();
+                states[idx].live_out = live.clone();
 
                 /* Remove variables defined by this instruction.  */
                 live.retain(|var| !ud.defs.contains(var));
@@ -227,21 +265,24 @@ impl Liveness {
                 live.extend(ud.uses);
 
                 /* Record LIVE_IN for this instruction.  */
-                instrs[idx].live_in = live.clone();
+                states[idx].live_in = live.clone();
             }
 
             /* This invariant must hold.  */
-            assert_eq!(live, blocks[id].live_in);
+            assert!(live == blocks[id].live_in);
         }
 
-        Self { blocks, instrs }
+        Self {
+            blocks,
+            instrs: states,
+        }
     }
 }
 
-#[derive(Debug, Default)]
-pub struct UseDef {
-    pub uses: HashSet<String>,
-    pub defs: HashSet<String>,
+#[derive(Debug)]
+pub struct UseDef<V = String> {
+    pub uses: HashSet<V>,
+    pub defs: HashSet<V>,
 }
 
 impl UseDef {
@@ -258,9 +299,18 @@ impl UseDef {
     }
 }
 
+impl<V> Default for UseDef<V> {
+    fn default() -> Self {
+        Self {
+            uses: HashSet::new(),
+            defs: HashSet::new(),
+        }
+    }
+}
+
 impl IRInstr {
     pub fn use_def(&self) -> UseDef {
-        let mut ud = UseDef::default();
+        let mut ud = UseDef::<String>::default();
 
         match self {
             Self::Cpy { src, dst, .. }

@@ -211,7 +211,7 @@ impl std::fmt::Display for AsmInstr {
             },
             AsmInstr::Jmpcc { cc, target } => writeln!(f, "j{cc} {target}"),
             AsmInstr::Jmp { target } => writeln!(f, "jmp {}", target),
-            AsmInstr::Call { target } => writeln!(f, "call {}", target),
+            AsmInstr::Call { target, .. } => writeln!(f, "call {}", target),
             AsmInstr::CallRt { target } => {
                 let offset = target.offset();
 
@@ -222,7 +222,7 @@ impl std::fmt::Display for AsmInstr {
                 writeln!(f, "\t# Zero-extend the retval.")?;
                 writeln!(f, "\tmovl %eax, %eax")
             }
-            AsmInstr::CallIndirect { target } => {
+            AsmInstr::CallIndirect { target, .. } => {
                 writeln!(f, "call *{}", target.as_width(AsmType::Quad))
             }
             AsmInstr::Lea { src, dst } => writeln!(
@@ -353,16 +353,12 @@ impl std::fmt::Display for AsmInstr {
                 src.as_width(AsmType::Double),
                 dst.as_width(AsmType::Float)
             ),
-            AsmInstr::Test {
-                src,
-                dst: _,
-                asm_ty,
-            } => writeln!(
+            AsmInstr::Test { src, dst, asm_ty } => writeln!(
                 f,
                 "test{} {}, {}",
                 asm_ty.suffix(),
                 src.as_width(*asm_ty),
-                src.as_width(*asm_ty),
+                dst.as_width(*asm_ty),
             ),
             AsmInstr::Cdq { asm_ty } => match asm_ty {
                 AsmType::Byte => writeln!(f, "cbw"),
