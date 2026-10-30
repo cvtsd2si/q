@@ -10,9 +10,7 @@ pub mod parser {
     pub mod recursive_descent;
 }
 
-pub mod ir {
-    pub mod r#gen;
-}
+pub mod ir;
 
 pub mod asm {
     pub mod emitter;

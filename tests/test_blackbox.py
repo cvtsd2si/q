@@ -17,7 +17,63 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
-    # f32 bitwise not
+    # ir optimizations
+    "constants.q": {
+        "ret": 0,
+        "stdout": ["12"],
+        "stderr": [],
+    },
+    "copies.q": {
+        "ret": 0,
+        "stdout": ["17"],
+        "stderr": [],
+    },
+    "copy_invalidation.q": {
+        "ret": 0,
+        "stdout": ["7", "99"],
+        "stderr": [],
+    },
+    "copy_join.q": {
+        "ret": 0,
+        "stdout": ["11", "22"],
+        "stderr": [],
+    },
+    "dead_stores.q": {
+        "ret": 0,
+        "stdout": ["42"],
+        "stderr": [],
+    },
+    "unreachable.q": {
+        "ret": 0,
+        "stdout": ["7", "8"],
+        "stderr": [],
+    },
+    "dead_stores.q": {
+        "ret": 0,
+        "stdout": ["42"],
+        "stderr": [],
+    },
+    "fold.q": {
+        "ret": 0,
+        "stdout": ["25", "40"],
+        "stderr": [],
+    },
+    "loop.q": {
+        "ret": 0,
+        "stdout": ["10"],
+        "stderr": [],
+    },
+    "side_effects.q": {
+        "ret": 0,
+        "stdout": ["77", "5"],
+        "stderr": [],
+    },
+    "conversion.q": {
+        "ret": 0,
+        "stdout": ["42"],
+        "stderr": [],
+    },
+     # f32 bitwise not
     "f32_not.q": {
         "ret": 1,
         "stdout": [],
@@ -1113,11 +1169,6 @@ TEST_CASES = {
         "stdout": ["0", "1", "2", "3", "4"],
         "stderr": [],
     },
-    "loop.q": {
-        "ret": 0,
-        "stdout": ["0", "1", "2", "3", "4"],
-        "stderr": [],
-    },
     "no_main.q": {
         "ret": 1,
         "stderr": ["err: vm: No 'main' fn. (code: 1)"],
@@ -1140,7 +1191,11 @@ TEST_CASES = {
     },
 }
 
-
+@pytest.mark.parametrize(
+    "optimizations",
+    [False, True],
+    ids=["optimizations disabled", "optimizations enabled"],
+)
 @pytest.mark.parametrize(
     "jit",
     [False, True],
@@ -1151,11 +1206,20 @@ TEST_CASES = {
     sorted(TESTS_DIR.glob("*.q")),
     ids=lambda p: p.stem,
 )
-def test_program(program: Path, jit: bool):
+def test_program(program: Path, jit: bool, optimizations: bool):
     cmd = [str(Q_BIN), str(program)]
 
     if jit:
         cmd.append("--jit")
+
+    if optimizations:
+        cmd.extend([
+            "--constant-folding",
+            "--constant-propagation",
+            "--copy-propagation",
+            "--dead-store-elimination",
+            "--unreachable-code-elimination",
+        ])
 
     expected = TEST_CASES[program.name]
 

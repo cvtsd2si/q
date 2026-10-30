@@ -1,0 +1,12 @@
+digraph CFG {
+graph [rankdir=TB];
+node [shape=box, fontname="monospace"];
+    B0 [label="B0 [0..1)\l0: var.i.0 = 0\l"];
+    B1 [label="B1 [1..4)\l1: loop.0.continue:\l2: tmp.1 = var.i.0 < 5\l3: jz tmp.1, loop.0.break\l"];
+    B2 [label="B2 [4..8)\l4: print var.i.0\l5: tmp.2 = var.i.0 + 1\l6: var.i.0 = tmp.2\l7: jmp loop.0.continue\l"];
+    B3 [label="B3 [8..10)\l8: loop.0.break:\l9: return 0\l"];
+    B0 -> B1;
+    B1 -> B3;
+    B1 -> B2;
+    B2 -> B1;
+}

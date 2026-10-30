@@ -404,3 +404,21 @@ impl Type {
         }
     }
 }
+
+impl From<Literal> for Type {
+    fn from(value: Literal) -> Type {
+        match value {
+            Literal::Bool(_) => Type::Boolean,
+            Literal::Int8(_) => Type::Int8,
+            Literal::UInt8(_) => Type::UInt8,
+            Literal::Int16(_) => Type::Int16,
+            Literal::UInt16(_) => Type::UInt16,
+            Literal::Int32(_) => Type::Int32,
+            Literal::UInt32(_) => Type::UInt32,
+            Literal::Int64(_) => Type::Int64,
+            Literal::UInt64(_) => Type::UInt64,
+            Literal::Float32(_) => Type::Float32,
+            Literal::Float64(_) => Type::Float64,
+        }
+    }
+}
