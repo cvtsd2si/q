@@ -194,18 +194,6 @@ impl AsmType {
     }
 }
 
-impl From<usize> for AsmType {
-    fn from(value: usize) -> Self {
-        match value {
-            1 => Self::Byte,
-            2 => Self::Word,
-            4 => Self::Long,
-            8 => Self::Quad,
-            _ => unreachable!(),
-        }
-    }
-}
-
 impl From<Type> for AsmType {
     fn from(value: Type) -> Self {
         match value {
