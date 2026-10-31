@@ -4,57 +4,6 @@ use std::hash::Hash;
 use crate::analysis::cfg::Cfg;
 use crate::ir::r#gen::{IRInstr, IRVal};
 
-pub trait LivenessInstruction {
-    type Location: Eq + Hash + Clone;
-    fn use_def(&self) -> UseDef<Self::Location>;
-}
-
-impl LivenessInstruction for IRInstr {
-    type Location = String;
-
-    fn use_def(&self) -> UseDef<Self::Location> {
-        IRInstr::use_def(self)
-    }
-}
-
-#[derive(Debug)]
-pub struct BlockLiveness<V = String> {
-    /* Variables whose current values may be needed
-     * when entering this block.  */
-    pub live_in: HashSet<V>,
-    /* Variables whose current values may be needed
-     * after leaving this block.  */
-    pub live_out: HashSet<V>,
-}
-
-impl<V> Default for BlockLiveness<V> {
-    fn default() -> Self {
-        Self {
-            live_in: HashSet::new(),
-            live_out: HashSet::new(),
-        }
-    }
-}
-
-#[derive(Debug)]
-pub struct InstrLiveness<V = String> {
-    /* Variables whose current values may be needed
-     * when executing this instruction.  */
-    pub live_in: HashSet<V>,
-    /* Variables whose current values may be needed
-     * after executing this instruction.  */
-    pub live_out: HashSet<V>,
-}
-
-impl<V> Default for InstrLiveness<V> {
-    fn default() -> Self {
-        Self {
-            live_in: HashSet::new(),
-            live_out: HashSet::new(),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Liveness<V = String> {
     pub blocks: Vec<BlockLiveness<V>>,
@@ -275,6 +224,57 @@ where
         Self {
             blocks,
             instrs: states,
+        }
+    }
+}
+
+pub trait LivenessInstruction {
+    type Location: Eq + Hash + Clone;
+    fn use_def(&self) -> UseDef<Self::Location>;
+}
+
+impl LivenessInstruction for IRInstr {
+    type Location = String;
+
+    fn use_def(&self) -> UseDef<Self::Location> {
+        IRInstr::use_def(self)
+    }
+}
+
+#[derive(Debug)]
+pub struct BlockLiveness<V = String> {
+    /* Variables whose current values may be needed
+     * when entering this block.  */
+    pub live_in: HashSet<V>,
+    /* Variables whose current values may be needed
+     * after leaving this block.  */
+    pub live_out: HashSet<V>,
+}
+
+impl<V> Default for BlockLiveness<V> {
+    fn default() -> Self {
+        Self {
+            live_in: HashSet::new(),
+            live_out: HashSet::new(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct InstrLiveness<V = String> {
+    /* Variables whose current values may be needed
+     * when executing this instruction.  */
+    pub live_in: HashSet<V>,
+    /* Variables whose current values may be needed
+     * after executing this instruction.  */
+    pub live_out: HashSet<V>,
+}
+
+impl<V> Default for InstrLiveness<V> {
+    fn default() -> Self {
+        Self {
+            live_in: HashSet::new(),
+            live_out: HashSet::new(),
         }
     }
 }
