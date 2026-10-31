@@ -21,8 +21,7 @@ pub struct BasicBlock {
 #[derive(Debug)]
 pub struct Cfg {
     pub blocks: Vec<BasicBlock>,
-
-    // Map from IRInstr idx to its containing block
+    /* Map from IRInstr idx to its containing basic block.  */
     pub instr_to_block: Vec<BlockId>,
 }
 
@@ -38,21 +37,26 @@ impl Cfg {
             });
         }
 
-        let (leaders, labels) = discover_leaders(instructions)?;
+        /* Analyze the fn body and figure out the body layout,
+         * that is, where each basic block begins and ends.  */
+        let body_layout = analyze_body(instructions)?;
 
-        let leaders: Vec<usize> = leaders.into_iter().collect();
+        let leaders: Vec<usize> = body_layout.leaders.into_iter().collect();
 
         /* Construct basic blocks.  */
         let mut blocks = Vec::new();
         let mut instr_to_block = vec![BlockId(0); instructions.len()];
 
-        for (idx, &start) in leaders.iter().enumerate() {
+        for (block_id, &start) in leaders.iter().enumerate() {
             /* The end of the current block is where the next leader begins,
              * or the end of the function if there are no more leaders.  */
-            let end = leaders.get(idx + 1).copied().unwrap_or(instructions.len());
+            let end = leaders
+                .get(block_id + 1)
+                .copied()
+                .unwrap_or(instructions.len());
 
             for item in instr_to_block.iter_mut().take(end).skip(start) {
-                *item = BlockId(idx);
+                *item = BlockId(block_id);
             }
 
             blocks.push(BasicBlock {
@@ -64,7 +68,8 @@ impl Cfg {
 
         /* Resolve labels to block ids.  */
         let resolve_label = |name: &str| -> Result<BlockId, String> {
-            let &instr_idx = labels
+            let &instr_idx = body_layout
+                .labels
                 .get(name)
                 .ok_or_else(|| format!("Unknown label: {name}"))?;
 
@@ -82,14 +87,21 @@ impl Cfg {
 
             let mut succs = Vec::new();
 
+            /* The last instruction in a basic block determines its successors.  */
             match last_instr.cfg_flow() {
+                /* For an unconditional jump, its successor is the jump's target.  */
                 CfgFlow::Jump(target) => {
                     succs.push(resolve_label(target)?);
                 }
 
+                /* A conditional jump has two successors:
+                 *  1. the jump target, if the condition checks out,
+                 *  2. the following basic block, if the condition does not hold
+                 *     and the execution falls through.  */
                 CfgFlow::Branch(target) => {
                     succs.push(resolve_label(target)?);
 
+                    /* Handle the case where the target is the fallthrough block itself.  */
                     if let Some(next) = next
                         && !succs.contains(&next)
                     {
@@ -97,8 +109,10 @@ impl Cfg {
                     }
                 }
 
+                /* Returns have no successors.  */
                 CfgFlow::Return => {}
 
+                /* Otherwise the successor is the fallthrough block.  */
                 CfgFlow::Next | CfgFlow::Label(_) => {
                     if let Some(next) = next {
                         succs.push(next);
@@ -174,29 +188,52 @@ impl Cfg {
     }
 }
 
-fn discover_leaders<I: CfgInstr>(
-    instructions: &[I],
-) -> Result<(BTreeSet<usize>, HashMap<&str, usize>), String> {
-    let mut leaders = BTreeSet::new();
-    let mut labels = HashMap::new();
+struct BodyLayout<'a> {
+    leaders: BTreeSet<usize>,
+    labels: HashMap<&'a str, usize>,
+}
 
-    if !instructions.is_empty() {
-        leaders.insert(0);
+impl BodyLayout<'_> {
+    fn new() -> Self {
+        Self {
+            leaders: BTreeSet::new(),
+            labels: HashMap::new(),
+        }
     }
+}
+
+impl Default for BodyLayout<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Iterate through the instructions and find the basic block leaders.
+/// Besides returning the leaders, this fn also returns the labels.
+fn analyze_body<I: CfgInstr>(instructions: &[I]) -> Result<BodyLayout<'_>, String> {
+    let mut layout = BodyLayout::default();
+
+    /* First instruction is always a leader.  */
+    layout.leaders.insert(0);
 
     for (idx, instr) in instructions.iter().enumerate() {
         match instr.cfg_flow() {
+            /* Labels start off a new basic block.  */
             CfgFlow::Label(name) => {
-                if labels.insert(name, idx).is_some() {
+                if layout.labels.insert(name, idx).is_some() {
                     return Err(format!("Duplicate label: {name}"));
                 }
 
-                leaders.insert(idx);
+                layout.leaders.insert(idx);
             }
 
+            /* Both conditional and unconditional jumps, as well as
+             * returns end the current basic block.
+             *
+             * The following instruction starts off a new basic block.  */
             CfgFlow::Jump(_) | CfgFlow::Branch(_) | CfgFlow::Return => {
                 if idx + 1 < instructions.len() {
-                    leaders.insert(idx + 1);
+                    layout.leaders.insert(idx + 1);
                 }
             }
 
@@ -204,7 +241,7 @@ fn discover_leaders<I: CfgInstr>(
         }
     }
 
-    Ok((leaders, labels))
+    Ok(layout)
 }
 
 #[derive(Debug, Clone, Copy)]
