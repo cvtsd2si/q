@@ -1,15 +1,22 @@
-use q::bytecode::r#gen::BytecodeProg;
-use q::ir::r#gen::{Codegen, CodegenContext, irfy};
-use q::ir::optimizer::{Optimization, optimize_ir};
-use q::lexer::tokenizer::Tokenizer;
-use q::parser::recursive_descent::Parser;
-use q::runtime::vm::Vm;
-use q::semantics::label_collector::{LabelCollect, LabelCollector};
-use q::semantics::loop_labeler::{LoopLabel, LoopLabeler};
-use q::semantics::resolver::{Resolve, Resolver};
-use q::semantics::typechecker::{Typecheck, Typechecker};
-use std::collections::VecDeque;
-use std::path::PathBuf;
+use q::{
+    bytecode::r#gen::BytecodeProg,
+    ir::{
+        r#gen::{Codegen, CodegenContext, irfy},
+        optimizer::{Optimization, optimize_ir},
+    },
+    lexer::tokenizer::Tokenizer,
+    parser::recursive_descent::Parser,
+    runtime::vm::Vm,
+    semantics::{
+        label_collector::{LabelCollect, LabelCollector},
+        loop_labeler::{LoopLabel, LoopLabeler},
+        resolver::{Resolve, Resolver},
+        typechecker::{Typecheck, Typechecker},
+    },
+};
+
+use std::{collections::VecDeque, path::PathBuf};
+
 use structopt::StructOpt;
 
 fn main() {
