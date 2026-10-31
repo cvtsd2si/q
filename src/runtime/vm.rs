@@ -1,5 +1,8 @@
 use crate::{
-    bytecode::r#gen::{BytecodeProg, Op}, ir::r#gen::{IRInstr, IRProg}, parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind}, runtime::{
+    bytecode::r#gen::{BytecodeProg, Op},
+    ir::r#gen::{IRInstr, IRProg},
+    parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
+    runtime::{
         jit::{
             JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit,
             JitTrampoline,
@@ -439,10 +442,11 @@ impl Vm {
         binop!(self.stack, >>);
     }
 
-    #[inline(always)] fn handle_op_lt(&mut self) {
+    #[inline(always)]
+    fn handle_op_lt(&mut self) {
         binop!(self.stack, <);
     }
-    
+
     #[inline(always)]
     fn handle_op_gt(&mut self) {
         binop!(self.stack, >);
