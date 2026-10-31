@@ -644,7 +644,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                     BinaryExpressionKind::Add => AsmInstrBinKind::Add,
                     BinaryExpressionKind::Sub => AsmInstrBinKind::Sub,
                     BinaryExpressionKind::Mul => AsmInstrBinKind::Mul,
-                    _ => unimplemented!(),
+                    _ => unreachable!(),
                 };
 
                 let instrs = vec![
