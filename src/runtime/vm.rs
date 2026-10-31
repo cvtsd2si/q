@@ -1,8 +1,5 @@
 use crate::{
-    bytecode::r#gen::{BytecodeProg, Op},
-    ir::r#gen::{IRInstr, IRProg},
-    parser::ast::{Literal, Type},
-    runtime::{
+    bytecode::r#gen::{BytecodeProg, Op}, ir::r#gen::{IRInstr, IRProg}, parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind}, runtime::{
         jit::{
             JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit,
             JitTrampoline,
@@ -121,21 +118,8 @@ impl Vm {
 
             match op {
                 Op::Const(konst) => self.handle_op_const(konst),
-                Op::Add => self.handle_op_add(),
-                Op::Sub => self.handle_op_sub(),
-                Op::Mul => self.handle_op_mul(),
-                Op::Div => self.handle_op_div(),
-                Op::Rem => self.handle_op_rem(),
-                Op::BitOr => self.handle_op_bitor(),
-                Op::BitAnd => self.handle_op_bitand(),
-                Op::BitXor => self.handle_op_bitxor(),
-                Op::Shl => self.handle_op_shl(),
-                Op::Shr => self.handle_op_shr(),
-                Op::Lt => self.handle_op_lt(),
-                Op::Le => self.handle_op_le(),
-                Op::Eq => self.handle_op_eq(),
-                Op::Neg => self.handle_op_neg(),
-                Op::Not => self.handle_op_not(),
+                Op::Binary(kind) => self.handle_op_binary(kind),
+                Op::Unary(kind) => self.handle_op_unary(kind),
                 Op::Print => self.handle_op_print()?,
                 Op::Deepget(idx) => self.handle_op_deepget(idx),
                 Op::Deepset(idx) => self.handle_op_deepset(idx),
@@ -371,62 +355,125 @@ impl Vm {
         self.stack.push(n.into());
     }
 
+    fn handle_op_unary(&mut self, kind: UnaryExpressionKind) {
+        use UnaryExpressionKind::*;
+
+        match kind {
+            LogicalNot => self.handle_op_not(),
+            BitwiseNot => self.handle_op_not(),
+            Negate => self.handle_op_neg(),
+        }
+    }
+
+    fn handle_op_binary(&mut self, kind: BinaryExpressionKind) {
+        use BinaryExpressionKind::*;
+
+        match kind {
+            Add => self.handle_op_add(),
+            Sub => self.handle_op_sub(),
+            Mul => self.handle_op_mul(),
+            Div => self.handle_op_div(),
+            Rem => self.handle_op_rem(),
+            BitwiseOr => self.handle_op_bitor(),
+            BitwiseAnd => self.handle_op_bitand(),
+            BitwiseXor => self.handle_op_bitxor(),
+            Shl => self.handle_op_shl(),
+            Shr => self.handle_op_shr(),
+            Less => self.handle_op_lt(),
+            LessEqual => self.handle_op_le(),
+            Greater => self.handle_op_gt(),
+            GreaterEqual => self.handle_op_ge(),
+            Equal => self.handle_op_eq(),
+            NotEqual => self.handle_op_ne(),
+            _ => unreachable!("got: {kind:?}"),
+        }
+    }
+
+    #[inline(always)]
     fn handle_op_add(&mut self) {
         binop!(self.stack, +);
     }
 
+    #[inline(always)]
     fn handle_op_sub(&mut self) {
         binop!(self.stack, -);
     }
 
+    #[inline(always)]
     fn handle_op_mul(&mut self) {
         binop!(self.stack, *);
     }
 
+    #[inline(always)]
     fn handle_op_div(&mut self) {
         binop!(self.stack, /);
     }
 
+    #[inline(always)]
     fn handle_op_rem(&mut self) {
         binop!(self.stack, %);
     }
 
+    #[inline(always)]
     fn handle_op_bitor(&mut self) {
         binop!(self.stack, |);
     }
 
+    #[inline(always)]
     fn handle_op_bitand(&mut self) {
         binop!(self.stack, &);
     }
 
+    #[inline(always)]
     fn handle_op_bitxor(&mut self) {
         binop!(self.stack, ^);
     }
 
+    #[inline(always)]
     fn handle_op_shl(&mut self) {
         binop!(self.stack, <<);
     }
 
+    #[inline(always)]
     fn handle_op_shr(&mut self) {
         binop!(self.stack, >>);
     }
 
-    fn handle_op_lt(&mut self) {
+    #[inline(always)] fn handle_op_lt(&mut self) {
         binop!(self.stack, <);
     }
+    
+    #[inline(always)]
+    fn handle_op_gt(&mut self) {
+        binop!(self.stack, >);
+    }
 
+    #[inline(always)]
+    fn handle_op_ge(&mut self) {
+        binop!(self.stack, >=);
+    }
+
+    #[inline(always)]
     fn handle_op_le(&mut self) {
         binop!(self.stack, <=);
     }
 
+    #[inline(always)]
+    fn handle_op_ne(&mut self) {
+        binop!(self.stack, !=);
+    }
+
+    #[inline(always)]
     fn handle_op_eq(&mut self) {
         binop!(self.stack, ==);
     }
 
+    #[inline(always)]
     fn handle_op_neg(&mut self) {
         unop!(self.stack, -);
     }
 
+    #[inline(always)]
     fn handle_op_not(&mut self) {
         unop!(self.stack, !);
     }

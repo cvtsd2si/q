@@ -7,17 +7,9 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 pub enum Op {
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Rem,
-    BitOr,
-    BitAnd,
-    BitXor,
-    Shl,
-    Shr,
     Const(Literal),
+    Unary(UnaryExpressionKind),
+    Binary(BinaryExpressionKind),
     Ret,
     RetVoid,
     Print,
@@ -26,11 +18,6 @@ pub enum Op {
     Jz(usize),
     Jmp(usize),
     Call { target: usize, argc: usize },
-    Lt,
-    Le,
-    Eq,
-    Neg,
-    Not,
     Cvt { src_ty: Type, dst_ty: Type },
 }
 
@@ -161,11 +148,6 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
             }
 
             IRInstr::Unary { kind, src, dst, .. } => {
-                let op = match kind {
-                    UnaryExpressionKind::Negate => Op::Neg,
-                    UnaryExpressionKind::LogicalNot | UnaryExpressionKind::BitwiseNot => Op::Not,
-                };
-
                 let src = src.load_op(ctx);
 
                 let name = match dst {
@@ -175,7 +157,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 ctx.register::<String>(name);
 
-                Ok(vec![src, op, dst.store_op(ctx)])
+                Ok(vec![src, Op::Unary(*kind), dst.store_op(ctx)])
             }
 
             IRInstr::Bin {
@@ -185,28 +167,6 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
                 dst,
                 ..
             } => {
-                let (op, swap, negate) = match kind {
-                    BinaryExpressionKind::Add => (Op::Add, false, false),
-                    BinaryExpressionKind::Sub => (Op::Sub, false, false),
-                    BinaryExpressionKind::Mul => (Op::Mul, false, false),
-                    BinaryExpressionKind::Div => (Op::Div, false, false),
-                    BinaryExpressionKind::Rem => (Op::Rem, false, false),
-                    BinaryExpressionKind::Shl => (Op::Shl, false, false),
-                    BinaryExpressionKind::Shr => (Op::Shr, false, false),
-                    BinaryExpressionKind::BitwiseOr => (Op::BitOr, false, false),
-                    BinaryExpressionKind::BitwiseAnd => (Op::BitAnd, false, false),
-                    BinaryExpressionKind::BitwiseXor => (Op::BitXor, false, false),
-                    BinaryExpressionKind::Less => (Op::Lt, false, false),
-                    BinaryExpressionKind::Greater => (Op::Lt, true, false),
-                    BinaryExpressionKind::LessEqual => (Op::Le, false, false),
-                    BinaryExpressionKind::GreaterEqual => (Op::Le, true, false),
-                    BinaryExpressionKind::Equal => (Op::Eq, false, false),
-                    BinaryExpressionKind::NotEqual => (Op::Eq, false, true),
-                    _ => unreachable!("got: {kind:?}"),
-                };
-
-                let (lhs, rhs) = if swap { (rhs, lhs) } else { (lhs, rhs) };
-
                 let name = match dst {
                     IRVal::Var { name, .. } => name,
                     IRVal::Const(_) => unreachable!(),
@@ -214,11 +174,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 
                 ctx.register::<String>(name);
 
-                let mut ops = vec![lhs.load_op(ctx), rhs.load_op(ctx), op];
-
-                if negate {
-                    ops.push(Op::Not);
-                }
+                let mut ops = vec![lhs.load_op(ctx), rhs.load_op(ctx), Op::Binary(*kind)];
 
                 ops.push(dst.store_op(ctx));
 
