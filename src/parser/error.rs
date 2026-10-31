@@ -1,4 +1,4 @@
-use crate::lexer::token::Span;
+use crate::tokenizer::token::Span;
 
 #[derive(Debug)]
 pub struct ParserError {

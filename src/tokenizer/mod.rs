@@ -1,5 +1,9 @@
-use crate::lexer::error::TokenizerError;
-use crate::lexer::token::{NumberKind, NumberToken, Span, Suffix, Token, TokenKind};
+pub mod error;
+pub mod token;
+
+use error::TokenizerError;
+use token::{NumberKind, NumberToken, Span, Suffix, Token, TokenKind};
+
 use std::iter::Peekable;
 use std::str::CharIndices;
 

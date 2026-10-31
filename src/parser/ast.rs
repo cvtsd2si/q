@@ -1,4 +1,4 @@
-use crate::lexer::token::{Span, Suffix, Token, TokenKind};
+use crate::tokenizer::token::{Span, Suffix, Token, TokenKind};
 
 #[derive(Debug)]
 pub struct Program {

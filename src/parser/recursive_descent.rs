@@ -1,4 +1,4 @@
-use crate::lexer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
+use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
     Statement, Type, UnaryExpressionKind,

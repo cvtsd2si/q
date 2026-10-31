@@ -4,7 +4,7 @@ use q::{
         r#gen::{Codegen, CodegenContext, irfy},
         optimizer::{Optimization, optimize_ir},
     },
-    lexer::tokenizer::Tokenizer,
+    tokenizer::Tokenizer,
     parser::recursive_descent::Parser,
     runtime::vm::Vm,
     semantics::{

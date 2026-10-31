@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::lexer::token::Span;
+use crate::tokenizer::token::Span;
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
     Statement, Type, UnaryExpressionKind,
