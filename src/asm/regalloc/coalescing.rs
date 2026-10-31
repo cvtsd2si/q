@@ -10,22 +10,16 @@ use super::{
     interference::{InterferenceGraph, InterferenceNode, registers_for},
 };
 
-#[derive(Debug, Clone)]
-pub struct Move {
-    pub src: String,
-    pub dst: String,
-}
-
-pub struct Coalescing {
+pub struct Coalescer {
     pub graph: InterferenceGraph,
-
-    // Original pseudo name -> surviving graph node.
-    pub representative: BTreeMap<String, InterferenceNode>,
+    /* Original pseudo name -> surviving graph node.  */
+    pub reps: BTreeMap<String, InterferenceNode>,
+    reg_classes: BTreeMap<String, RegClass>,
 }
 
-impl Coalescing {
-    pub fn new(graph: InterferenceGraph) -> Self {
-        let representative = graph
+impl Coalescer {
+    pub fn new(graph: InterferenceGraph, reg_classes: &BTreeMap<String, RegClass>) -> Self {
+        let reps = graph
             .neighbors
             .keys()
             .filter_map(|node| {
@@ -39,99 +33,80 @@ impl Coalescing {
 
         Self {
             graph,
-            representative,
+            reps,
+            reg_classes: reg_classes.to_owned(),
         }
     }
 
-    pub fn try_coalesce(&mut self, mov: &Move, classes: &BTreeMap<String, RegClass>) -> bool {
-        // Only merge pseudos belonging to the same register class.
-        let Some(&class) = classes.get(&mov.src) else {
-            return false;
-        };
+    /// Returns true if a merge was performed.
+    pub fn try_coalesce(&mut self, mov: &Move) -> bool {
+        let src = self.reps.get(&mov.src).cloned().unwrap();
+        let dst = self.reps.get(&mov.dst).cloned().unwrap();
 
-        if classes.get(&mov.dst) != Some(&class) {
-            return false;
-        }
+        let class = self.reg_classes.get(&mov.src).unwrap();
 
-        // Resolve previously merged nodes.
-        let Some(src) = self.representative.get(&mov.src).cloned() else {
-            return false;
-        };
-
-        let Some(dst) = self.representative.get(&mov.dst).cloned() else {
-            return false;
-        };
-
-        // Both original names already refer to the same node.
+        /* Both original names already refer to the same node.  */
         if src == dst {
-            return true;
+            return false;
         }
 
-        // Choose the coalescing criterion based on the
-        // CURRENT representatives, not the original names.
         match (&src, &dst) {
-            // Source is now precolored.
-            // Try merging the destination into that register.
+            /* Source is now precolored.
+             * Try merging the destination into that register.  */
             (InterferenceNode::Reg(reg), InterferenceNode::Pseudo(_)) => {
-                return self.try_coalesce_precolored(&mov.dst, *reg, classes);
+                return self.try_coalesce_precolored(&mov.dst, *reg);
             }
 
-            // Destination is now precolored.
-            // Try merging the source into that register.
+            /* Destination is now precolored.
+             * Try merging the source into that register.  */
             (InterferenceNode::Pseudo(_), InterferenceNode::Reg(reg)) => {
-                return self.try_coalesce_precolored(&mov.src, *reg, classes);
+                return self.try_coalesce_precolored(&mov.src, *reg);
             }
 
-            // We cannot merge distinct physical registers.
+            /* We cannot merge distinct physical registers.  */
             (InterferenceNode::Reg(_), InterferenceNode::Reg(_)) => {
                 return false;
             }
 
-            // Both representatives are still pseudos.
-            // Continue with the existing Briggs check below.
+            /* Both representatives are still pseudos.
+             * Continue with the existing Briggs' check below.  */
             (InterferenceNode::Pseudo(_), InterferenceNode::Pseudo(_)) => {}
         }
 
-        let Some(src_neighbors) = self.graph.neighbors.get(&src) else {
-            return false;
-        };
+        let src_neighbors = self.graph.neighbors.get(&src).cloned().unwrap();
+        let dst_neighbors = self.graph.neighbors.get(&dst).cloned().unwrap();
 
-        let Some(dst_neighbors) = self.graph.neighbors.get(&dst) else {
-            return false;
-        };
-
-        // Interfering nodes cannot share a register.
+        /* Interfering nodes cannot share a register.  */
         if src_neighbors.contains(&dst) {
             return false;
         }
 
-        // The merged node inherits both sets of neighbors.
-        let mut merged_neighbors: BTreeSet<_> =
-            src_neighbors.union(dst_neighbors).cloned().collect();
+        /* The merged node inherits both sets of neighbors.  */
+        let mut merged_neighbors: BTreeSet<_> = src_neighbors.union(&dst_neighbors).collect();
 
         merged_neighbors.remove(&src);
         merged_neighbors.remove(&dst);
 
-        let registers = registers_for(class);
+        let registers = registers_for(*class);
 
         let k = registers.len();
 
-        // Briggs' criterion:
-        //
-        // The merged node must have fewer than K
-        // significant-degree neighbors.
+        /* Briggs' criterion:
+         *
+         * The merged node must have fewer than K
+         * significant-degree neighbors.  */
         let significant = merged_neighbors
             .iter()
             .filter(|neighbor| match neighbor {
                 InterferenceNode::Reg(reg) => {
-                    // Precolored registers cannot be simplified.
-                    // Count them if they belong to this register pool.
+                    /* Precolored registers cannot be simplified.
+                     * Count them if they belong to this register pool.  */
                     registers.contains(reg)
                 }
 
                 InterferenceNode::Pseudo(name) => {
-                    // Different register classes do not compete.
-                    if classes.get(name) != Some(&class) {
+                    /* Different register classes do not compete.  */
+                    if self.reg_classes.get(name) != Some(&class) {
                         return false;
                     }
 
@@ -141,68 +116,125 @@ impl Coalescing {
                         .get(*neighbor)
                         .expect("Missing interference node");
 
-                    // A pseudo is significant if its relevant
-                    // degree is at least K.
-                    relevant_degree(neighbor, neighbors, classes) >= k
+                    /* A pseudo is significant if its relevant degree is at least K.  */
+                    relevant_degree(neighbor, neighbors, &self.reg_classes) >= k
                 }
             })
             .count();
 
-        // Reject merges that fail Briggs' criterion.
+        /* Reject merges that fail Briggs' criterion.  */
         if significant >= k {
             return false;
         }
 
-        // Keep destination, remove source.
+        /* Keep destination, remove source.  */
         self.graph.merge_nodes(&dst, &src);
 
-        // Redirect all original pseudos represented by src.
-        for representative in self.representative.values_mut() {
-            if *representative == src {
-                *representative = dst.clone();
+        /* Redirect all original pseudos represented by src.  */
+        for rep in self.reps.values_mut() {
+            if *rep == src {
+                *rep = dst.clone();
             }
         }
 
         true
     }
 
-    pub fn try_coalesce_precolored(
-        &mut self,
-        name: &str,
-        reg: AsmReg,
-        classes: &BTreeMap<String, RegClass>,
-    ) -> bool {
-        let Some(current) = self.representative.get(name).cloned() else {
-            return false;
-        };
+    /// Returns true if a merge was performed.
+    pub fn try_coalesce_precolored(&mut self, name: &str, reg: AsmReg) -> bool {
+        let current = self.reps.get(name).cloned().unwrap();
 
         let fixed = InterferenceNode::Reg(reg);
 
-        // Already assigned to this physical register.
+        /* Already assigned to this physical register.  */
         if current == fixed {
-            return true;
+            return false;
         }
 
-        // Don't attempt to merge two different physical registers.
+        /* Don't attempt to merge two different physical registers.  */
         if !matches!(&current, InterferenceNode::Pseudo(_)) {
             return false;
         }
 
-        if !can_coalesce_george(&self.graph, &current, reg, classes) {
+        if !self.can_coalesce_george(&current, reg) {
             return false;
         }
 
-        // Keep the precolored node and remove the pseudo.
+        /* Keep the precolored node and remove the pseudo.  */
         self.graph.merge_nodes(&fixed, &current);
 
-        // Redirect all aliases of the removed pseudo.
-        for representative in self.representative.values_mut() {
+        /* Redirect all aliases of the removed pseudo.  */
+        for representative in self.reps.values_mut() {
             if *representative == current {
                 *representative = fixed.clone();
             }
         }
 
         true
+    }
+
+    fn can_coalesce_george(&mut self, pseudo: &InterferenceNode, reg: AsmReg) -> bool {
+        let InterferenceNode::Pseudo(name) = pseudo else {
+            return false;
+        };
+
+        let Some(&class) = self.reg_classes.get(name) else {
+            return false;
+        };
+
+        let registers = registers_for(class);
+
+        /* For now, only coalesce with registers belonging to our allocation pool.  */
+        if !registers.contains(&reg) {
+            return false;
+        }
+
+        let fixed = InterferenceNode::Reg(reg);
+
+        let Some(pseudo_neighbors) = self.graph.neighbors.get(pseudo) else {
+            return false;
+        };
+
+        let Some(fixed_neighbors) = self.graph.neighbors.get(&fixed) else {
+            return false;
+        };
+
+        /* Direct interference makes coalescing impossible.  */
+        if pseudo_neighbors.contains(&fixed) {
+            return false;
+        }
+
+        let k = registers.len();
+
+        /* George's criterion:
+         * Every neighbor of the pseudo must be insignificant,
+         * precolored, or already interfere with the target.  */
+        pseudo_neighbors.iter().all(|neighbor| {
+            match neighbor {
+                InterferenceNode::Reg(_) => {
+                    /* Physical registers are already colored.  */
+                    true
+                }
+
+                InterferenceNode::Pseudo(other) if self.reg_classes.get(other) != Some(&class) => {
+                    /* Different register classes don't compete.  */
+                    true
+                }
+
+                InterferenceNode::Pseudo(_) => {
+                    /* The neighbor already interferes with
+                     * the target register.  */
+                    if fixed_neighbors.contains(neighbor) {
+                        return true;
+                    }
+
+                    /* Otherwise it must be low-degree.  */
+                    self.graph.neighbors.get(neighbor).is_some_and(|neighbors| {
+                        relevant_degree(neighbor, neighbors, &self.reg_classes) < k
+                    })
+                }
+            }
+        })
     }
 }
 
@@ -225,77 +257,6 @@ pub fn collect_moves(instructions: &[AsmInstr]) -> Vec<Move> {
     }
 
     moves
-}
-
-fn can_coalesce_george(
-    graph: &InterferenceGraph,
-    pseudo: &InterferenceNode,
-    reg: AsmReg,
-    classes: &BTreeMap<String, RegClass>,
-) -> bool {
-    let InterferenceNode::Pseudo(name) = pseudo else {
-        return false;
-    };
-
-    let Some(&class) = classes.get(name) else {
-        return false;
-    };
-
-    let registers = registers_for(class);
-
-    // For now, only coalesce with registers belonging
-    // to our allocation pool.
-    if !registers.contains(&reg) {
-        return false;
-    }
-
-    let fixed = InterferenceNode::Reg(reg);
-
-    let Some(pseudo_neighbors) = graph.neighbors.get(pseudo) else {
-        return false;
-    };
-
-    let Some(fixed_neighbors) = graph.neighbors.get(&fixed) else {
-        return false;
-    };
-
-    // Direct interference makes coalescing impossible.
-    if pseudo_neighbors.contains(&fixed) {
-        return false;
-    }
-
-    let k = registers.len();
-
-    // George's criterion:
-    // Every neighbor of the pseudo must be insignificant,
-    // precolored, or already interfere with the target.
-    pseudo_neighbors.iter().all(|neighbor| {
-        match neighbor {
-            InterferenceNode::Reg(_) => {
-                // Physical registers are already colored.
-                true
-            }
-
-            InterferenceNode::Pseudo(other) if classes.get(other) != Some(&class) => {
-                // Different register classes don't compete.
-                true
-            }
-
-            InterferenceNode::Pseudo(_) => {
-                // The neighbor already interferes with
-                // the target register.
-                if fixed_neighbors.contains(neighbor) {
-                    return true;
-                }
-
-                // Otherwise it must be low-degree.
-                graph
-                    .neighbors
-                    .get(neighbor)
-                    .is_some_and(|neighbors| relevant_degree(neighbor, neighbors, classes) < k)
-            }
-        }
-    })
 }
 
 /// Iterate through the instructions and collect pseudo-to-physical (or vice-versa),
@@ -323,4 +284,10 @@ pub fn collect_precolored_moves(instructions: &[AsmInstr]) -> Vec<(String, AsmRe
     }
 
     moves
+}
+
+#[derive(Debug, Clone)]
+pub struct Move {
+    pub src: String,
+    pub dst: String,
 }

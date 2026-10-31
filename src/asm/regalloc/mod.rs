@@ -2,7 +2,7 @@ mod coalescing;
 mod interference;
 
 use self::{
-    coalescing::{Coalescing, collect_moves, collect_precolored_moves},
+    coalescing::{Coalescer, collect_moves, collect_precolored_moves},
     interference::{InterferenceGraph, InterferenceNode},
 };
 use crate::{
@@ -81,27 +81,25 @@ impl Regalloc for AsmFunc {
         let precolored_moves = collect_precolored_moves(&self.body);
 
         /* Coalesce pseudo-registers.  */
-        let mut coalescing = Coalescing::new(graph);
+        let mut coalescing = Coalescer::new(graph, &reg_classes);
 
         loop {
-            /* Remember the number of nodes before this pass.  */
-            let before = coalescing.graph.neighbors.len();
+            let mut changed = false;
 
-            /* Attempt pseudo-to-pseudo coalescing.  */
+            /* Attempt pseudo-to-pseudo coalescing.
+             *
+             * NOTE: `try_coalesce()` also calls `try_coalesce_precolored()`
+             *       so if the move is eligible, it might end up coalesced here.  */
             for mov in &moves {
-                coalescing.try_coalesce(mov, &reg_classes);
+                changed |= coalescing.try_coalesce(mov);
             }
 
             /* Attempt pseudo-to-precolored coalescing.  */
             for (name, reg) in &precolored_moves {
-                coalescing.try_coalesce_precolored(name, *reg, &reg_classes);
+                changed |= coalescing.try_coalesce_precolored(name, *reg);
             }
 
-            /* A successful merge removes exactly one graph node.
-             *
-             * If the node count has not changed, this pass made
-             * no progress and we have reached a fixed point.  */
-            if coalescing.graph.neighbors.len() == before {
+            if !changed {
                 break;
             }
         }
@@ -118,7 +116,7 @@ impl Regalloc for AsmFunc {
         let mut spill_costs = BTreeMap::new();
 
         for (name, cost) in original_costs {
-            if let Some(rep) = coalescing.representative.get(&name) {
+            if let Some(rep) = coalescing.reps.get(&name) {
                 if let InterferenceNode::Pseudo(rep) = rep {
                     *spill_costs.entry(rep.clone()).or_insert(0) += cost;
                 }
@@ -129,14 +127,14 @@ impl Regalloc for AsmFunc {
         let (colored, spilled) = coalescing.graph.color(&reg_classes, &spill_costs);
 
         /* Assign stack slots to spilled representatives.  */
-        let spill_sizes = collect_spill_sizes(&self.body, &coalescing.representative);
+        let spill_sizes = collect_spill_sizes(&self.body, &coalescing.reps);
         let (spill_slots, space) = assign_spill_slots(&spilled, &spill_sizes, self.space);
 
         /* Restore locations for every original pseudo.  */
         let mut assignments = BTreeMap::new();
         let mut slots = BTreeMap::new();
 
-        for (name, representative) in &coalescing.representative {
+        for (name, representative) in &coalescing.reps {
             match representative {
                 /* This pseudo was merged into a physical register.  */
                 InterferenceNode::Reg(reg) => {
