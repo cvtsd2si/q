@@ -4,7 +4,6 @@ use q::{
         r#gen::{Codegen, CodegenContext, irfy},
         optimizer::{Optimization, optimize_ir},
     },
-    tokenizer::Tokenizer,
     parser::recursive_descent::Parser,
     runtime::vm::Vm,
     semantics::{
@@ -13,6 +12,7 @@ use q::{
         resolver::{Resolve, Resolver},
         typechecker::{Typecheck, Typechecker},
     },
+    tokenizer::Tokenizer,
 };
 
 use std::{collections::VecDeque, path::PathBuf};

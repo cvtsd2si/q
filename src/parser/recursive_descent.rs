@@ -1,9 +1,9 @@
-use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
     Statement, Type, UnaryExpressionKind,
 };
 use crate::parser::error::ParserError;
+use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use std::collections::VecDeque;
 
 pub struct Parser<'src> {

@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 
-use crate::tokenizer::token::Span;
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
     Statement, Type, UnaryExpressionKind,
 };
+use crate::tokenizer::token::Span;
 
 pub struct Typechecker {
     pub sym_table: HashMap<String, Symbol>,
