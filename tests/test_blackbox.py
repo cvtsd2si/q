@@ -1214,11 +1214,12 @@ def test_program(program: Path, jit: bool, optimizations: bool):
 
     if optimizations:
         cmd.extend([
-            "--constant-folding",
-            "--constant-propagation",
-            "--copy-propagation",
-            "--dead-store-elimination",
-            "--unreachable-code-elimination",
+            "--optimizations",
+            "constant_folding",
+            "constant_propagation",
+            "copy_propagation",
+            "dead_store_elimination",
+            "unreachable_code_elimination",
         ])
 
     expected = TEST_CASES[program.name]

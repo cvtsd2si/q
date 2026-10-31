@@ -67,29 +67,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let mut optimizations = vec![];
-
-    if opts.constant_folding {
-        optimizations.push(Optimization::ConstantFolding);
-    }
-
-    if opts.constant_propagation {
-        optimizations.push(Optimization::ConstantPropagation);
-    }
-
-    if opts.copy_propagation {
-        optimizations.push(Optimization::CopyPropagation);
-    }
-
-    if opts.dead_store_elimination {
-        optimizations.push(Optimization::DeadStoreElimination);
-    }
-
-    if opts.unreachable_code_elimination {
-        optimizations.push(Optimization::UnreachableCodeElimination);
-    }
-
-    let ir = optimize_ir(irfy(&typechecked_ast), &optimizations);
+    let ir = optimize_ir(irfy(&typechecked_ast), &opts.optimizations);
 
     if opts.ir {
         println!("{:#?}", ir);
@@ -131,20 +109,8 @@ struct Opt {
     #[structopt(name = "ir", long)]
     ir: bool,
 
-    #[structopt(name = "constant-folding", long)]
-    constant_folding: bool,
-
-    #[structopt(name = "constant-propagation", long)]
-    constant_propagation: bool,
-
-    #[structopt(name = "copy-propagation", long)]
-    copy_propagation: bool,
-
-    #[structopt(name = "dead-store-elimination", long)]
-    dead_store_elimination: bool,
-
-    #[structopt(name = "unreachable-code-elimination", long)]
-    unreachable_code_elimination: bool,
+    #[structopt(name = "optimizations", long)]
+    optimizations: Vec<Optimization>,
 
     #[structopt(name = "bytecode", long)]
     bytecode: bool,
