@@ -2470,7 +2470,10 @@ impl Codegen<AsmOp, CodegenContext> for IRVal {
                 Literal::Int64(int64) => Ok(AsmOp::Imm(*int64)),
                 Literal::Bool(boolean) => Ok(AsmOp::Imm(if *boolean { 1 } else { 0 })),
                 Literal::Float32(_) | Literal::Float64(_) => {
-                    Ok(AsmOp::Data(ctx.intern_float(*konst), 0))
+                    let interned = ctx.intern_float(*konst);
+                    let op = AsmOp::Data(interned, 0);
+
+                    Ok(op)
                 }
             },
             IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
