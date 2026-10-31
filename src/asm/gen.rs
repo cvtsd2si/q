@@ -475,9 +475,9 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
                 as isize;
 
             body.push(AsmInstr::Comment(format!(
-                "Put {offset}({}) into {}",
-                param.name,
+                "Put 0x{offset:x}({}) into {}",
                 JIT_ARGS.as_width(AsmType::Quad),
+                param.name,
             )));
             body.push(AsmInstr::Mov {
                 src: AsmOp::Mem(JIT_ARGS, offset),
