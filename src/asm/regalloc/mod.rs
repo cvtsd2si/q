@@ -1,8 +1,11 @@
+pub mod error;
+
 mod coalescing;
 mod interference;
 
 use self::{
     coalescing::{Coalescer, collect_moves, collect_precolored_moves},
+    error::RegAllocError,
     interference::{InterferenceGraph, InterferenceNode},
 };
 use crate::{
@@ -44,7 +47,7 @@ impl Regalloc for AsmFunc {
             .iter()
             .enumerate()
             .map(|(idx, instr)| {
-                if !is_call(instr) {
+                if !instr.is_call() {
                     return BTreeSet::new();
                 }
 
@@ -168,7 +171,7 @@ impl Regalloc for AsmFunc {
         let mut new_body = Vec::new();
 
         for (idx, instr) in old_body.into_iter().enumerate() {
-            if !is_call(&instr) {
+            if !instr.is_call() {
                 new_body.push(instr);
                 continue;
             }
@@ -317,28 +320,28 @@ fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
         }
     }
 
-    // Each GP push consumes 8 bytes.
+    /* Each GP push consumes `GP_PUSH_BYTES`.  */
     let gp_bytes = gp.len() * GP_PUSH_BYTES;
 
-    // Each scalar SSE save consumes 8 bytes.
+    /* Each scalar SSE save consumes `SSE_CALL_SAVE_TY.size()` bytes.  */
     let sse_bytes = sse.len() * SSE_CALL_SAVE_TY.size();
 
-    // Ensure the total stack adjustment is a multiple of SYSV_STACK_ALIGNMENT.
+    /* Ensure the total stack adjustment is a multiple of `SYSV_STACK_ALIGNMENT`.  */
     let total = (gp_bytes + sse_bytes).div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
 
-    // GP registers are saved using push.
-    // SSE registers and alignment padding use sub %rsp.
+    /* GP registers are saved using push.
+     * SSE registers and alignment padding use sub %rsp.  */
     let stack_bytes = total - gp_bytes;
 
     let mut save = Vec::new();
     let mut restore = Vec::new();
 
-    // 1. Save GP registers.
+    /* Save GP registers.  */
     for &reg in &gp {
         save.push(AsmInstr::Push(AsmOp::Reg(reg)));
     }
 
-    // 2. Reserve SSE slots and alignment padding.
+    /* Reserve SSE slots and alignment padding.  */
     if stack_bytes != 0 {
         save.push(AsmInstr::Bin {
             kind: AsmInstrBinKind::Sub,
@@ -348,7 +351,7 @@ fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
         });
     }
 
-    // 3. Save XMM registers.
+    /* Save XMM registers.  */
     for (idx, &reg) in sse.iter().enumerate() {
         save.push(AsmInstr::Mov {
             src: AsmOp::Reg(reg),
@@ -359,7 +362,7 @@ fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
 
     /* Function call here.  */
 
-    // 4. Restore XMM registers.
+    /* Restore XMM registers.  */
     for (idx, &reg) in sse.iter().enumerate().rev() {
         restore.push(AsmInstr::Mov {
             src: AsmOp::Mem(AsmReg::Sp, (idx * 8) as isize),
@@ -368,7 +371,7 @@ fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
         });
     }
 
-    // 5. Release SSE slots and alignment padding.
+    /* Release SSE slots and alignment padding.  */
     if stack_bytes != 0 {
         restore.push(AsmInstr::Bin {
             kind: AsmInstrBinKind::Add,
@@ -378,7 +381,7 @@ fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
         });
     }
 
-    // 6. Restore GP registers in reverse order.
+    /* Restore GP registers in reverse order.  */
     for &reg in gp.iter().rev() {
         restore.push(AsmInstr::Pop(AsmOp::Reg(reg)));
     }
@@ -747,24 +750,11 @@ impl AsmInstr {
             | Self::Newline => [None, None],
         }
     }
-}
 
-fn is_call(instr: &AsmInstr) -> bool {
-    matches!(
-        instr,
-        AsmInstr::Call { .. } | AsmInstr::CallIndirect { .. } | AsmInstr::CallRt { .. }
-    )
-}
-
-#[derive(Debug)]
-pub struct RegAllocError {
-    pub msg: String,
-}
-
-impl std::error::Error for RegAllocError {}
-
-impl std::fmt::Display for RegAllocError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "regalloc: {}", self.msg)
+    fn is_call(&self) -> bool {
+        matches!(
+            self,
+            AsmInstr::Call { .. } | AsmInstr::CallIndirect { .. } | AsmInstr::CallRt { .. }
+        )
     }
 }

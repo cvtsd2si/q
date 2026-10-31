@@ -1,7 +1,7 @@
 use crate::asm::{
     abi,
     r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmType},
-    regalloc::RegAllocError,
+    regalloc::error::RegAllocError,
 };
 use std::collections::VecDeque;
 
