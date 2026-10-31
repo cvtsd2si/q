@@ -17,49 +17,22 @@ pub struct CodegenContext {
     pub current_fn: String,
     pub locals: HashMap<String, usize>,
     pub funcs: HashMap<String, usize>,
-    pub static_consts: Vec<IRStaticConst>,
+    pub static_consts: Vec<StaticConst>,
     pub float_pool: HashMap<(u8, u64), String>,
-}
-
-impl CodegenContext {
-    pub fn new() -> Self {
-        Self {
-            current_fn: String::new(),
-            locals: HashMap::new(),
-            funcs: HashMap::new(),
-            static_consts: Vec::new(),
-            float_pool: HashMap::new(),
-        }
-    }
-
-    pub fn intern_float(&mut self, literal: Literal) -> String {
-        let (key, ty, init) = match literal {
-            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
-            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
-            _ => unreachable!(),
-        };
-
-        if let Some(name) = self.float_pool.get(&key) {
-            return name.clone();
-        }
-
-        let name = format!(".LC{}", mktmp());
-
-        self.static_consts.push(IRStaticConst {
-            name: name.clone(),
-            ty,
-            init,
-            alignment: ty.alignment(),
-        });
-
-        name
-    }
 }
 
 impl Default for CodegenContext {
     fn default() -> Self {
         Self::new()
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct StaticConst {
+    pub name: String,
+    pub init: StaticInit,
+    pub ty: Type,
+    pub alignment: usize,
 }
 
 impl Ctx for CodegenContext {
@@ -464,7 +437,6 @@ fn fmt_conversion(
 #[derive(Debug)]
 pub struct IRProg {
     pub funcs: Vec<IRFunc>,
-    pub static_consts: Vec<IRStaticConst>,
 }
 
 #[derive(Debug, Clone)]
@@ -490,10 +462,7 @@ pub enum StaticInit {
 }
 
 pub fn irfy(ast: &Program) -> IRProg {
-    let mut ir_prog = IRProg {
-        funcs: vec![],
-        static_consts: vec![],
-    };
+    let mut ir_prog = IRProg { funcs: vec![] };
 
     for block_item in &ast.block_items {
         irfy_block_item(&mut ir_prog, block_item);

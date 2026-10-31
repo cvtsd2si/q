@@ -2,9 +2,9 @@ use crate::asm::abi::{JIT_RT, RT_CALL_SCRATCH, SYSV_GP_RETURN};
 use crate::{
     asm::r#gen::{
         AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
-        AsmStaticConst, AsmType,
+        AsmType,
     },
-    ir::r#gen::StaticInit,
+    ir::r#gen::{StaticConst, StaticInit},
 };
 use std::fmt::Write;
 
@@ -37,7 +37,7 @@ impl Emit for AsmFunc {
     }
 }
 
-impl Emit for AsmStaticConst {
+impl Emit for StaticConst {
     fn emit(&self, f: &mut String) -> Result<(), std::fmt::Error> {
         writeln!(f)?;
 

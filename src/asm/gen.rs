@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     asm::abi::{
         GP_SCRATCH_1, GP_SCRATCH_2, JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD,
@@ -5,7 +7,7 @@ use crate::{
     },
     bytecode::r#gen::BytecodeFunc,
     ir::r#gen::{
-        Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRStaticConst, IRVal, StaticInit,
+        Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, StaticConst, StaticInit,
         mktmp,
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
@@ -25,7 +27,7 @@ pub enum CallConv {
 #[derive(Debug)]
 pub struct AsmProg {
     pub funcs: Vec<AsmFunc>,
-    pub static_consts: Vec<AsmStaticConst>,
+    pub static_consts: Vec<StaticConst>,
 }
 
 #[derive(Debug)]
@@ -33,14 +35,6 @@ pub struct AsmFunc {
     pub name: String,
     pub body: Vec<AsmInstr>,
     pub space: usize,
-}
-
-#[derive(Debug, Clone)]
-pub struct AsmStaticConst {
-    pub name: String,
-    pub init: StaticInit,
-    pub ty: Type,
-    pub alignment: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -451,7 +445,7 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
             static_consts: ctx
                 .static_consts
                 .iter()
-                .map(|konst| AsmStaticConst {
+                .map(|konst| StaticConst {
                     name: konst.name.clone(),
                     init: konst.init,
                     ty: konst.ty,
@@ -2051,7 +2045,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
                         let i64_ceil_as_f64 = i64_ceil_as_u64 as f64;
 
-                        let static_const = IRStaticConst {
+                        let static_const = StaticConst {
                             name: format!("static_const.{}", mktmp()),
                             init: StaticInit::Double(i64_ceil_as_f64),
                             ty: Type::Float64,
@@ -2234,7 +2228,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
                         let i64_ceil_as_u64 = (i64::MAX as u64) + 1;
                         let i64_ceil_as_f32 = i64_ceil_as_u64 as f32;
 
-                        let static_const = IRStaticConst {
+                        let static_const = StaticConst {
                             name: format!("static_const.{}", mktmp()),
                             init: StaticInit::Float(i64_ceil_as_f32),
                             ty: Type::Float32,
@@ -2539,4 +2533,39 @@ where
     });
     body.sink(AsmInstr::Pop(AsmOp::Reg(AsmReg::Bp)));
     body.sink(AsmInstr::Newline);
+}
+
+impl CodegenContext {
+    pub fn new() -> Self {
+        Self {
+            current_fn: String::new(),
+            locals: HashMap::new(),
+            funcs: HashMap::new(),
+            static_consts: Vec::new(),
+            float_pool: HashMap::new(),
+        }
+    }
+
+    pub fn intern_float(&mut self, literal: Literal) -> String {
+        let (key, ty, init) = match literal {
+            Literal::Float32(v) => ((4, v.to_bits() as u64), Type::Float32, StaticInit::Float(v)),
+            Literal::Float64(v) => ((8, v.to_bits()), Type::Float64, StaticInit::Double(v)),
+            _ => unreachable!(),
+        };
+
+        if let Some(name) = self.float_pool.get(&key) {
+            return name.clone();
+        }
+
+        let name = format!(".LC{}", mktmp());
+
+        self.static_consts.push(StaticConst {
+            name: name.clone(),
+            ty,
+            init,
+            alignment: ty.alignment(),
+        });
+
+        name
+    }
 }

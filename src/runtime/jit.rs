@@ -10,13 +10,13 @@ use crate::{
         emitter::Emit,
         fixup::Fixup,
         r#gen::{
-            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmStaticConst, AsmType, CallConv,
-            insert_epilogue, insert_prologue,
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmOp, AsmReg, AsmType, CallConv, insert_epilogue,
+            insert_prologue,
         },
         regalloc::Regalloc,
     },
     bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg},
+    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, StaticConst},
     runtime::{
         rt::Rt,
         value::{Value, ValueTag},
@@ -133,7 +133,7 @@ impl JitCompiler {
         })?;
 
         for konst in &ctx.static_consts {
-            AsmStaticConst {
+            StaticConst {
                 name: konst.name.clone(),
                 init: konst.init,
                 ty: konst.ty,
