@@ -39,7 +39,7 @@ pub struct BytecodeFunc {
     pub ir_map: Vec<usize>,
 }
 
-impl Codegen<BytecodeProg, CodegenContext> for IRProg {
+impl Codegen<BytecodeProg> for IRProg {
     fn codegen(
         &self,
         ctx: &mut CodegenContext,
@@ -58,7 +58,7 @@ impl Codegen<BytecodeProg, CodegenContext> for IRProg {
     }
 }
 
-impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
+impl Codegen<BytecodeFunc> for IRFunc {
     fn codegen(
         &self,
         ctx: &mut CodegenContext,
@@ -122,7 +122,7 @@ impl Codegen<BytecodeFunc, CodegenContext> for IRFunc {
     }
 }
 
-impl Codegen<Bytecode, CodegenContext> for IRInstr {
+impl Codegen<Bytecode> for IRInstr {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
         match self {
             IRInstr::Cpy { src, src_ty, dst } => {

@@ -9,8 +9,8 @@ use crate::{
 
 use std::{any::TypeId, collections::HashMap};
 
-pub trait Codegen<T, U> {
-    fn codegen(&self, ctx: &mut U) -> Result<T, Box<dyn std::error::Error>>;
+pub trait Codegen<T> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<T, Box<dyn std::error::Error>>;
 }
 
 #[derive(Debug)]

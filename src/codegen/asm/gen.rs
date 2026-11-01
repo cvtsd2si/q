@@ -440,7 +440,7 @@ impl AsmReg {
     }
 }
 
-impl Codegen<AsmProg, CodegenContext> for IRProg {
+impl Codegen<AsmProg> for IRProg {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmProg, Box<dyn std::error::Error>> {
         Ok(AsmProg {
             funcs: self
@@ -462,7 +462,7 @@ impl Codegen<AsmProg, CodegenContext> for IRProg {
     }
 }
 
-impl Codegen<AsmFunc, CodegenContext> for IRFunc {
+impl Codegen<AsmFunc> for IRFunc {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmFunc, Box<dyn std::error::Error>> {
         ctx.current_fn = self.name.clone();
 
@@ -508,7 +508,7 @@ impl Codegen<AsmFunc, CodegenContext> for IRFunc {
     }
 }
 
-impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
+impl Codegen<Vec<AsmInstr>> for IRInstr {
     fn codegen(
         &self,
         ctx: &mut CodegenContext,
@@ -2462,7 +2462,7 @@ impl Codegen<Vec<AsmInstr>, CodegenContext> for IRInstr {
     }
 }
 
-impl Codegen<AsmOp, CodegenContext> for IRVal {
+impl Codegen<AsmOp> for IRVal {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
         match self {
             IRVal::Const(konst) => match konst {
