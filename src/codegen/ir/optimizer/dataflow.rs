@@ -1,5 +1,5 @@
 use crate::analysis::cfg::Cfg;
-use crate::ir::r#gen::{IRFunc, IRInstr};
+use crate::codegen::ir::r#gen::{IRFunc, IRInstr};
 
 pub(super) fn run_forward<F: Clone + Default>(
     func: &mut IRFunc,

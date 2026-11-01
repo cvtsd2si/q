@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ir::r#gen::mktmp,
+    codegen::ir::r#gen::mktmp,
     parser::ast::{BlockItem, Declaration, Expression, Param, Program, Statement, Type},
 };
 

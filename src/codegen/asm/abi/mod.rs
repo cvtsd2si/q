@@ -1,7 +1,7 @@
 pub mod amd64;
 pub mod internal;
 
-use crate::asm::{
+use crate::codegen::asm::{
     abi::{
         amd64::{SYSV_GP_ARG_REGS, SYSV_SSE_ARG_REGS},
         internal::JIT_CALL_LIVE_INS,

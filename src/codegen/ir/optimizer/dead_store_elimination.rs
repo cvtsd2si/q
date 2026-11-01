@@ -1,7 +1,7 @@
 use crate::{
     analysis::cfg::Cfg,
     analysis::liveness::Liveness,
-    ir::r#gen::{IRFunc, IRInstr, IRVal},
+    codegen::ir::r#gen::{IRFunc, IRInstr, IRVal},
     parser::ast::BinaryExpressionKind,
 };
 

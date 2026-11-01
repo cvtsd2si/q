@@ -1,4 +1,4 @@
-use crate::ir::r#gen::{IRInstr, IRVal};
+use crate::codegen::ir::r#gen::{IRInstr, IRVal};
 
 pub(super) fn visit_reads(instr: &mut IRInstr, mut visit: impl FnMut(&mut IRVal)) {
     match instr {

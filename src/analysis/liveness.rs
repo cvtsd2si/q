@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::hash::Hash;
 
 use crate::analysis::cfg::Cfg;
-use crate::ir::r#gen::{IRInstr, IRVal};
+use crate::codegen::ir::r#gen::{IRInstr, IRVal};
 
 #[derive(Debug)]
 pub struct Liveness<V = String> {

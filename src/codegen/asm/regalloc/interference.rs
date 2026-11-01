@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     analysis::liveness::{Liveness, LivenessInstruction},
-    asm::{
+    codegen::asm::{
         abi::amd64::{GP_ALLOCATABLE, SSE_ALLOCATABLE},
         r#gen::{AsmInstr, AsmOp, AsmReg},
         regalloc::{AsmLocation, RegClass},

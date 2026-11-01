@@ -1,8 +1,11 @@
 use q::{
-    bytecode::r#gen::BytecodeProg,
-    ir::{
-        r#gen::{Codegen, CodegenContext, irfy},
-        optimizer::{Optimization, optimize_ir},
+    codegen::{
+        bytecode::r#gen::BytecodeProg,
+        ir::{
+            r#gen::irfy,
+            optimizer::{Optimization, optimize_ir},
+        },
+        {Codegen, CodegenContext},
     },
     parser::recursive_descent::Parser,
     runtime::vm::Vm,

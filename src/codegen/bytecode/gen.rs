@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 
 use crate::{
-    ir::r#gen::{Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal},
+    codegen::{
+        ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal},
+        {Codegen, CodegenContext, Ctx},
+    },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
 };
 

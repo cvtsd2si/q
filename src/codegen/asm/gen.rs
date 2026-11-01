@@ -1,19 +1,20 @@
 use std::collections::HashMap;
 
 use crate::{
-    asm::abi::{
-        amd64::{
-            GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
-            rt_arg_reg,
+    codegen::{
+        asm::abi::{
+            amd64::{
+                GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
+                rt_arg_reg,
+            },
+            internal::{
+                JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG,
+                JIT_VM,
+            },
         },
-        internal::{
-            JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_VM,
-        },
-    },
-    bytecode::r#gen::BytecodeFunc,
-    ir::r#gen::{
-        Codegen, CodegenContext, Ctx, IRFunc, IRInstr, IRProg, IRVal, StaticConst, StaticInit,
-        mktmp,
+        bytecode::r#gen::BytecodeFunc,
+        ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal, StaticInit, mktmp},
+        {Codegen, CodegenContext, Ctx, StaticConst},
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{

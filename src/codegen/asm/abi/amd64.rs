@@ -1,4 +1,4 @@
-use crate::asm::r#gen::{AsmReg, AsmType, RtFn};
+use crate::codegen::asm::r#gen::{AsmReg, AsmType, RtFn};
 
 /// SystemV AMD64 ABI (Linux x86-64)
 ///

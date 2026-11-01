@@ -1,5 +1,5 @@
-use crate::asm::abi::amd64::{GP_SCRATCH_1, SYSV_GP_ARG_REGS, SYSV_GP_RETURN};
-use crate::asm::r#gen::AsmReg;
+use crate::codegen::asm::abi::amd64::{GP_SCRATCH_1, SYSV_GP_ARG_REGS, SYSV_GP_RETURN};
+use crate::codegen::asm::r#gen::AsmReg;
 
 /// Register used to hold the pointer to the argument array in the internal ABI.
 pub const JIT_ARGS: AsmReg = AsmReg::Di;

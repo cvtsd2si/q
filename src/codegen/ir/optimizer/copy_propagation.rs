@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
-    ir::r#gen::{IRFunc, IRInstr, IRVal},
+    codegen::ir::r#gen::{IRFunc, IRInstr, IRVal},
     parser::ast::Type,
 };
 

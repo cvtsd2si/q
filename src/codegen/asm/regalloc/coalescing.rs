@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::asm::{
+use crate::codegen::asm::{
     r#gen::{AsmInstr, AsmOp, AsmReg},
     regalloc::interference::relevant_degree,
 };

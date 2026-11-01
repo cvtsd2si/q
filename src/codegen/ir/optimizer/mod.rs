@@ -8,7 +8,7 @@ mod visit_reads;
 
 use std::str::FromStr;
 
-use crate::ir::r#gen::IRProg;
+use crate::codegen::ir::r#gen::IRProg;
 
 #[derive(Debug, Clone, Copy)]
 pub enum Optimization {

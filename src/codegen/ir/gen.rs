@@ -1,72 +1,9 @@
-use std::{any::TypeId, collections::HashMap, sync::atomic::AtomicU64};
+use std::sync::atomic::AtomicU64;
 
-use crate::{
-    bytecode::r#gen::BytecodeFunc,
-    parser::ast::{
-        BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program,
-        Statement, Type, UnaryExpressionKind,
-    },
+use crate::parser::ast::{
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program, Statement,
+    Type, UnaryExpressionKind,
 };
-
-pub trait Codegen<T, U> {
-    fn codegen(&self, ctx: &mut U) -> Result<T, Box<dyn std::error::Error>>;
-}
-
-#[derive(Debug)]
-pub struct CodegenContext {
-    pub current_fn: String,
-    pub locals: HashMap<String, usize>,
-    pub funcs: HashMap<String, usize>,
-    pub static_consts: Vec<StaticConst>,
-    pub float_pool: HashMap<(u8, u64), String>,
-}
-
-impl Default for CodegenContext {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StaticConst {
-    pub name: String,
-    pub init: StaticInit,
-    pub ty: Type,
-    pub alignment: usize,
-}
-
-impl Ctx for CodegenContext {
-    fn get<T: 'static>(&self, name: &str) -> Option<usize> {
-        match TypeId::of::<T>() {
-            id if id == TypeId::of::<String>() => self.locals.get(name).copied(),
-            id if id == TypeId::of::<BytecodeFunc>() => self.funcs.get(name).copied(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn register<T: 'static>(&mut self, name: &str) -> usize {
-        let structure = match TypeId::of::<T>() {
-            id if id == TypeId::of::<String>() => &mut self.locals,
-            id if id == TypeId::of::<BytecodeFunc>() => &mut self.funcs,
-            _ => unreachable!(),
-        };
-
-        if let Some(&idx) = structure.get(name) {
-            return idx;
-        }
-
-        let idx = structure.len();
-
-        structure.insert(name.to_owned(), idx);
-
-        idx
-    }
-}
-
-pub trait Ctx {
-    fn get<T: 'static>(&self, name: &str) -> Option<usize>;
-    fn register<T: 'static>(&mut self, name: &str) -> usize;
-}
 
 #[derive(Debug, Clone)]
 pub enum IRVal {

@@ -13,7 +13,7 @@ use crate::{
         cfg::Cfg,
         liveness::{Liveness, LivenessInstruction, UseDef},
     },
-    asm::{
+    codegen::asm::{
         abi::{
             amd64::{
                 CALLER_SAVED, GP_PUSH_BYTES, SSE_CALL_SAVE_TY, SYSV_STACK_ALIGNMENT,

@@ -1,5 +1,5 @@
 use crate::{
-    ir::r#gen::{IRFunc, IRInstr, IRVal},
+    codegen::ir::r#gen::{IRFunc, IRInstr, IRVal},
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::value::Value,
 };

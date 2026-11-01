@@ -1,5 +1,5 @@
 use crate::analysis::cfg::Cfg;
-use crate::ir::r#gen::IRFunc;
+use crate::codegen::ir::r#gen::IRFunc;
 
 pub(super) fn run(func: &mut IRFunc) -> bool {
     let cfg = Cfg::build(&func.body).unwrap();

@@ -1,5 +1,5 @@
 use crate::{
-    asm::{
+    codegen::asm::{
         abi::{
             amd64::SYSV_GP_RETURN,
             internal::{JIT_RT, RT_CALL_SCRATCH},
@@ -9,7 +9,7 @@ use crate::{
             AsmProg, AsmType,
         },
     },
-    ir::r#gen::{StaticConst, StaticInit},
+    codegen::{StaticConst, ir::r#gen::StaticInit},
 };
 use std::fmt::Write;
 

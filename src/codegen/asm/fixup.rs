@@ -1,4 +1,4 @@
-use crate::asm::{
+use crate::codegen::asm::{
     abi::amd64::{GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1},
     r#gen::{AsmFunc, AsmInstr, AsmOp, AsmProg, AsmType},
     regalloc::error::RegAllocError,

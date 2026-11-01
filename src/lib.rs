@@ -1,40 +1,6 @@
+pub mod analysis;
+pub mod codegen;
+pub mod parser;
+pub mod runtime;
+pub mod semantics;
 pub mod tokenizer;
-
-pub mod parser {
-    pub mod ast;
-    pub mod error;
-    pub mod recursive_descent;
-}
-
-pub mod ir;
-
-pub mod asm {
-    pub mod abi;
-    pub mod emitter;
-    pub mod fixup;
-    pub mod r#gen;
-    pub mod regalloc;
-}
-
-pub mod bytecode {
-    pub mod r#gen;
-}
-
-pub mod runtime {
-    pub mod jit;
-    pub mod rt;
-    pub mod value;
-    pub mod vm;
-}
-
-pub mod semantics {
-    pub mod label_collector;
-    pub mod loop_labeler;
-    pub mod resolver;
-    pub mod typechecker;
-}
-
-pub mod analysis {
-    pub mod cfg;
-    pub mod liveness;
-}

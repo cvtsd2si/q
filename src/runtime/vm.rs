@@ -1,6 +1,6 @@
 use crate::{
-    bytecode::r#gen::{BytecodeProg, Op},
-    ir::r#gen::{IRInstr, IRProg},
+    codegen::bytecode::r#gen::{BytecodeProg, Op},
+    codegen::ir::r#gen::{IRInstr, IRProg},
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
         jit::{

@@ -4,8 +4,8 @@ use std::{
 };
 
 use crate::{
-    asm::r#gen::AsmInstr,
-    ir::r#gen::{IRFunc, IRInstr},
+    codegen::asm::r#gen::AsmInstr,
+    codegen::ir::r#gen::{IRFunc, IRInstr},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
