@@ -15,9 +15,12 @@ use crate::{
     },
     asm::{
         abi::{
-            CALLER_SAVED, GP_PUSH_BYTES, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG,
-            JIT_RT, SSE_CALL_SAVE_TY, SYSV_STACK_ALIGNMENT, call_live_in_regs, needs_caller_save,
-            rt_arg_regs,
+            amd64::{
+                CALLER_SAVED, GP_PUSH_BYTES, SSE_CALL_SAVE_TY, SYSV_STACK_ALIGNMENT,
+                needs_caller_save, rt_arg_regs,
+            },
+            call_live_in_regs,
+            internal::{JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_RT},
         },
         r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrUnaryKind, AsmOp, AsmReg, AsmType},
     },

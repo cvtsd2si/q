@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::asm::abi::{GP_ALLOCATABLE, SSE_ALLOCATABLE};
-use crate::asm::r#gen::{AsmOp, AsmReg};
-use crate::asm::regalloc::{AsmLocation, RegClass};
 use crate::{
     analysis::liveness::{Liveness, LivenessInstruction},
-    asm::r#gen::AsmInstr,
+    asm::{
+        abi::amd64::{GP_ALLOCATABLE, SSE_ALLOCATABLE},
+        r#gen::{AsmInstr, AsmOp, AsmReg},
+        regalloc::{AsmLocation, RegClass},
+    },
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

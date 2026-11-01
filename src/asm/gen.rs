@@ -2,8 +2,13 @@ use std::collections::HashMap;
 
 use crate::{
     asm::abi::{
-        GP_SCRATCH_1, GP_SCRATCH_2, JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD,
-        JIT_RETURN_TAG, JIT_VM, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT, rt_arg_reg,
+        amd64::{
+            GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
+            rt_arg_reg,
+        },
+        internal::{
+            JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_VM,
+        },
     },
     bytecode::r#gen::BytecodeFunc,
     ir::r#gen::{

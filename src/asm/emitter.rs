@@ -1,8 +1,13 @@
-use crate::asm::abi::{JIT_RT, RT_CALL_SCRATCH, SYSV_GP_RETURN};
 use crate::{
-    asm::r#gen::{
-        AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp, AsmProg,
-        AsmType,
+    asm::{
+        abi::{
+            amd64::SYSV_GP_RETURN,
+            internal::{JIT_RT, RT_CALL_SCRATCH},
+        },
+        r#gen::{
+            AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrShiftKind, AsmInstrUnaryKind, AsmOp,
+            AsmProg, AsmType,
+        },
     },
     ir::r#gen::{StaticConst, StaticInit},
 };
