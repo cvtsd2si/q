@@ -20,7 +20,7 @@ use crate::{
         },
         bytecode::r#gen::BytecodeFunc,
         ir::r#gen::{IRFunc, IRInstr, IRProg},
-        {Codegen, CodegenContext, Ctx, StaticConst},
+        {Codegen, CodegenContext, StaticConst},
     },
     runtime::{
         rt::Rt,

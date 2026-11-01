@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use crate::{
     codegen::{
         ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal},
-        {Codegen, CodegenContext, Ctx},
+        {Codegen, CodegenContext},
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
 };
@@ -332,7 +332,7 @@ impl Codegen<Bytecode, CodegenContext> for IRInstr {
 }
 
 impl IRVal {
-    fn load_op<U: Ctx>(&self, ctx: &mut U) -> Op {
+    fn load_op(&self, ctx: &mut CodegenContext) -> Op {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
             IRVal::Var { name, .. } => {
@@ -345,7 +345,7 @@ impl IRVal {
         }
     }
 
-    fn store_op<U: Ctx>(&self, ctx: &U) -> Op {
+    fn store_op(&self, ctx: &CodegenContext) -> Op {
         match self {
             IRVal::Const(_) => unreachable!(),
             IRVal::Var { name, .. } => {

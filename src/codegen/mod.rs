@@ -28,16 +28,8 @@ impl Default for CodegenContext {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct StaticConst {
-    pub name: String,
-    pub init: StaticInit,
-    pub ty: Type,
-    pub alignment: usize,
-}
-
-impl Ctx for CodegenContext {
-    fn get<T: 'static>(&self, name: &str) -> Option<usize> {
+impl CodegenContext {
+    pub fn get<T: 'static>(&self, name: &str) -> Option<usize> {
         match TypeId::of::<T>() {
             id if id == TypeId::of::<String>() => self.locals.get(name).copied(),
             id if id == TypeId::of::<BytecodeFunc>() => self.funcs.get(name).copied(),
@@ -45,7 +37,7 @@ impl Ctx for CodegenContext {
         }
     }
 
-    fn register<T: 'static>(&mut self, name: &str) -> usize {
+    pub fn register<T: 'static>(&mut self, name: &str) -> usize {
         let structure = match TypeId::of::<T>() {
             id if id == TypeId::of::<String>() => &mut self.locals,
             id if id == TypeId::of::<BytecodeFunc>() => &mut self.funcs,
@@ -64,7 +56,10 @@ impl Ctx for CodegenContext {
     }
 }
 
-pub trait Ctx {
-    fn get<T: 'static>(&self, name: &str) -> Option<usize>;
-    fn register<T: 'static>(&mut self, name: &str) -> usize;
+#[derive(Debug, Clone)]
+pub struct StaticConst {
+    pub name: String,
+    pub init: StaticInit,
+    pub ty: Type,
+    pub alignment: usize,
 }

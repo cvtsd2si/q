@@ -14,7 +14,7 @@ use crate::{
         },
         bytecode::r#gen::BytecodeFunc,
         ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal, StaticInit, mktmp},
-        {Codegen, CodegenContext, Ctx, StaticConst},
+        {Codegen, CodegenContext, StaticConst},
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
