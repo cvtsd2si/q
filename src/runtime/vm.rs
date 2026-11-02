@@ -115,7 +115,7 @@ impl Vm {
                         return Err(QError {
                             kind: QErrorKind::Vm,
                             msg: "native code errored out".to_string(),
-                            code: code,
+                            code,
                             span: Span { start: 0, end: 0 },
                         });
                     }

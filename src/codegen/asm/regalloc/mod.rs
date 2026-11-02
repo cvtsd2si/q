@@ -122,10 +122,10 @@ impl Regalloc for AsmFunc {
         let mut spill_costs = BTreeMap::new();
 
         for (name, cost) in original_costs {
-            if let Some(rep) = coalescing.reps.get(&name) {
-                if let InterferenceNode::Pseudo(rep) = rep {
-                    *spill_costs.entry(rep.clone()).or_insert(0) += cost;
-                }
+            if let Some(rep) = coalescing.reps.get(&name)
+                && let InterferenceNode::Pseudo(rep) = rep
+            {
+                *spill_costs.entry(rep.clone()).or_insert(0) += cost;
             }
         }
 

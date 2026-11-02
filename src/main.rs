@@ -42,14 +42,14 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
-    let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
+    let tokens = Tokenizer::new(src).collect::<Result<VecDeque<_>, _>>()?;
 
     if opts.tokenize {
         println!("{:#?}", tokens);
         return Ok(0);
     }
 
-    let ast = Parser::new(&src, tokens).parse()?;
+    let ast = Parser::new(src, tokens).parse()?;
 
     if opts.parse {
         println!("{:#?}", ast);

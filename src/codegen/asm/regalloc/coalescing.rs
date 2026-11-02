@@ -106,7 +106,7 @@ impl Coalescer {
 
                 InterferenceNode::Pseudo(name) => {
                     /* Different register classes do not compete.  */
-                    if self.reg_classes.get(name) != Some(&class) {
+                    if self.reg_classes.get(name) != Some(class) {
                         return false;
                     }
 

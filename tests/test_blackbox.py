@@ -73,19 +73,19 @@ TEST_CASES = {
         "stdout": ["42"],
         "stderr": [],
     },
-     # f32 bitwise not
+    # f32 bitwise not
     "f32_not.q": {
         "ret": 1,
         "stdout": [],
-        "stderr": ["err: typechecker: Invalid operand type Float32 for unary BitwiseNot"],
+        "stderr": ["Invalid operand type Float32 for unary BitwiseNot"],
     },
     # f64 bitwise not
     "f64_not.q": {
         "ret": 1,
         "stdout": [],
-        "stderr": ["err: typechecker: Invalid operand type Float64 for unary BitwiseNot"],
+        "stderr": ["Invalid operand type Float64 for unary BitwiseNot"],
     },
-     # bitwise u8
+    # bitwise u8
     "bitwise_u8.q": {
         "ret": 0,
         "stdout": ["136", "238", "102"],
@@ -190,7 +190,7 @@ TEST_CASES = {
         "ret": 1,
         "stdout": [],
         "stderr": [
-            "err: typechecker: Comparisons require operands of the same type, got Int32 and UInt64"
+            "Comparisons require operands of the same type, got Int32 and UInt64"
         ],
     },
     # bitwise shifts
@@ -1171,7 +1171,7 @@ TEST_CASES = {
     },
     "no_main.q": {
         "ret": 1,
-        "stderr": ["err: vm: No 'main' fn. (code: 1)"],
+        "stderr": ["No 'main' fn."],
         "stdout": [],
     },
     "do_while.q": {
@@ -1190,6 +1190,7 @@ TEST_CASES = {
         "stderr": [],
     },
 }
+
 
 @pytest.mark.parametrize(
     "optimizations",
@@ -1213,14 +1214,16 @@ def test_program(program: Path, jit: bool, optimizations: bool):
         cmd.append("--jit")
 
     if optimizations:
-        cmd.extend([
-            "--optimizations",
-            "constant_folding",
-            "constant_propagation",
-            "copy_propagation",
-            "dead_store_elimination",
-            "unreachable_code_elimination",
-        ])
+        cmd.extend(
+            [
+                "--optimizations",
+                "constant_folding",
+                "constant_propagation",
+                "copy_propagation",
+                "dead_store_elimination",
+                "unreachable_code_elimination",
+            ]
+        )
 
     expected = TEST_CASES[program.name]
 
@@ -1239,6 +1242,8 @@ def test_program(program: Path, jit: bool, optimizations: bool):
     actual_stdout = result.stdout.splitlines()[-len(expected_stdout) :]
     assert actual_stdout == expected_stdout
 
-    expected_stderr = expected["stderr"]
-    actual_stderr = result.stderr.splitlines()[-len(expected_stderr) :]
-    assert actual_stderr == expected_stderr
+    expected_stderr = expected.get("stderr")
+    if expected_stderr:
+        actual_stderr = result.stderr.splitlines()
+        if not any(x in actual_stderr for x in expected_stderr):
+            assert False

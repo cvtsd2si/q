@@ -83,7 +83,7 @@ impl Irfy for Statement {
             Statement::Let { name, init, ty } => {
                 let r = irfy_expr_and_cvt(&mut instrs, &init);
                 let dst = IRVal::Var {
-                    name: name.into(),
+                    name,
                     ty: ty.unwrap(),
                 };
 
@@ -95,8 +95,8 @@ impl Irfy for Statement {
             }
 
             Statement::Ret { value, ret_ty } => {
-                if value.is_some() {
-                    let r = irfy_expr_and_cvt(&mut instrs, value.as_ref().unwrap());
+                if let Some(value) = &value {
+                    let r = irfy_expr_and_cvt(&mut instrs, value);
 
                     instrs.push(IRInstr::Ret {
                         val: Some(r),
@@ -145,10 +145,9 @@ impl Irfy for Statement {
 
                     instrs.push(IRInstr::Label(format!("Else.{}", tmp)));
 
-                    let else_block = else_block.unwrap();
-                    let else_block_ir = else_block.irfy();
-
-                    instrs.extend(else_block_ir.body);
+                    if let Some(else_block) = else_block {
+                        instrs.extend(else_block.irfy().body);
+                    }
 
                     instrs.push(IRInstr::Label(format!("End.{}", tmp)));
                 }

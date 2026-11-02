@@ -210,8 +210,7 @@ impl Codegen<Bytecode> for IRInstr {
                         code: 1,
                         msg: format!("trying to call an undefined fn: {}", target),
                         span: Span { start: 0, end: 0 },
-                    }
-                    .into());
+                    });
                 }
 
                 ops.push(Op::Call {

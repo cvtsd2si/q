@@ -45,7 +45,7 @@ impl Optimize for IRProg {
     type Output = IRProg;
 
     fn optimize(mut self, enabled: &[Optimization]) -> Self::Output {
-        for func in self.functions_mut().into_iter() {
+        for func in self.functions_mut() {
             loop {
                 let mut changed = false;
 

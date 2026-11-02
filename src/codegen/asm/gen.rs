@@ -1632,10 +1632,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                     AsmInstr::Comment(
                         "The scratch register holds the entrypoint address loaded from `native_entrypoints`.".into(),
                     ),
-                    AsmInstr::Comment(format!(
-                        "The callee receives its arguments through the JIT argument register and inherits the",
-
-                    )),
+                    AsmInstr::Comment("The callee receives its arguments through the JIT argument register and inherits the".to_string()),
                     AsmInstr::Comment(
                         "JIT context in (Vm, Rt, `native entrypoints`)."
                             .into(),
