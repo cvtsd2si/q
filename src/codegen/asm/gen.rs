@@ -444,8 +444,7 @@ impl Codegen<AsmProg> for IRProg {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmProg, Box<dyn std::error::Error>> {
         Ok(AsmProg {
             funcs: self
-                .funcs
-                .iter()
+                .functions()
                 .map(|f| f.codegen(ctx))
                 .collect::<Result<Vec<AsmFunc>, _>>()?,
             static_consts: ctx

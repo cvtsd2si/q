@@ -46,11 +46,11 @@ impl Codegen<BytecodeProg> for IRProg {
     ) -> Result<BytecodeProg, Box<dyn std::error::Error>> {
         let mut bytecode_prog = BytecodeProg { funcs: vec![] };
 
-        for f in &self.funcs {
+        for f in self.functions() {
             ctx.register::<BytecodeFunc>(&f.name);
         }
 
-        for f in &self.funcs {
+        for f in self.functions() {
             bytecode_prog.funcs.push(f.codegen(ctx)?);
         }
 

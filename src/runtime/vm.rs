@@ -236,7 +236,8 @@ impl Vm {
         let old_stack_len = self.stack.len();
         let old_depth = self.fp_stack.len();
 
-        let params = &self.ir.funcs[target].params;
+        let f = self.ir.function(target).unwrap();
+        let params = &f.params;
 
         if params.len() != args.len() {
             return Err(VmError {
@@ -346,7 +347,8 @@ impl Vm {
             return None;
         }
 
-        let body = &self.ir.funcs.get(func)?.body;
+        let f = self.ir.function(func)?;
+        let body = &f.body;
 
         match body.last()? {
             IRInstr::Ret { .. } => Some(body.len()),

@@ -62,7 +62,7 @@ impl JitCompiler {
             return Ok(None);
         }
 
-        let ir_func = ir.funcs.get(func).unwrap();
+        let ir_func = ir.function(func).unwrap();
 
         /* FIXME: currently compiling entire funcs  */
         let start_ir = 0;
@@ -84,7 +84,7 @@ impl JitCompiler {
         let mut asm_txt = String::new();
 
         let mut ctx = CodegenContext::new();
-        for func in ir.funcs.iter() {
+        for func in ir.functions() {
             ctx.register::<BytecodeFunc>(&func.name);
         }
 

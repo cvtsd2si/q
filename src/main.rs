@@ -2,8 +2,8 @@ use q::{
     codegen::{
         bytecode::r#gen::BytecodeProg,
         ir::{
-            r#gen::irfy,
-            optimizer::{Optimization, optimize_ir},
+            r#gen::Irfy,
+            optimizer::{Optimization, Optimize},
         },
         {Codegen, CodegenContext},
     },
@@ -77,7 +77,7 @@ fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
         return Ok(0);
     }
 
-    let ir = optimize_ir(irfy(&typechecked_ast), &opts.optimizations);
+    let ir = typechecked_ast.irfy().optimize(&opts.optimizations);
 
     if opts.ir {
         println!("{:#?}", ir);

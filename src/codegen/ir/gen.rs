@@ -5,304 +5,342 @@ use crate::parser::ast::{
     Type, UnaryExpressionKind,
 };
 
-pub fn irfy(ast: &Program) -> IRProg {
-    let mut ir_prog = IRProg { funcs: vec![] };
-
-    for block_item in &ast.block_items {
-        irfy_block_item(&mut ir_prog, block_item);
-    }
-
-    ir_prog
+pub trait Irfy {
+    type Output;
+    fn irfy(self) -> Self::Output;
 }
 
-fn irfy_block_item(ir_prog: &mut IRProg, block_item: &BlockItem) {
-    match block_item {
-        BlockItem::Decl(decl) => irfy_decl(ir_prog, decl),
-        BlockItem::Stmt(_stmt) => unimplemented!(),
+impl Irfy for Program {
+    type Output = IRProg;
+
+    fn irfy(self) -> Self::Output {
+        let mut ir_prog = IRProg {
+            block_items: vec![],
+        };
+
+        for block_item in self.block_items {
+            ir_prog.block_items.push(block_item.irfy());
+        }
+
+        ir_prog
     }
 }
 
-fn irfy_decl(ir_prog: &mut IRProg, decl: &Declaration) {
-    match decl {
-        Declaration::Fn {
-            name,
-            ret,
-            params,
-            body,
-        } => {
-            let mut f = IRFunc {
-                name: name.to_owned(),
-                params: params.to_vec(),
-                body: vec![],
-                ret_ty: *ret,
-            };
+#[derive(Debug)]
+pub enum IRBlockItem {
+    Decl(IRDecl),
+    Stmt(IRStmt),
+}
 
-            if let Statement::Block { body } = body {
-                for stmt in body {
-                    irfy_stmt(&mut f.body, stmt);
+#[derive(Debug)]
+pub enum IRDecl {
+    Fn(IRFunc),
+}
+
+#[derive(Debug)]
+pub struct IRStmt {
+    pub body: Vec<IRInstr>,
+}
+
+impl Irfy for BlockItem {
+    type Output = IRBlockItem;
+    fn irfy(self) -> Self::Output {
+        match self {
+            BlockItem::Decl(decl) => IRBlockItem::Decl(decl.irfy()),
+            BlockItem::Stmt(_stmt) => unimplemented!(),
+        }
+    }
+}
+
+impl Irfy for Declaration {
+    type Output = IRDecl;
+
+    fn irfy(self) -> Self::Output {
+        match self {
+            Declaration::Fn {
+                name,
+                ret,
+                params,
+                body,
+            } => {
+                let mut f = IRFunc {
+                    name: name.to_owned(),
+                    params: params.to_vec(),
+                    body: vec![],
+                    ret_ty: ret,
+                };
+
+                if let Statement::Block { body } = body {
+                    for stmt in body {
+                        f.body.extend(stmt.irfy().body);
+                    }
+                }
+
+                if ret.is_none() {
+                    f.body.push(IRInstr::Ret {
+                        val: None,
+                        ret_ty: None,
+                    });
+                }
+
+                IRDecl::Fn(f)
+            }
+        }
+    }
+}
+
+impl Irfy for Statement {
+    type Output = IRStmt;
+
+    fn irfy(self) -> Self::Output {
+        let mut instrs = vec![];
+
+        match self {
+            Statement::Let { name, init, ty } => {
+                let r = irfy_expr_and_cvt(&mut instrs, &init);
+                let dst = IRVal::Var {
+                    name: name.into(),
+                    ty: ty.unwrap(),
+                };
+
+                instrs.push(IRInstr::Cpy {
+                    src: r,
+                    src_ty: ty.unwrap(),
+                    dst,
+                });
+            }
+
+            Statement::Ret { value, ret_ty } => {
+                if value.is_some() {
+                    let r = irfy_expr_and_cvt(&mut instrs, value.as_ref().unwrap());
+
+                    instrs.push(IRInstr::Ret {
+                        val: Some(r),
+                        ret_ty,
+                    });
+                } else {
+                    instrs.push(IRInstr::Ret { val: None, ret_ty });
                 }
             }
 
-            if ret.is_none() {
-                f.body.push(IRInstr::Ret {
-                    val: None,
-                    ret_ty: None,
-                });
+            Statement::Print { value } => {
+                let ty = value.ty().unwrap();
+                let r = irfy_expr_and_cvt(&mut instrs, &value);
+
+                instrs.push(IRInstr::Print { val: r, ty });
             }
 
-            ir_prog.funcs.push(f);
-        }
-    }
-}
-
-fn irfy_stmt(instrs: &mut Vec<IRInstr>, stmt: &Statement) {
-    match stmt {
-        Statement::Let { name, init, ty } => {
-            let r = irfy_expr_and_cvt(instrs, init);
-            let dst = IRVal::Var {
-                name: name.into(),
-                ty: ty.unwrap(),
-            };
-
-            instrs.push(IRInstr::Cpy {
-                src: r,
-                src_ty: ty.unwrap(),
-                dst,
-            });
-        }
-
-        Statement::Ret { value, ret_ty } => {
-            if value.is_some() {
-                let r = irfy_expr_and_cvt(instrs, value.as_ref().unwrap());
-
-                instrs.push(IRInstr::Ret {
-                    val: Some(r),
-                    ret_ty: *ret_ty,
-                });
-            } else {
-                instrs.push(IRInstr::Ret {
-                    val: None,
-                    ret_ty: *ret_ty,
-                });
-            }
-        }
-
-        Statement::Print { value } => {
-            let ty = value.ty().unwrap();
-            let r = irfy_expr_and_cvt(instrs, value);
-
-            instrs.push(IRInstr::Print { val: r, ty });
-        }
-
-        Statement::If {
-            cond,
-            then_block,
-            else_block,
-        } => {
-            let r = irfy_expr_and_cvt(instrs, cond);
-
-            let tmp = mktmp();
-
-            if else_block.is_none() {
-                instrs.push(IRInstr::Jz {
-                    cond: r,
-                    target: format!("End.{}", tmp),
-                });
-
-                irfy_stmt(instrs, then_block);
-
-                instrs.push(IRInstr::Label(format!("End.{}", tmp)));
-            } else {
-                instrs.push(IRInstr::Jz {
-                    cond: r,
-                    target: format!("Else.{}", tmp),
-                });
-                irfy_stmt(instrs, then_block);
-
-                instrs.push(IRInstr::Jmp {
-                    target: format!("End.{}", tmp),
-                });
-
-                instrs.push(IRInstr::Label(format!("Else.{}", tmp)));
-
-                irfy_stmt(instrs, else_block.as_ref().unwrap());
-
-                instrs.push(IRInstr::Label(format!("End.{}", tmp)));
-            }
-        }
-
-        Statement::Block { body } => {
-            for stmt in body {
-                irfy_stmt(instrs, stmt);
-            }
-        }
-
-        Statement::While { cond, body, label } => {
-            let label = label.as_ref().unwrap();
-
-            let break_label = format!("{label}.break");
-            let continue_label = format!("{label}.continue");
-
-            instrs.push(IRInstr::Label(continue_label.clone()));
-
-            /* eval the cond at the start of each iteration  */
-            let cond = irfy_expr_and_cvt(instrs, cond);
-
-            /* exit the loop if the cond is false  */
-            instrs.push(IRInstr::Jz {
+            Statement::If {
                 cond,
-                target: break_label.clone(),
-            });
+                then_block,
+                else_block,
+            } => {
+                let r = irfy_expr_and_cvt(&mut instrs, &cond);
 
-            /* exec the loop body  */
-            irfy_stmt(instrs, body);
+                let tmp = mktmp();
 
-            /* start the next iteration  */
-            instrs.push(IRInstr::Jmp {
-                target: continue_label,
-            });
+                if else_block.is_none() {
+                    instrs.push(IRInstr::Jz {
+                        cond: r,
+                        target: format!("End.{}", tmp),
+                    });
 
-            /* resume execution here after exiting the loop  */
-            instrs.push(IRInstr::Label(break_label));
-        }
+                    instrs.extend(then_block.irfy().body);
 
-        Statement::DoWhile { cond, body, label } => {
-            let label = label.as_ref().unwrap();
+                    instrs.push(IRInstr::Label(format!("End.{}", tmp)));
+                } else {
+                    instrs.push(IRInstr::Jz {
+                        cond: r,
+                        target: format!("Else.{}", tmp),
+                    });
+                    instrs.extend(then_block.irfy().body);
 
-            let start_label = format!("{label}.start");
-            let break_label = format!("{label}.break");
-            let continue_label = format!("{label}.continue");
+                    instrs.push(IRInstr::Jmp {
+                        target: format!("End.{}", tmp),
+                    });
 
-            instrs.push(IRInstr::Label(start_label.clone()));
+                    instrs.push(IRInstr::Label(format!("Else.{}", tmp)));
 
-            /* exec the loop body at least once */
-            irfy_stmt(instrs, body);
+                    let else_block = else_block.unwrap();
+                    let else_block_ir = else_block.irfy();
 
-            /* continue stmts jmp here to eval the cond  */
-            instrs.push(IRInstr::Label(continue_label.clone()));
+                    instrs.extend(else_block_ir.body);
 
-            /* eval the cond  */
-            let cond = irfy_expr_and_cvt(instrs, cond);
-
-            /* exit the loop if the cond is false  */
-            instrs.push(IRInstr::Jz {
-                cond,
-                target: break_label.clone(),
-            });
-
-            /* start the next iteration  */
-            instrs.push(IRInstr::Jmp {
-                target: start_label,
-            });
-
-            /* resume execution here after exiting the loop  */
-            instrs.push(IRInstr::Label(break_label));
-        }
-
-        Statement::For {
-            init,
-            cond,
-            advancement,
-            body,
-            label,
-        } => {
-            let label = label.as_ref().unwrap();
-
-            let start_label = format!("{label}.start");
-            let break_label = format!("{label}.break");
-            let continue_label = format!("{label}.continue");
-
-            /* exec the init once  */
-            if let Some(init) = init {
-                irfy_stmt(instrs, init);
+                    instrs.push(IRInstr::Label(format!("End.{}", tmp)));
+                }
             }
 
-            /* eval the cond at the start of each iteration  */
-            instrs.push(IRInstr::Label(start_label.clone()));
+            Statement::Block { body } => {
+                for stmt in body {
+                    instrs.extend(stmt.irfy().body);
+                }
+            }
 
-            if let Some(cond) = cond {
-                let cond = irfy_expr_and_cvt(instrs, cond);
+            Statement::While { cond, body, label } => {
+                let label = label.as_ref().unwrap();
 
+                let break_label = format!("{label}.break");
+                let continue_label = format!("{label}.continue");
+
+                instrs.push(IRInstr::Label(continue_label.clone()));
+
+                /* eval the cond at the start of each iteration  */
+                let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+
+                /* exit the loop if the cond is false  */
                 instrs.push(IRInstr::Jz {
                     cond,
                     target: break_label.clone(),
                 });
+
+                /* exec the loop body  */
+                instrs.extend(body.irfy().body);
+
+                /* start the next iteration  */
+                instrs.push(IRInstr::Jmp {
+                    target: continue_label,
+                });
+
+                /* resume execution here after exiting the loop  */
+                instrs.push(IRInstr::Label(break_label));
             }
 
-            /* exec the loop body  */
-            irfy_stmt(instrs, body);
+            Statement::DoWhile { cond, body, label } => {
+                let label = label.as_ref().unwrap();
 
-            /* continue stmts jmp here, before the advancement  */
-            instrs.push(IRInstr::Label(continue_label));
+                let start_label = format!("{label}.start");
+                let break_label = format!("{label}.break");
+                let continue_label = format!("{label}.continue");
 
-            /* exec the advancement  */
-            if let Some(advancement) = advancement {
-                irfy_expr(instrs, advancement);
+                instrs.push(IRInstr::Label(start_label.clone()));
+
+                /* exec the loop body at least once */
+                instrs.extend(body.irfy().body);
+
+                /* continue stmts jmp here to eval the cond  */
+                instrs.push(IRInstr::Label(continue_label.clone()));
+
+                /* eval the cond  */
+                let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+
+                /* exit the loop if the cond is false  */
+                instrs.push(IRInstr::Jz {
+                    cond,
+                    target: break_label.clone(),
+                });
+
+                /* start the next iteration  */
+                instrs.push(IRInstr::Jmp {
+                    target: start_label,
+                });
+
+                /* resume execution here after exiting the loop  */
+                instrs.push(IRInstr::Label(break_label));
             }
 
-            /* re-eval the cond  */
-            instrs.push(IRInstr::Jmp {
-                target: start_label,
-            });
+            Statement::For {
+                init,
+                cond,
+                advancement,
+                body,
+                label,
+            } => {
+                let label = label.as_ref().unwrap();
 
-            /* resume execution here  */
-            instrs.push(IRInstr::Label(break_label));
+                let start_label = format!("{label}.start");
+                let break_label = format!("{label}.break");
+                let continue_label = format!("{label}.continue");
+
+                /* exec the init once  */
+                if let Some(init) = init {
+                    instrs.extend(init.irfy().body);
+                }
+
+                /* eval the cond at the start of each iteration  */
+                instrs.push(IRInstr::Label(start_label.clone()));
+
+                if let Some(cond) = cond {
+                    let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+
+                    instrs.push(IRInstr::Jz {
+                        cond,
+                        target: break_label.clone(),
+                    });
+                }
+
+                /* exec the loop body  */
+                instrs.extend(body.irfy().body);
+
+                /* continue stmts jmp here, before the advancement  */
+                instrs.push(IRInstr::Label(continue_label));
+
+                /* exec the advancement  */
+                if let Some(advancement) = advancement {
+                    irfy_expr(&mut instrs, &advancement);
+                }
+
+                /* re-eval the cond  */
+                instrs.push(IRInstr::Jmp {
+                    target: start_label,
+                });
+
+                /* resume execution here  */
+                instrs.push(IRInstr::Label(break_label));
+            }
+
+            Statement::Loop { body, label } => {
+                let label = label.as_ref().unwrap();
+
+                let break_label = format!("{label}.break");
+                let continue_label = format!("{label}.continue");
+
+                /* start the loop body  */
+                instrs.push(IRInstr::Label(continue_label.clone()));
+
+                /* exec the body  */
+                instrs.extend(body.irfy().body);
+
+                /* repeat indefinitely  */
+                instrs.push(IRInstr::Jmp {
+                    target: continue_label,
+                });
+
+                /* resume execution here  */
+                instrs.push(IRInstr::Label(break_label));
+            }
+
+            Statement::Break { label } => {
+                let label = label.as_ref().unwrap();
+                instrs.push(IRInstr::Jmp {
+                    target: format!("{label}.break"),
+                });
+            }
+
+            Statement::Continue { label } => {
+                let label = label.as_ref().unwrap();
+                instrs.push(IRInstr::Jmp {
+                    target: format!("{label}.continue"),
+                });
+            }
+
+            Statement::Goto { label } => {
+                instrs.push(IRInstr::Jmp {
+                    target: format!("goto.{label}"),
+                });
+            }
+
+            Statement::Labeled { name, stmt } => {
+                instrs.push(IRInstr::Label(format!("goto.{name}")));
+                instrs.extend(stmt.irfy().body);
+            }
+
+            Statement::Expr { expr } => {
+                irfy_expr(&mut instrs, &expr);
+            }
         }
 
-        Statement::Loop { body, label } => {
-            let label = label.as_ref().unwrap();
-
-            let break_label = format!("{label}.break");
-            let continue_label = format!("{label}.continue");
-
-            /* start the loop body  */
-            instrs.push(IRInstr::Label(continue_label.clone()));
-
-            /* exec the body  */
-            irfy_stmt(instrs, body);
-
-            /* repeat indefinitely  */
-            instrs.push(IRInstr::Jmp {
-                target: continue_label,
-            });
-
-            /* resume execution here  */
-            instrs.push(IRInstr::Label(break_label));
-        }
-
-        Statement::Break { label } => {
-            let label = label.as_ref().unwrap();
-            instrs.push(IRInstr::Jmp {
-                target: format!("{label}.break"),
-            });
-        }
-
-        Statement::Continue { label } => {
-            let label = label.as_ref().unwrap();
-            instrs.push(IRInstr::Jmp {
-                target: format!("{label}.continue"),
-            });
-        }
-
-        Statement::Goto { label } => {
-            instrs.push(IRInstr::Jmp {
-                target: format!("goto.{label}"),
-            });
-        }
-
-        Statement::Labeled { name, stmt } => {
-            instrs.push(IRInstr::Label(format!("goto.{name}")));
-            irfy_stmt(instrs, stmt);
-        }
-
-        Statement::Expr { expr } => {
-            irfy_expr(instrs, expr);
-        }
+        IRStmt { body: instrs }
     }
-}
-
-enum ExpRes {
-    Plain(IRVal),
 }
 
 fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
@@ -656,7 +694,27 @@ fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) 
 
 #[derive(Debug)]
 pub struct IRProg {
-    pub funcs: Vec<IRFunc>,
+    pub block_items: Vec<IRBlockItem>,
+}
+
+impl IRProg {
+    pub fn functions(&self) -> impl Iterator<Item = &IRFunc> {
+        self.block_items.iter().filter_map(|item| match item {
+            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
+            IRBlockItem::Stmt(_) => None,
+        })
+    }
+
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = &mut IRFunc> {
+        self.block_items.iter_mut().filter_map(|item| match item {
+            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
+            IRBlockItem::Stmt(_) => None,
+        })
+    }
+
+    pub fn function(&self, index: usize) -> Option<&IRFunc> {
+        self.functions().nth(index)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -1045,6 +1103,10 @@ impl std::fmt::Display for IRVal {
             },
         }
     }
+}
+
+enum ExpRes {
+    Plain(IRVal),
 }
 
 fn mkirvar(ty: Type) -> IRVal {

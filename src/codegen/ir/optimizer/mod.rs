@@ -36,28 +36,37 @@ impl FromStr for Optimization {
     }
 }
 
-pub fn optimize_ir(mut ir: IRProg, enabled: &[Optimization]) -> IRProg {
-    for func in &mut ir.funcs {
-        loop {
-            let mut changed = false;
+pub trait Optimize {
+    type Output;
+    fn optimize(self, enabled: &[Optimization]) -> Self::Output;
+}
 
-            for pass in enabled {
-                changed |= match pass {
-                    Optimization::ConstantFolding => constant_folding::run(func),
-                    Optimization::ConstantPropagation => constant_propagation::run(func),
-                    Optimization::CopyPropagation => copy_propagation::run(func),
-                    Optimization::UnreachableCodeElimination => {
-                        unreachable_code_elimination::run(func)
-                    }
-                    Optimization::DeadStoreElimination => dead_store_elimination::run(func),
-                };
-            }
+impl Optimize for IRProg {
+    type Output = IRProg;
 
-            if !changed {
-                break;
+    fn optimize(mut self, enabled: &[Optimization]) -> Self::Output {
+        for func in self.functions_mut().into_iter() {
+            loop {
+                let mut changed = false;
+
+                for pass in enabled {
+                    changed |= match pass {
+                        Optimization::ConstantFolding => constant_folding::run(func),
+                        Optimization::ConstantPropagation => constant_propagation::run(func),
+                        Optimization::CopyPropagation => copy_propagation::run(func),
+                        Optimization::UnreachableCodeElimination => {
+                            unreachable_code_elimination::run(func)
+                        }
+                        Optimization::DeadStoreElimination => dead_store_elimination::run(func),
+                    };
+                }
+
+                if !changed {
+                    break;
+                }
             }
         }
-    }
 
-    ir
+        self
+    }
 }
