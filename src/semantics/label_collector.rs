@@ -1,3 +1,4 @@
+use crate::{QError, QErrorKind, tokenizer::token::Span};
 use std::collections::HashSet;
 
 use crate::parser::ast::{BlockItem, Declaration, Param, Program, Statement, Type};
@@ -24,19 +25,13 @@ impl Default for LabelCollector {
 
 pub trait LabelCollect {
     type Output;
-    fn label_collect(
-        self,
-        collector: &mut LabelCollector,
-    ) -> Result<Self::Output, LabelCollectError>;
+    fn label_collect(self, collector: &mut LabelCollector) -> Result<Self::Output, QError>;
 }
 
 impl LabelCollect for Program {
     type Output = Program;
 
-    fn label_collect(
-        self,
-        collector: &mut LabelCollector,
-    ) -> Result<Self::Output, LabelCollectError> {
+    fn label_collect(self, collector: &mut LabelCollector) -> Result<Self::Output, QError> {
         Ok(Program {
             block_items: self
                 .block_items
@@ -50,10 +45,7 @@ impl LabelCollect for Program {
 impl LabelCollect for BlockItem {
     type Output = BlockItem;
 
-    fn label_collect(
-        self,
-        collector: &mut LabelCollector,
-    ) -> Result<Self::Output, LabelCollectError> {
+    fn label_collect(self, collector: &mut LabelCollector) -> Result<Self::Output, QError> {
         match self {
             BlockItem::Decl(decl) => Ok(BlockItem::Decl(decl.label_collect(collector)?)),
             BlockItem::Stmt(stmt) => Ok(BlockItem::Stmt(stmt.label_collect(collector)?)),
@@ -64,10 +56,7 @@ impl LabelCollect for BlockItem {
 impl LabelCollect for Declaration {
     type Output = Declaration;
 
-    fn label_collect(
-        self,
-        collector: &mut LabelCollector,
-    ) -> Result<Self::Output, LabelCollectError> {
+    fn label_collect(self, collector: &mut LabelCollector) -> Result<Self::Output, QError> {
         match self {
             Declaration::Fn {
                 name,
@@ -82,10 +71,7 @@ impl LabelCollect for Declaration {
 impl LabelCollect for Statement {
     type Output = Statement;
 
-    fn label_collect(
-        self,
-        collector: &mut LabelCollector,
-    ) -> Result<Self::Output, LabelCollectError> {
+    fn label_collect(self, collector: &mut LabelCollector) -> Result<Self::Output, QError> {
         match self {
             Statement::Print { value } => Ok(Statement::Print { value }),
             Statement::Let { name, init, ty } => Ok(Statement::Let { name, init, ty }),
@@ -138,8 +124,11 @@ impl LabelCollect for Statement {
             Statement::Continue { label } => Ok(Statement::Continue { label }),
             Statement::Labeled { name, stmt } => {
                 if !collector.defined.insert(name.clone()) {
-                    return Err(LabelCollectError {
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::LabelCollect,
                         msg: format!("duplicate label: '{name}'"),
+                        span: Span { start: 0, end: 0 },
                     });
                 }
 
@@ -164,7 +153,7 @@ fn label_collect_fn(
     ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
-) -> Result<Declaration, LabelCollectError> {
+) -> Result<Declaration, QError> {
     collector.defined.clear();
     collector.referenced.clear();
 
@@ -173,8 +162,11 @@ fn label_collect_fn(
     /* each goto target must exist  */
     for target in &collector.referenced {
         if !collector.defined.contains(target) {
-            return Err(LabelCollectError {
+            return Err(QError {
+                kind: QErrorKind::LabelCollect,
+                code: 1,
                 msg: format!("undefined label '{target}' in function '{name}'"),
+                span: Span { start: 0, end: 0 },
             });
         }
     }
@@ -185,17 +177,4 @@ fn label_collect_fn(
         params,
         body,
     })
-}
-
-#[derive(Debug)]
-pub struct LabelCollectError {
-    pub msg: String,
-}
-
-impl std::error::Error for LabelCollectError {}
-
-impl std::fmt::Display for LabelCollectError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "label_collector: {}", self.msg)
-    }
 }

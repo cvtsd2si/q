@@ -1,7 +1,9 @@
 use std::collections::HashMap;
 
 use crate::{
+    QError,
     codegen::{
+        Codegen, CodegenContext, StaticConst,
         asm::abi::{
             amd64::{
                 GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
@@ -14,7 +16,6 @@ use crate::{
         },
         bytecode::r#gen::BytecodeFunc,
         ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal, StaticInit, mktmp},
-        {Codegen, CodegenContext, StaticConst},
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
@@ -441,7 +442,7 @@ impl AsmReg {
 }
 
 impl Codegen<AsmProg> for IRProg {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmProg, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmProg, QError> {
         Ok(AsmProg {
             funcs: self
                 .functions()
@@ -462,7 +463,7 @@ impl Codegen<AsmProg> for IRProg {
 }
 
 impl Codegen<AsmFunc> for IRFunc {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmFunc, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmFunc, QError> {
         ctx.current_fn = self.name.clone();
 
         let mut body = vec![];
@@ -508,10 +509,7 @@ impl Codegen<AsmFunc> for IRFunc {
 }
 
 impl Codegen<Vec<AsmInstr>> for IRInstr {
-    fn codegen(
-        &self,
-        ctx: &mut CodegenContext,
-    ) -> Result<Vec<AsmInstr>, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<Vec<AsmInstr>, QError> {
         match self {
             IRInstr::Cpy { src, src_ty, dst } => Ok(vec![
                 AsmInstr::Comment(format!("Copying {src_ty:?}")),
@@ -2462,7 +2460,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
 }
 
 impl Codegen<AsmOp> for IRVal {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<AsmOp, QError> {
         match self {
             IRVal::Const(konst) => match konst {
                 Literal::UInt8(uint8) => Ok(AsmOp::Imm(*uint8 as i64)),

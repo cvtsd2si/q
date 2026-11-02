@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 
 use crate::{
+    QError,
     codegen::{
+        Codegen, CodegenContext,
         ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal},
-        {Codegen, CodegenContext},
     },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
+    tokenizer::token::Span,
 };
 
 #[derive(Debug, Clone, Copy)]
@@ -40,10 +42,7 @@ pub struct BytecodeFunc {
 }
 
 impl Codegen<BytecodeProg> for IRProg {
-    fn codegen(
-        &self,
-        ctx: &mut CodegenContext,
-    ) -> Result<BytecodeProg, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<BytecodeProg, QError> {
         let mut bytecode_prog = BytecodeProg { funcs: vec![] };
 
         for f in self.functions() {
@@ -59,10 +58,7 @@ impl Codegen<BytecodeProg> for IRProg {
 }
 
 impl Codegen<BytecodeFunc> for IRFunc {
-    fn codegen(
-        &self,
-        ctx: &mut CodegenContext,
-    ) -> Result<BytecodeFunc, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<BytecodeFunc, QError> {
         ctx.locals.clear();
 
         for param in &self.params {
@@ -123,7 +119,7 @@ impl Codegen<BytecodeFunc> for IRFunc {
 }
 
 impl Codegen<Bytecode> for IRInstr {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, Box<dyn std::error::Error>> {
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<Bytecode, QError> {
         match self {
             IRInstr::Cpy { src, src_ty, dst } => {
                 let mut ops = vec![src.load_op(ctx)];
@@ -209,8 +205,11 @@ impl Codegen<Bytecode> for IRInstr {
                 let idx = ctx.get::<BytecodeFunc>(target);
 
                 if idx.is_none() {
-                    return Err(IRError {
+                    return Err(QError {
+                        kind: crate::QErrorKind::Bytecode,
+                        code: 1,
                         msg: format!("trying to call an undefined fn: {}", target),
+                        span: Span { start: 0, end: 0 },
                     }
                     .into());
                 }
@@ -356,18 +355,5 @@ impl IRVal {
                 }
             }
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct IRError {
-    pub msg: String,
-}
-
-impl std::error::Error for IRError {}
-
-impl std::fmt::Display for IRError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ir: {}", self.msg)
     }
 }

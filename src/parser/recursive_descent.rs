@@ -2,8 +2,8 @@ use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
     Statement, Type, UnaryExpressionKind,
 };
-use crate::parser::error::ParserError;
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
+use crate::{QError, QErrorKind};
 use std::collections::VecDeque;
 
 pub struct Parser<'src> {
@@ -25,7 +25,7 @@ impl<'src> Parser<'src> {
         }
     }
 
-    pub fn parse(&mut self) -> Result<Program, ParserError> {
+    pub fn parse(&mut self) -> Result<Program, QError> {
         self.advance();
 
         let mut block_items = vec![];
@@ -46,27 +46,29 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn consume(&mut self, kind: TokenKind) -> Result<Token, ParserError> {
+    fn consume(&mut self, kind: TokenKind) -> Result<Token, QError> {
         match self.curr {
             Some(token) if token.kind == kind => {
                 self.advance();
 
                 Ok(token)
             }
-            Some(token) => Err(ParserError {
-                src: self.src.to_string(),
+            Some(token) => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 msg: format!("Encountered unexpected token: {:?}", token),
                 span: token.span,
             }),
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 msg: "Encountered the end of the token stream.".to_string(),
                 span: Span { start: 0, end: 0 },
             }),
         }
     }
 
-    fn consume_primitive(&mut self) -> Result<Token, ParserError> {
+    fn consume_primitive(&mut self) -> Result<Token, QError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::U8
@@ -85,21 +87,23 @@ impl<'src> Parser<'src> {
 
                     Ok(token)
                 }
-                _ => Err(ParserError {
-                    src: self.src.to_string(),
+                _ => Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Parse,
                     msg: format!("Encountered unknown primitive token kind: {:?}", token),
                     span: token.span,
                 }),
             },
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 msg: "Encountered the end of the token stream.".to_string(),
                 span: Span { start: 0, end: 0 },
             }),
         }
     }
 
-    fn parse_block_item(&mut self) -> Result<BlockItem, ParserError> {
+    fn parse_block_item(&mut self) -> Result<BlockItem, QError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
@@ -114,35 +118,38 @@ impl<'src> Parser<'src> {
                 | TokenKind::Continue
                 | TokenKind::Goto
                 | TokenKind::Identifier => self.parse_stmt().map(BlockItem::Stmt),
-                _ => Err(ParserError {
-                    src: self.src.to_string(),
+                _ => Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Parse,
                     span: Span { start: 0, end: 0 },
                     msg: format!("encountered {:?} while trying to parse a block_item", token),
                 }),
             },
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 span: Span { start: 0, end: 0 },
                 msg: "Encountered the end of token stream".to_string(),
             }),
         }
     }
 
-    fn parse_decl(&mut self) -> Result<Declaration, ParserError> {
+    fn parse_decl(&mut self) -> Result<Declaration, QError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => self.parse_fn(),
                 _ => unimplemented!(),
             },
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 span: Span { start: 0, end: 0 },
                 msg: "Encountered the end of token stream".to_string(),
             }),
         }
     }
 
-    fn parse_stmt(&mut self) -> Result<Statement, ParserError> {
+    fn parse_stmt(&mut self) -> Result<Statement, QError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Let => self.parse_let(),
@@ -166,14 +173,16 @@ impl<'src> Parser<'src> {
                     self.parse_labeled()
                 }
                 TokenKind::Identifier => self.parse_expr_stmt(),
-                _ => Err(ParserError {
-                    src: self.src.to_string(),
+                _ => Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Parse,
                     span: Span { start: 0, end: 0 },
                     msg: format!("encountered {:?} while trying to parse a stmt", token),
                 }),
             },
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 span: Span { start: 0, end: 0 },
                 msg: "Encountered the end of token stream".to_string(),
             }),
@@ -194,7 +203,7 @@ impl<'src> Parser<'src> {
         matched
     }
 
-    fn parse_fn(&mut self) -> Result<Declaration, ParserError> {
+    fn parse_fn(&mut self) -> Result<Declaration, QError> {
         self.consume(TokenKind::Fn)?;
 
         let name = self.consume(TokenKind::Identifier)?;
@@ -243,7 +252,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Statement>, ParserError> {
+    fn parse_block(&mut self) -> Result<Vec<Statement>, QError> {
         self.consume(TokenKind::LBrace)?;
 
         let mut body = vec![];
@@ -256,7 +265,7 @@ impl<'src> Parser<'src> {
         Ok(body)
     }
 
-    fn parse_ret(&mut self) -> Result<Statement, ParserError> {
+    fn parse_ret(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Ret)?;
 
         let value = if self.check(TokenKind::Semicolon) {
@@ -273,7 +282,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_print(&mut self) -> Result<Statement, ParserError> {
+    fn parse_print(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Print)?;
         let value = self.parse_expr()?;
         self.consume(TokenKind::Semicolon)?;
@@ -281,7 +290,7 @@ impl<'src> Parser<'src> {
         Ok(Statement::Print { value })
     }
 
-    fn parse_let(&mut self) -> Result<Statement, ParserError> {
+    fn parse_let(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Let)?;
         let name = self.consume(TokenKind::Identifier)?;
 
@@ -303,7 +312,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_if(&mut self) -> Result<Statement, ParserError> {
+    fn parse_if(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::If)?;
 
         self.consume(TokenKind::LParen)?;
@@ -326,7 +335,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_while(&mut self) -> Result<Statement, ParserError> {
+    fn parse_while(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::While)?;
 
         self.consume(TokenKind::LParen)?;
@@ -342,7 +351,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_do_while(&mut self) -> Result<Statement, ParserError> {
+    fn parse_do_while(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Do)?;
 
         let body = self.parse_stmt()?.into();
@@ -362,7 +371,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_for(&mut self) -> Result<Statement, ParserError> {
+    fn parse_for(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::For)?;
 
         self.consume(TokenKind::LParen)?;
@@ -402,28 +411,28 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_loop(&mut self) -> Result<Statement, ParserError> {
+    fn parse_loop(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Loop)?;
         let body = self.parse_stmt()?.into();
 
         Ok(Statement::Loop { body, label: None })
     }
 
-    fn parse_break(&mut self) -> Result<Statement, ParserError> {
+    fn parse_break(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Break)?;
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Break { label: None })
     }
 
-    fn parse_continue(&mut self) -> Result<Statement, ParserError> {
+    fn parse_continue(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Continue)?;
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Continue { label: None })
     }
 
-    fn parse_goto(&mut self) -> Result<Statement, ParserError> {
+    fn parse_goto(&mut self) -> Result<Statement, QError> {
         self.consume(TokenKind::Goto)?;
 
         let label = self.consume(TokenKind::Identifier)?;
@@ -435,7 +444,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_labeled(&mut self) -> Result<Statement, ParserError> {
+    fn parse_labeled(&mut self) -> Result<Statement, QError> {
         let name = self.consume(TokenKind::Identifier)?;
 
         self.consume(TokenKind::Colon)?;
@@ -448,18 +457,18 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_expr_stmt(&mut self) -> Result<Statement, ParserError> {
+    fn parse_expr_stmt(&mut self) -> Result<Statement, QError> {
         let expr = self.parse_expr()?;
         self.consume(TokenKind::Semicolon)?;
 
         Ok(Statement::Expr { expr })
     }
 
-    fn parse_expr(&mut self) -> Result<Expression, ParserError> {
+    fn parse_expr(&mut self) -> Result<Expression, QError> {
         self.assignment()
     }
 
-    fn assignment(&mut self) -> Result<Expression, ParserError> {
+    fn assignment(&mut self) -> Result<Expression, QError> {
         let mut result = self.or()?;
         let begin = result.span();
 
@@ -478,7 +487,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn bitwise_or(&mut self) -> Result<Expression, ParserError> {
+    fn bitwise_or(&mut self) -> Result<Expression, QError> {
         let mut result = self.bitwise_xor()?;
         let begin = result.span();
 
@@ -500,7 +509,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn bitwise_xor(&mut self) -> Result<Expression, ParserError> {
+    fn bitwise_xor(&mut self) -> Result<Expression, QError> {
         let mut result = self.bitwise_and()?;
         let begin = result.span();
 
@@ -522,7 +531,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn or(&mut self) -> Result<Expression, ParserError> {
+    fn or(&mut self) -> Result<Expression, QError> {
         let mut result = self.and()?;
         let begin = result.span();
 
@@ -544,7 +553,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn and(&mut self) -> Result<Expression, ParserError> {
+    fn and(&mut self) -> Result<Expression, QError> {
         let mut result = self.bitwise_or()?;
         let begin = result.span();
 
@@ -565,7 +574,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn bitwise_and(&mut self) -> Result<Expression, ParserError> {
+    fn bitwise_and(&mut self) -> Result<Expression, QError> {
         let mut result = self.equality()?;
         let begin = result.span();
 
@@ -587,7 +596,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn equality(&mut self) -> Result<Expression, ParserError> {
+    fn equality(&mut self) -> Result<Expression, QError> {
         let mut result = self.relational()?;
         let begin = result.span();
 
@@ -599,8 +608,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of token stream (prev: None)".to_string(),
                     });
@@ -626,7 +636,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn relational(&mut self) -> Result<Expression, ParserError> {
+    fn relational(&mut self) -> Result<Expression, QError> {
         let mut result = self.bitwise_shift()?;
         let begin = result.span();
 
@@ -645,8 +655,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of token stream (prev: None)".to_string(),
                     });
@@ -668,7 +679,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn bitwise_shift(&mut self) -> Result<Expression, ParserError> {
+    fn bitwise_shift(&mut self) -> Result<Expression, QError> {
         let mut result = self.term()?;
         let begin = result.span();
 
@@ -680,8 +691,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of the token stream (prev: None)".to_string(),
                     });
@@ -703,7 +715,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn term(&mut self) -> Result<Expression, ParserError> {
+    fn term(&mut self) -> Result<Expression, QError> {
         let mut result = self.factor()?;
         let begin = result.span();
 
@@ -715,8 +727,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of the token stream (prev: None)".to_string(),
                     });
@@ -738,7 +751,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn factor(&mut self) -> Result<Expression, ParserError> {
+    fn factor(&mut self) -> Result<Expression, QError> {
         let mut result = self.cast()?;
         let begin = result.span();
 
@@ -751,8 +764,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of the token stream (prev: None)".to_string(),
                     });
@@ -774,7 +788,7 @@ impl<'src> Parser<'src> {
         Ok(result)
     }
 
-    fn cast(&mut self) -> Result<Expression, ParserError> {
+    fn cast(&mut self) -> Result<Expression, QError> {
         let mut expr = self.unary()?;
         let begin = expr.span();
 
@@ -797,7 +811,7 @@ impl<'src> Parser<'src> {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> Result<Expression, ParserError> {
+    fn unary(&mut self) -> Result<Expression, QError> {
         if self.check_many_greedy(&[TokenKind::Minus, TokenKind::Bang, TokenKind::Tilde]) {
             let kind = match self.prev {
                 Some(token) => match token.kind {
@@ -807,8 +821,9 @@ impl<'src> Parser<'src> {
                     _ => unreachable!(),
                 },
                 None => {
-                    return Err(ParserError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
                         span: Span { start: 0, end: 0 },
                         msg: "Encountered the end of token stream (prev: None)".to_string(),
                     });
@@ -831,7 +846,7 @@ impl<'src> Parser<'src> {
         self.call()
     }
 
-    fn call(&mut self) -> Result<Expression, ParserError> {
+    fn call(&mut self) -> Result<Expression, QError> {
         let mut expr = self.primary()?;
         let begin = expr.span();
 
@@ -851,7 +866,7 @@ impl<'src> Parser<'src> {
         Ok(expr)
     }
 
-    fn finish_call(&mut self, target: &str, begin_span: Span) -> Result<Expression, ParserError> {
+    fn finish_call(&mut self, target: &str, begin_span: Span) -> Result<Expression, QError> {
         self.consume(TokenKind::LParen)?;
 
         let mut args = vec![];
@@ -875,7 +890,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn primary(&mut self) -> Result<Expression, ParserError> {
+    fn primary(&mut self) -> Result<Expression, QError> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Identifier => self.parse_var(),
@@ -892,15 +907,16 @@ impl<'src> Parser<'src> {
                 TokenKind::LParen => self.parse_grouping(),
                 _ => unreachable!("got: {token:?}"),
             },
-            None => Err(ParserError {
-                src: self.src.to_string(),
+            None => Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
                 msg: "Encountered the end of the token stream.".to_string(),
                 span: Span { start: 0, end: 0 },
             }),
         }
     }
 
-    fn parse_var(&mut self) -> Result<Expression, ParserError> {
+    fn parse_var(&mut self) -> Result<Expression, QError> {
         let name = self.consume(TokenKind::Identifier)?;
 
         Ok(Expression::Variable {
@@ -910,7 +926,7 @@ impl<'src> Parser<'src> {
         })
     }
 
-    fn parse_numeric_val(&mut self, token: &NumberToken) -> Result<LiteralVal, ParserError> {
+    fn parse_numeric_val(&mut self, token: &NumberToken) -> Result<LiteralVal, QError> {
         let raw = self.src_from_span(token.value_span);
 
         /* Remove separators.  */
@@ -925,8 +941,9 @@ impl<'src> Parser<'src> {
                     &cleaned[2..]
                 };
 
-                let v = u128::from_str_radix(digits, radix).map_err(|e| ParserError {
-                    src: self.src.to_string(),
+                let v = u128::from_str_radix(digits, radix).map_err(|e| QError {
+                    code: 1,
+                    kind: QErrorKind::Parse,
                     msg: e.to_string(),
                     span: token.value_span,
                 })?;
@@ -937,14 +954,14 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn parse_grouping(&mut self) -> Result<Expression, ParserError> {
+    fn parse_grouping(&mut self) -> Result<Expression, QError> {
         self.consume(TokenKind::LParen)?;
         let expr = self.parse_expr()?;
         self.consume(TokenKind::RParen)?;
         Ok(expr)
     }
 
-    fn parse_bool(&mut self, token: &Token) -> Result<Expression, ParserError> {
+    fn parse_bool(&mut self, token: &Token) -> Result<Expression, QError> {
         self.advance();
 
         Ok(Expression::Literal {

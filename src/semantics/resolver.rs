@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{
+    QError, QErrorKind,
     codegen::ir::r#gen::mktmp,
     parser::ast::{BlockItem, Declaration, Expression, Param, Program, Statement, Type},
 };
@@ -30,13 +31,13 @@ pub struct Var {
 
 pub trait Resolve {
     type Output;
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError>;
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError>;
 }
 
 impl Resolve for Program {
     type Output = Program;
 
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError> {
         let resolved = self
             .block_items
             .into_iter()
@@ -52,7 +53,7 @@ impl Resolve for Program {
 impl Resolve for BlockItem {
     type Output = BlockItem;
 
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError> {
         match self {
             BlockItem::Decl(decl) => {
                 let resolved = decl.resolve(resolver)?;
@@ -70,7 +71,7 @@ impl Resolve for BlockItem {
 impl Resolve for Declaration {
     type Output = Declaration;
 
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError> {
         match self {
             Declaration::Fn {
                 name,
@@ -88,7 +89,7 @@ impl Resolve for Declaration {
 impl Resolve for Statement {
     type Output = Statement;
 
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError> {
         match self {
             Statement::Let { name, init, ty } => resolve_let(resolver, name, init, ty),
             Statement::Ret { value, ret_ty } => resolve_ret(resolver, value, ret_ty),
@@ -128,7 +129,7 @@ impl Resolve for Statement {
 impl Resolve for Param {
     type Output = Param;
 
-    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, ResolverError> {
+    fn resolve(self, resolver: &mut Resolver) -> Result<Self::Output, QError> {
         let uniq_name = mkuniq(&self.name);
 
         resolver.var_map.insert(
@@ -151,7 +152,7 @@ fn resolve_fn(
     ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
-) -> Result<Declaration, ResolverError> {
+) -> Result<Declaration, QError> {
     let prev = std::mem::take(&mut resolver.var_map);
 
     let resolved_params = params
@@ -175,7 +176,7 @@ fn resolve_let(
     name: String,
     init: Expression,
     ty: Option<Type>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     let uniq_name = mkuniq(&name);
 
     let resolved_init = resolve_expr(resolver, init)?;
@@ -198,14 +199,14 @@ fn resolve_ret(
     resolver: &mut Resolver,
     value: Option<Expression>,
     ret_ty: Option<Type>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::Ret {
         value: value.map(|v| resolve_expr(resolver, v)).transpose()?,
         ret_ty,
     })
 }
 
-fn resolve_print(resolver: &mut Resolver, value: Expression) -> Result<Statement, ResolverError> {
+fn resolve_print(resolver: &mut Resolver, value: Expression) -> Result<Statement, QError> {
     Ok(Statement::Print {
         value: resolve_expr(resolver, value)?,
     })
@@ -216,7 +217,7 @@ fn resolve_if(
     cond: Expression,
     then_block: Box<Statement>,
     else_block: Option<Box<Statement>>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::If {
         cond: resolve_expr(resolver, cond)?,
         then_block: then_block.resolve(resolver)?.into(),
@@ -231,7 +232,7 @@ fn resolve_while(
     cond: Expression,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::While {
         cond: resolve_expr(resolver, cond)?,
         body: body.resolve(resolver)?.into(),
@@ -244,7 +245,7 @@ fn resolve_do_while(
     cond: Expression,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::DoWhile {
         cond: resolve_expr(resolver, cond)?,
         body: body.resolve(resolver)?.into(),
@@ -259,7 +260,7 @@ fn resolve_for(
     advancement: Option<Expression>,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::For {
         init: init
             .map(|i| i.resolve(resolver).map(Box::new))
@@ -275,23 +276,20 @@ fn resolve_loop(
     resolver: &mut Resolver,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, ResolverError> {
+) -> Result<Statement, QError> {
     Ok(Statement::Loop {
         body: body.resolve(resolver)?.into(),
         label,
     })
 }
 
-fn resolve_block(
-    resolver: &mut Resolver,
-    body: Vec<Statement>,
-) -> Result<Vec<Statement>, ResolverError> {
+fn resolve_block(resolver: &mut Resolver, body: Vec<Statement>) -> Result<Vec<Statement>, QError> {
     body.into_iter()
         .map(|stmt| stmt.resolve(resolver))
         .collect::<Result<Vec<_>, _>>()
 }
 
-fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression, ResolverError> {
+fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression, QError> {
     match expr {
         Expression::Literal { val, ty, span } => Ok(Expression::Literal { val, ty, span }),
 
@@ -299,8 +297,11 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             let resolved_var = resolver.var_map.get(&name).cloned();
 
             if resolved_var.is_none() {
-                return Err(ResolverError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Resolve,
                     msg: format!("undefined var: {}", name),
+                    span,
                 });
             }
 
@@ -372,19 +373,6 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             ty,
             span,
         }),
-    }
-}
-
-#[derive(Debug)]
-pub struct ResolverError {
-    msg: String,
-}
-
-impl std::error::Error for ResolverError {}
-
-impl std::fmt::Display for ResolverError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "resolver: {}", self.msg)
     }
 }
 

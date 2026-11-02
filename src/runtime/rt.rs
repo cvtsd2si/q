@@ -1,6 +1,9 @@
-use crate::runtime::{
-    value::{Value, ValueTag, print_value},
-    vm::{Vm, VmError},
+use crate::{
+    QError,
+    runtime::{
+        value::{Value, ValueTag, print_value},
+        vm::Vm,
+    },
 };
 
 #[repr(C)]
@@ -105,7 +108,7 @@ pub unsafe extern "C" fn jit_call(
 
                 0
             }
-            Err(VmError { msg: _, code }) => code,
+            Err(QError { code, .. }) => code,
         }
     }
 }

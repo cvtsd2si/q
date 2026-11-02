@@ -5,6 +5,7 @@ use crate::parser::ast::{
     Statement, Type, UnaryExpressionKind,
 };
 use crate::tokenizer::token::Span;
+use crate::{QError, QErrorKind};
 
 pub struct Typechecker {
     pub sym_table: HashMap<String, Symbol>,
@@ -28,13 +29,13 @@ impl Default for Typechecker {
 
 pub trait Typecheck {
     type Output;
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError>;
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError>;
 }
 
 impl Typecheck for Program {
     type Output = Program;
 
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
         self.block_items.iter().for_each(|block_item| {
             if let BlockItem::Decl(decl) = block_item
                 && let Declaration::Fn {
@@ -67,7 +68,7 @@ impl Typecheck for Program {
 impl Typecheck for BlockItem {
     type Output = BlockItem;
 
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
         match self {
             BlockItem::Decl(decl) => Ok(BlockItem::Decl(decl.typecheck(typechecker)?)),
             BlockItem::Stmt(stmt) => Ok(BlockItem::Stmt(stmt.typecheck(typechecker)?)),
@@ -78,7 +79,7 @@ impl Typecheck for BlockItem {
 impl Typecheck for Declaration {
     type Output = Declaration;
 
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
         match self {
             Declaration::Fn {
                 name,
@@ -93,7 +94,7 @@ impl Typecheck for Declaration {
 impl Typecheck for Statement {
     type Output = Statement;
 
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
         match self {
             Statement::Let { name, init, ty } => typecheck_let(typechecker, name, init, ty),
 
@@ -149,7 +150,7 @@ fn typecheck_fn(
     ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
-) -> Result<Declaration, TypecheckerError> {
+) -> Result<Declaration, QError> {
     let old_sym_table = std::mem::take(&mut typechecker.sym_table);
 
     let typechecked_params = params
@@ -159,8 +160,11 @@ fn typecheck_fn(
     let typechecked_body = body.typecheck(typechecker)?;
 
     if ret.is_some() && !always_returns(&typechecked_body) {
-        return Err(TypecheckerError {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
             msg: format!("fn {name} doesn't return on every control path"),
+            span: Span { start: 0, end: 0 },
         });
     }
 
@@ -179,7 +183,7 @@ fn typecheck_let(
     name: String,
     init: Expression,
     ty: Option<Type>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     let typechecked_init = typecheck_init(typechecker, init, ty)?;
 
     typechecker.sym_table.insert(
@@ -201,12 +205,12 @@ fn typecheck_ret(
     typechecker: &mut Typechecker,
     value: Option<Expression>,
     ret_ty: Option<Type>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     if value.is_none() {
         return Ok(Statement::Ret { value, ret_ty });
     }
 
-    let typechecked_expr = typecheck_expr(typechecker, value.unwrap(), ret_ty)?;
+    let typechecked_expr = typecheck_expr(typechecker, value.clone().unwrap(), ret_ty)?;
 
     let actual_ty = typechecked_expr.ty();
     let expected_ty = ret_ty;
@@ -214,11 +218,14 @@ fn typecheck_ret(
     if let Some(expected) = expected_ty
         && actual_ty != Some(expected)
     {
-        return Err(TypecheckerError {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
             msg: format!(
                 "type mismatch: got {:?} and wanted {:?}",
                 actual_ty, expected_ty
             ),
+            span: value.unwrap().span(),
         });
     }
 
@@ -228,10 +235,7 @@ fn typecheck_ret(
     })
 }
 
-fn typecheck_print(
-    typechecker: &mut Typechecker,
-    value: Expression,
-) -> Result<Statement, TypecheckerError> {
+fn typecheck_print(typechecker: &mut Typechecker, value: Expression) -> Result<Statement, QError> {
     Ok(Statement::Print {
         value: typecheck_expr(typechecker, value, None)?,
     })
@@ -242,7 +246,7 @@ fn typecheck_if(
     cond: Expression,
     then_block: Box<Statement>,
     else_block: Option<Box<Statement>>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     Ok(Statement::If {
         cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
         then_block: then_block.typecheck(typechecker)?.into(),
@@ -257,7 +261,7 @@ fn typecheck_while(
     cond: Expression,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     Ok(Statement::While {
         cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
         body: body.typecheck(typechecker)?.into(),
@@ -270,7 +274,7 @@ fn typecheck_do_while(
     cond: Expression,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     Ok(Statement::DoWhile {
         cond: typecheck_expr(typechecker, cond, Some(Type::Boolean))?,
         body: body.typecheck(typechecker)?.into(),
@@ -285,7 +289,7 @@ fn typecheck_for(
     advancement: Option<Expression>,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     Ok(Statement::For {
         init: init
             .map(|i| i.typecheck(typechecker).map(Box::new))
@@ -305,7 +309,7 @@ fn typecheck_loop(
     typechecker: &mut Typechecker,
     body: Box<Statement>,
     label: Option<String>,
-) -> Result<Statement, TypecheckerError> {
+) -> Result<Statement, QError> {
     Ok(Statement::Loop {
         body: body.typecheck(typechecker)?.into(),
         label,
@@ -315,7 +319,7 @@ fn typecheck_loop(
 fn typecheck_block(
     typechecker: &mut Typechecker,
     body: Vec<Statement>,
-) -> Result<Vec<Statement>, TypecheckerError> {
+) -> Result<Vec<Statement>, QError> {
     body.into_iter()
         .map(|stmt| stmt.typecheck(typechecker))
         .collect()
@@ -325,29 +329,39 @@ fn typecheck_expr(
     typechecker: &mut Typechecker,
     expr: Expression,
     expected_ty: Option<Type>,
-) -> Result<Expression, TypecheckerError> {
+) -> Result<Expression, QError> {
     match expr {
         Expression::Literal { val, ty, span } => typecheck_literal(val, ty, expected_ty, span),
 
-        Expression::Variable { name, ty: _, span } => {
-            let sym = typechecker.sym_table.get(&name);
+        Expression::Variable {
+            ref name,
+            ty: _,
+            span,
+        } => {
+            let sym = typechecker.sym_table.get(name);
 
             if sym.is_none() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Referenced an unknown variable: {:?}.", sym),
+                    span: expr.span(),
                 });
             }
 
             let sym = sym.unwrap();
 
             if sym.ty.is_none() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: "Referenced an unknown type.".to_string(),
+                    span: expr.span(),
                 });
             }
 
             Ok(Expression::Variable {
-                name,
+                name: name.to_owned(),
                 ty: sym.ty,
                 span,
             })
@@ -381,11 +395,14 @@ fn typecheck_expr(
             let expr = typecheck_expr(typechecker, *expr, Some(operand_ty))?;
 
             if expr.ty() != Some(operand_ty) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!(
                         "Expected unary expr of type {operand_ty:?}, got {:?}",
                         expr.ty()
                     ),
+                    span: expr.span(),
                 });
             }
 
@@ -414,8 +431,11 @@ fn typecheck_expr(
             };
 
             if !is_valid_ty {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Invalid operand type {operand_ty:?} for unary {kind:?}"),
+                    span: expr.span(),
                 });
             }
 
@@ -427,8 +447,11 @@ fn typecheck_expr(
             if let Some(expected) = expected_ty
                 && expected != result_ty
             {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    kind: QErrorKind::Typecheck,
+                    code: 1,
                     msg: format!("Expected {expected:?}, got {result_ty:?}."),
+                    span: expr.span(),
                 });
             }
 
@@ -461,8 +484,11 @@ fn typecheck_expr(
             let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
 
             if !operand_ty.is_int() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    kind: QErrorKind::Typecheck,
+                    code: 1,
                     msg: format!("Bitwise operators require int operands, got {operand_ty:?}"),
+                    span,
                 });
             }
 
@@ -470,8 +496,11 @@ fn typecheck_expr(
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 
             if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                    span,
                 });
             }
 
@@ -498,10 +527,13 @@ fn typecheck_expr(
             let rhs_ty = rhs.ty().unwrap();
 
             if lhs_ty != Type::Boolean || rhs_ty != Type::Boolean {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!(
                         "Logical operators require scalar operands, got {lhs_ty:?} and {rhs_ty:?}"
                     ),
+                    span,
                 });
             }
 
@@ -536,10 +568,13 @@ fn typecheck_expr(
             if let (Some(lhs_ty), Some(rhs_ty)) = (&lhs_hint, &rhs_hint)
                 && lhs_ty != rhs_ty
             {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!(
                         "Comparisons require operands of the same type, got {lhs_ty:?} and {rhs_ty:?}"
                     ),
+                    span,
                 });
             }
 
@@ -551,8 +586,11 @@ fn typecheck_expr(
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 
             if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                    span,
                 });
             }
 
@@ -583,14 +621,20 @@ fn typecheck_expr(
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 
             if !operand_ty.is_numeric() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Arithmetic requires numeric operands, got {operand_ty:?}"),
+                    span,
                 });
             }
 
             if lhs.ty() != Some(operand_ty) || rhs.ty() != Some(operand_ty) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("invalid operands: {:?} and {:?}", lhs.ty(), rhs.ty()),
+                    span,
                 });
             }
 
@@ -613,26 +657,35 @@ fn typecheck_expr(
                 .funcs
                 .get(&target)
                 .cloned()
-                .ok_or_else(|| TypecheckerError {
+                .ok_or_else(|| QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Unknown fn: {target}"),
+                    span,
                 })?;
 
             if let Some(expected) = expected_ty
                 && s.ret_ty != Some(expected)
             {
                 let t = s.ret_ty;
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Expected {expected:?}, but fn {target} returns {t:?}"),
+                    span,
                 });
             }
 
             if args.len() != s.params.len() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!(
                         "Fn {target} expects {} args, got {}",
                         s.params.len(),
                         args.len()
                     ),
+                    span,
                 });
             }
 
@@ -644,13 +697,16 @@ fn typecheck_expr(
                     let arg = typecheck_expr(typechecker, arg, Some(param_ty))?;
 
                     if arg.ty() != Some(param_ty) {
-                        return Err(TypecheckerError {
+                        return Err(QError {
+                            code: 1,
+                            kind: QErrorKind::Typecheck,
                             msg: format!(
                                 "arg {} of {target:?}: expected {:?}, got {:?}",
                                 i + 1,
                                 param_ty,
                                 arg.ty()
                             ),
+                            span,
                         });
                     }
 
@@ -669,22 +725,31 @@ fn typecheck_expr(
         Expression::Assign { lhs, rhs, span, .. } => {
             /* Ensure lhs is assignable.  */
             if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: "lhs must be assignable".to_string(),
+                    span,
                 });
             }
 
             let lhs = typecheck_expr(typechecker, *lhs, None)?;
 
-            let lhs_ty = lhs.ty().ok_or_else(|| TypecheckerError {
+            let lhs_ty = lhs.ty().ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
                 msg: "cannot assign to a var with unknown ty".to_string(),
+                span,
             })?;
 
             if let Some(expected) = expected_ty
                 && expected != lhs_ty
             {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("expected assignment of type {expected:?}, got {lhs_ty:?}"),
+                    span,
                 });
             }
 
@@ -692,11 +757,14 @@ fn typecheck_expr(
             let rhs = typecheck_expr(typechecker, *rhs, Some(lhs_ty))?;
 
             if rhs.ty() != Some(lhs_ty) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!(
                         "cannot assign {:?} to a variable of type {lhs_ty:?}",
                         rhs.ty()
                     ),
+                    span,
                 });
             }
 
@@ -717,14 +785,20 @@ fn typecheck_expr(
             /* Determine the operand's own type independently of the destination type.  */
             let expr = typecheck_expr(typechecker, *expr, None)?;
 
-            let src_ty = expr.ty().ok_or_else(|| TypecheckerError {
+            let src_ty = expr.ty().ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
                 msg: "Cannot determine the type of cast operand".into(),
+                span,
             })?;
 
             /* FIXME: Only allow casts between numeric types for now.  */
             if !src_ty.is_numeric() || !target_ty.is_numeric() {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Invalid cast from {src_ty:?} to {target_ty:?}."),
+                    span: expr.span(),
                 });
             }
 
@@ -732,8 +806,11 @@ fn typecheck_expr(
             if let Some(expected) = expected_ty
                 && expected != target_ty
             {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: format!("Expected {expected:?}, got {target_ty:?}."),
+                    span: expr.span(),
                 });
             }
 
@@ -752,12 +829,15 @@ fn typecheck_literal(
     explicit_ty: Option<Type>,
     expected_ty: Option<Type>,
     span: Span,
-) -> Result<Expression, TypecheckerError> {
+) -> Result<Expression, QError> {
     if let (Some(explicit), Some(expected)) = (explicit_ty, expected_ty)
         && explicit != expected
     {
-        return Err(TypecheckerError {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
             msg: format!("got: {explicit:?}, expected: {expected:?}"),
+            span,
         });
     }
 
@@ -767,7 +847,12 @@ fn typecheck_literal(
         LiteralVal::Float(_) => Type::Float64,
     });
 
-    Literal::try_from((&val, ty)).map_err(|msg| TypecheckerError { msg })?;
+    Literal::try_from((&val, ty)).map_err(|msg| QError {
+        code: 1,
+        kind: QErrorKind::Typecheck,
+        msg,
+        span,
+    })?;
 
     Ok(Expression::Literal {
         val,
@@ -780,16 +865,19 @@ fn typecheck_init(
     typechecker: &mut Typechecker,
     init: Expression,
     expected_ty: Option<Type>,
-) -> Result<Expression, TypecheckerError> {
-    let typechecked_init = typecheck_expr(typechecker, init, expected_ty)?;
+) -> Result<Expression, QError> {
+    let typechecked_init = typecheck_expr(typechecker, init.clone(), expected_ty)?;
 
     let actual_ty = typechecked_init.ty();
 
     if let Some(expected) = expected_ty
         && actual_ty != Some(expected)
     {
-        return Err(TypecheckerError {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
             msg: format!("Expected {:?}, got {:?}", expected_ty, actual_ty),
+            span: init.span(),
         });
     }
 
@@ -799,7 +887,7 @@ fn typecheck_init(
 impl Typecheck for Param {
     type Output = Param;
 
-    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, TypecheckerError> {
+    fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
         typechecker.sym_table.insert(
             self.name.clone(),
             Symbol {
@@ -815,20 +903,20 @@ impl Typecheck for Param {
     }
 }
 
-fn merge_types(a: Option<Type>, b: Option<Type>) -> Result<Option<Type>, TypecheckerError> {
+fn merge_types(a: Option<Type>, b: Option<Type>) -> Result<Option<Type>, QError> {
     match (a, b) {
-        (Some(a), Some(b)) if a != b => Err(TypecheckerError {
+        (Some(a), Some(b)) if a != b => Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
             msg: format!("Cannot merge types: {a:?} != {b:?}"),
+            span: Span { start: 0, end: 0 },
         }),
         (Some(ty), _) | (_, Some(ty)) => Ok(Some(ty)),
         (None, None) => Ok(None),
     }
 }
 
-fn known_ty(
-    typechecker: &mut Typechecker,
-    expr: &Expression,
-) -> Result<Option<Type>, TypecheckerError> {
+fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<Type>, QError> {
     match expr {
         Expression::Literal { ty, .. } => Ok(*ty),
 
@@ -836,16 +924,22 @@ fn known_ty(
             .sym_table
             .get(name)
             .map(|sym| sym.ty)
-            .ok_or_else(|| TypecheckerError {
+            .ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
                 msg: format!("Unknown var: {name}"),
+                span: expr.span(),
             }),
 
         Expression::Call { target, .. } => typechecker
             .funcs
             .get(target)
             .map(|sig| sig.ret_ty)
-            .ok_or_else(|| TypecheckerError {
+            .ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
                 msg: format!("Unknown fn: {target}"),
+                span: expr.span(),
             }),
 
         Expression::Unary { kind, expr, .. } => match kind {
@@ -875,8 +969,11 @@ fn known_ty(
 
         Expression::Assign { lhs, .. } => {
             if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
-                return Err(TypecheckerError {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
                     msg: "lhs of assign expr must be a var".to_string(),
+                    span: expr.span(),
                 });
             }
 
@@ -928,17 +1025,4 @@ pub struct Symbol {
 pub struct FnSignature {
     pub params: Vec<Type>,
     pub ret_ty: Option<Type>,
-}
-
-#[derive(Debug)]
-pub struct TypecheckerError {
-    msg: String,
-}
-
-impl std::error::Error for TypecheckerError {}
-
-impl std::fmt::Display for TypecheckerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "typechecker: {}", self.msg)
-    }
 }

@@ -1,11 +1,12 @@
 use q::{
+    PrintSrc, QError,
     codegen::{
+        Codegen, CodegenContext,
         bytecode::r#gen::BytecodeProg,
         ir::{
             r#gen::Irfy,
             optimizer::{Optimization, Optimize},
         },
-        {Codegen, CodegenContext},
     },
     parser::recursive_descent::Parser,
     runtime::vm::Vm,
@@ -22,20 +23,25 @@ use std::{collections::VecDeque, path::PathBuf};
 
 use structopt::StructOpt;
 
-fn main() {
+fn main() -> Result<(), std::io::Error> {
     let opts = Opt::from_args();
-    match run(&opts) {
+    let src = std::fs::read_to_string(&opts.path)?;
+
+    match run(&src, &opts) {
         Ok(r) => std::process::exit(r),
-        Err(e) => {
-            eprintln!("err: {}", e);
-            std::process::exit(1);
+        Err(ref e) => {
+            if e.carries_span() {
+                e.print_src(&src);
+            }
+
+            eprintln!("{}", e);
+            
+            std::process::exit(e.code as i32);
         }
     }
 }
 
-fn run(opts: &Opt) -> Result<i32, Box<dyn std::error::Error>> {
-    let src = std::fs::read_to_string(&opts.path)?;
-
+fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
     let tokens = Tokenizer::new(&src).collect::<Result<VecDeque<_>, _>>()?;
 
     if opts.tokenize {

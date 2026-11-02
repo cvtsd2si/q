@@ -1,4 +1,6 @@
 use crate::parser::ast::{BlockItem, Declaration, Param, Program, Statement, Type};
+use crate::tokenizer::token::Span;
+use crate::{QError, QErrorKind};
 
 pub struct LoopLabeler {
     next_id: usize,
@@ -19,13 +21,13 @@ impl LoopLabeler {
         label
     }
 
-    fn current_loop(&self, keyword: &str) -> Result<String, LoopLabelError> {
-        self.active_loops
-            .last()
-            .cloned()
-            .ok_or_else(|| LoopLabelError {
-                msg: format!("`{keyword} outside the loop"),
-            })
+    fn current_loop(&self, keyword: &str) -> Result<String, QError> {
+        self.active_loops.last().cloned().ok_or_else(|| QError {
+            kind: QErrorKind::LoopLabel,
+            code: 1,
+            msg: format!("`{keyword} outside the loop"),
+            span: Span { start: 0, end: 0 },
+        })
     }
 }
 
@@ -37,13 +39,13 @@ impl Default for LoopLabeler {
 
 pub trait LoopLabel {
     type Output;
-    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError>;
+    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, QError>;
 }
 
 impl LoopLabel for Program {
     type Output = Program;
 
-    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError> {
+    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, QError> {
         Ok(Program {
             block_items: self
                 .block_items
@@ -57,7 +59,7 @@ impl LoopLabel for Program {
 impl LoopLabel for BlockItem {
     type Output = BlockItem;
 
-    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError> {
+    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, QError> {
         match self {
             BlockItem::Decl(decl) => Ok(BlockItem::Decl(decl.loop_label(labeler)?)),
             BlockItem::Stmt(stmt) => Ok(BlockItem::Stmt(stmt.loop_label(labeler)?)),
@@ -68,7 +70,7 @@ impl LoopLabel for BlockItem {
 impl LoopLabel for Declaration {
     type Output = Declaration;
 
-    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError> {
+    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, QError> {
         match self {
             Declaration::Fn {
                 name,
@@ -83,7 +85,7 @@ impl LoopLabel for Declaration {
 impl LoopLabel for Statement {
     type Output = Statement;
 
-    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, LoopLabelError> {
+    fn loop_label(self, labeler: &mut LoopLabeler) -> Result<Self::Output, QError> {
         match self {
             Statement::Print { value } => Ok(Statement::Print { value }),
             Statement::Let { name, init, ty } => Ok(Statement::Let { name, init, ty }),
@@ -208,7 +210,7 @@ fn loop_label_fn(
     ret: Option<Type>,
     params: Vec<Param>,
     body: Statement,
-) -> Result<Declaration, LoopLabelError> {
+) -> Result<Declaration, QError> {
     let old_loops = std::mem::take(&mut labeler.active_loops);
 
     let r = body.loop_label(labeler)?;
@@ -221,17 +223,4 @@ fn loop_label_fn(
         params,
         body: r,
     })
-}
-
-#[derive(Debug)]
-pub struct LoopLabelError {
-    pub msg: String,
-}
-
-impl std::error::Error for LoopLabelError {}
-
-impl std::fmt::Display for LoopLabelError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "loop_labeler: {}", self.msg)
-    }
 }

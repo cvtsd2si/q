@@ -3,6 +3,7 @@ pub mod bytecode;
 pub mod ir;
 
 use crate::{
+    QError,
     codegen::{bytecode::r#gen::BytecodeFunc, ir::r#gen::StaticInit},
     parser::ast::Type,
 };
@@ -10,7 +11,7 @@ use crate::{
 use std::{any::TypeId, collections::HashMap};
 
 pub trait Codegen<T> {
-    fn codegen(&self, ctx: &mut CodegenContext) -> Result<T, Box<dyn std::error::Error>>;
+    fn codegen(&self, ctx: &mut CodegenContext) -> Result<T, QError>;
 }
 
 #[derive(Debug)]

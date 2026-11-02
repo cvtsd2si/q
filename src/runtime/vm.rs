@@ -1,6 +1,9 @@
 use crate::{
-    codegen::bytecode::r#gen::{BytecodeProg, Op},
-    codegen::ir::r#gen::{IRInstr, IRProg},
+    QError, QErrorKind,
+    codegen::{
+        bytecode::r#gen::{BytecodeProg, Op},
+        ir::r#gen::{IRInstr, IRProg},
+    },
     parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
     runtime::{
         jit::{
@@ -10,6 +13,7 @@ use crate::{
         rt::{RT, RtResult},
         value::{Value, ValueTag, print_value},
     },
+    tokenizer::token::Span,
 };
 
 macro_rules! unop {
@@ -40,14 +44,16 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new(bytecode: BytecodeProg, ir: IRProg, enable_jit: bool) -> Result<Self, VmError> {
+    pub fn new(bytecode: BytecodeProg, ir: IRProg, enable_jit: bool) -> Result<Self, QError> {
         let entrypoint = bytecode
             .funcs
             .iter()
             .position(|f| f.name == "main")
-            .ok_or_else(|| VmError {
-                msg: "No 'main' fn.".into(),
+            .ok_or_else(|| QError {
+                kind: QErrorKind::Vm,
                 code: 1,
+                msg: "No 'main' fn.".into(),
+                span: Span { start: 0, end: 0 },
             })?;
 
         let jit = if enable_jit {
@@ -74,7 +80,7 @@ impl Vm {
         })
     }
 
-    pub fn exec(&mut self) -> Result<Value, VmError> {
+    pub fn exec(&mut self) -> Result<Value, QError> {
         let r = self.exec_until(None);
         assert_eq!(self.stack.len(), 0);
 
@@ -88,7 +94,7 @@ impl Vm {
     ///  The rt trampoline (`jit_call()`) uses this to execute a language-level
     ///  call and return control to native code once the called function is done,
     ///  without continuing execution of the suspended jitted caller.
-    pub fn exec_until(&mut self, stop_depth: Option<usize>) -> Result<Value, VmError> {
+    pub fn exec_until(&mut self, stop_depth: Option<usize>) -> Result<Value, QError> {
         loop {
             if let Some(exit) = self.maybe_run_jit() {
                 match exit {
@@ -106,9 +112,11 @@ impl Vm {
                     }
 
                     JitExit::Error(code) => {
-                        return Err(VmError {
+                        return Err(QError {
+                            kind: QErrorKind::Vm,
                             msg: "native code errored out".to_string(),
-                            code,
+                            code: code,
+                            span: Span { start: 0, end: 0 },
                         });
                     }
                 }
@@ -228,7 +236,7 @@ impl Vm {
         }
     }
 
-    pub fn invoke_from_jit(&mut self, target: usize, args: &[Value]) -> Result<Value, VmError> {
+    pub fn invoke_from_jit(&mut self, target: usize, args: &[Value]) -> Result<Value, QError> {
         let old_func = self.func;
         let old_pc = self.pc;
         let old_fp = self.fp;
@@ -240,13 +248,15 @@ impl Vm {
         let params = &f.params;
 
         if params.len() != args.len() {
-            return Err(VmError {
+            return Err(QError {
+                kind: QErrorKind::Vm,
                 msg: format!(
                     "argcount mismatch (got {}, expected {})",
                     args.len(),
                     params.len()
                 ),
                 code: RtResult::Internal as u32,
+                span: Span { start: 0, end: 0 },
             });
         }
 
@@ -489,11 +499,13 @@ impl Vm {
         self.stack.push(value.cast(src_ty, dst_ty));
     }
 
-    fn handle_op_print(&mut self) -> Result<(), VmError> {
+    fn handle_op_print(&mut self) -> Result<(), QError> {
         let obj = self.stack.pop().unwrap();
-        print_value(obj).map_err(|_| VmError {
+        print_value(obj).map_err(|_| QError {
+            kind: QErrorKind::Vm,
             msg: "print_value failed".to_string(),
             code: RtResult::Io as u32,
+            span: Span { start: 0, end: 0 },
         })
     }
 
@@ -568,10 +580,12 @@ struct JitState {
 }
 
 impl JitState {
-    fn new(bytecode: &BytecodeProg) -> Result<Self, VmError> {
-        let shared_entry = JitCompiler::new().compile_entry().map_err(|e| VmError {
+    fn new(bytecode: &BytecodeProg) -> Result<Self, QError> {
+        let shared_entry = JitCompiler::new().compile_entry().map_err(|e| QError {
+            kind: QErrorKind::Vm,
             msg: e.msg,
             code: RtResult::Internal as u32,
+            span: Span { start: 0, end: 0 },
         })?;
 
         Ok(Self {
@@ -599,18 +613,4 @@ struct Frame {
     func: usize,
     pc: usize,
     ptr: usize,
-}
-
-#[derive(Debug)]
-pub struct VmError {
-    pub msg: String,
-    pub code: u32,
-}
-
-impl std::error::Error for VmError {}
-
-impl std::fmt::Display for VmError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "vm: {} (code: {})", self.msg, self.code)
-    }
 }

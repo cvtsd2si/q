@@ -1,7 +1,7 @@
 pub mod error;
 pub mod token;
 
-use error::TokenizerError;
+use crate::{QError, QErrorKind};
 use token::{NumberKind, NumberToken, Span, Suffix, Token, TokenKind};
 
 use std::iter::Peekable;
@@ -22,9 +22,9 @@ impl<'src> Tokenizer<'src> {
 }
 
 impl<'src> Iterator for Tokenizer<'src> {
-    type Item = Result<Token, TokenizerError>;
+    type Item = Result<Token, QError>;
 
-    fn next(&mut self) -> Option<Result<Token, TokenizerError>> {
+    fn next(&mut self) -> Option<Result<Token, QError>> {
         while let Some((idx, ch)) = self.chars.next() {
             if ch.is_whitespace() {
                 continue;
@@ -233,8 +233,9 @@ impl<'src> Iterator for Tokenizer<'src> {
                         span: Span { start: idx, end },
                     })
                 }
-                _ => Err(TokenizerError {
-                    src: self.src.to_string(),
+                _ => Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Tokenize,
                     msg: "Encountered unknown token.".to_string(),
                     span: Span {
                         start: idx,
@@ -279,7 +280,7 @@ impl<'src> Tokenizer<'src> {
         has_digit
     }
 
-    fn tokenize_number(&mut self, start: usize, first: char) -> Result<Token, TokenizerError> {
+    fn tokenize_number(&mut self, start: usize, first: char) -> Result<Token, QError> {
         let radix = if first == '0' {
             match self.peek_char(0) {
                 Some('x' | 'X') => {
@@ -315,8 +316,9 @@ impl<'src> Tokenizer<'src> {
 
             if !self.scan_digits(radix, false) {
                 let end = self.position();
-                return Err(TokenizerError {
-                    src: self.src.to_string(),
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Tokenize,
                     msg: "Expected at least one digit after numeric prefix.".to_string(),
                     span: Span { start, end },
                 });
@@ -357,8 +359,9 @@ impl<'src> Tokenizer<'src> {
                 if !self.scan_digits(10, false) {
                     let end = self.position();
 
-                    return Err(TokenizerError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Tokenize,
                         msg: "Expected at least one digit in numeric exponent".to_string(),
                         span: Span { start, end },
                     });
@@ -387,8 +390,9 @@ impl<'src> Tokenizer<'src> {
                 let suffix = match Suffix::parse(txt) {
                     Some(suffix) => suffix,
                     None => {
-                        return Err(TokenizerError {
-                            src: self.src.to_string(),
+                        return Err(QError {
+                            code: 1,
+                            kind: QErrorKind::Tokenize,
                             msg: "Unknown numeric suffix.".to_string(),
                             span: Span {
                                 start: value_end,
@@ -400,8 +404,9 @@ impl<'src> Tokenizer<'src> {
 
                 /* Disallow suffix mismatch.  */
                 if kind == NumberKind::Float && !suffix.is_float() {
-                    return Err(TokenizerError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Tokenize,
                         msg: "A floating point literal cannot have an integer suffix.".to_string(),
                         span: Span {
                             start: value_end,
@@ -411,8 +416,9 @@ impl<'src> Tokenizer<'src> {
                 }
 
                 if radix != 10 && suffix.is_float() {
-                    return Err(TokenizerError {
-                        src: self.src.to_string(),
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Tokenize,
                         msg: "A non-decimal integer cannot have a float suffix.".to_string(),
                         span: Span {
                             start: value_end,
