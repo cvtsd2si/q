@@ -345,7 +345,7 @@ fn typecheck_expr(
                     code: 1,
                     kind: QErrorKind::Typecheck,
                     msg: format!("Referenced an unknown variable: {:?}.", sym),
-                    span, 
+                    span,
                 });
             }
 
@@ -670,7 +670,10 @@ fn typecheck_expr(
                 return Err(QError {
                     code: 1,
                     kind: QErrorKind::Typecheck,
-                    msg: format!("Expected {expected:?}, but fn {target} returns {:?}", s.ret_ty),
+                    msg: format!(
+                        "Expected {expected:?}, but fn {target} returns {:?}",
+                        s.ret_ty
+                    ),
                     span,
                 });
             }
