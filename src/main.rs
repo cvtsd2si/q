@@ -35,7 +35,7 @@ fn main() -> Result<(), std::io::Error> {
             }
 
             eprintln!("{}", e);
-            
+
             std::process::exit(e.code as i32);
         }
     }
