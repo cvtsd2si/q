@@ -61,6 +61,7 @@ fn transfer_constant(instr: &IRInstr, facts: &mut HashMap<String, Literal>) {
         IRInstr::Cpy { src, src_ty, .. } if src_ty == dst_ty => match src {
             IRVal::Const(value) => Some(*value),
             IRVal::Var { name, .. } => facts.get(name).copied(),
+            IRVal::Str(_) => None,
         },
         _ => None,
     };

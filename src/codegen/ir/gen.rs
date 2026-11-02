@@ -1,8 +1,8 @@
 use std::sync::atomic::AtomicU64;
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, Param, Program, Statement,
-    Type, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
+    Statement, Type, UnaryExpressionKind,
 };
 
 pub trait Irfy {
@@ -336,6 +336,10 @@ fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
 
 fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
     match expr {
+        Expression::Literal {
+            val: LiteralVal::String(s),
+            ..
+        } => ExpRes::Plain(IRVal::Str(s.to_owned())),
         Expression::Literal { val, ty, .. } => {
             let ty = ty.unwrap();
             let literal = Literal::try_from((val, ty)).unwrap();
@@ -1052,10 +1056,11 @@ pub struct IRFunc {
     pub ret_ty: Option<Type>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum StaticInit {
     Float(f32),
     Double(f64),
+    String(String),
 }
 
 #[derive(Debug)]
@@ -1071,6 +1076,7 @@ pub struct IRStmt {
 #[derive(Debug, Clone)]
 pub enum IRVal {
     Const(Literal),
+    Str(String),
     Var { name: String, ty: Type },
 }
 
@@ -1092,6 +1098,8 @@ impl std::fmt::Display for IRVal {
                 Literal::Float32(v) => write!(f, "{v}"),
                 Literal::Float64(v) => write!(f, "{v}"),
             },
+
+            Self::Str(string) => write!(f, "{string}"),
         }
     }
 }

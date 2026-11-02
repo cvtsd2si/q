@@ -103,6 +103,7 @@ pub enum TokenKind {
     Str,
     Semicolon,
     Number(NumberToken),
+    String,
     U8,
     I8,
     U16,

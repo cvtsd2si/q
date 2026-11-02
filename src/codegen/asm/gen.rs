@@ -204,7 +204,7 @@ impl From<Type> for AsmType {
             Type::Int64 | Type::UInt64 => AsmType::Quad,
             Type::Float32 => AsmType::Float,
             Type::Float64 => AsmType::Double,
-            _ => unreachable!("Not a supported type: {value:?}"),
+            Type::String => AsmType::Quad,
         }
     }
 }
@@ -312,6 +312,7 @@ pub enum AsmOp {
     Reg(AsmReg),
     Imm(i64),
     Mem(AsmReg, isize),
+    PseudoMem(String, isize),
     Data(String, isize),
 }
 
@@ -341,7 +342,7 @@ impl std::fmt::Display for AsmOp {
                 reg.as_width(AsmType::Quad)
             ),
             AsmOp::Mem(reg, offset) => write!(f, "0x{offset:x}({})", reg.as_width(AsmType::Quad)),
-            AsmOp::Pseudo { .. } => unreachable!(),
+            AsmOp::Pseudo { .. } | AsmOp::PseudoMem(_, _) => unreachable!(),
             AsmOp::Data(ident, offset) => match *offset {
                 0 => write!(f, "{ident}(%rip)"),
                 n if n > 0 => write!(f, "{ident}+0x{n:x}(%rip)"),
@@ -453,7 +454,7 @@ impl Codegen<AsmProg> for IRProg {
                 .iter()
                 .map(|konst| StaticConst {
                     name: konst.name.clone(),
-                    init: konst.init,
+                    init: konst.init.clone(),
                     ty: konst.ty,
                     alignment: konst.alignment,
                 })
@@ -2480,6 +2481,12 @@ impl Codegen<AsmOp> for IRVal {
                 name: name.into(),
                 ty: *ty,
             }),
+            IRVal::Str(s) => {
+                let interned = ctx.intern_asm_string(s);
+                let op = AsmOp::PseudoMem(interned.to_string(), 0);
+
+                Ok(op)
+            }
         }
     }
 }
@@ -2546,7 +2553,29 @@ impl CodegenContext {
             funcs: HashMap::new(),
             static_consts: Vec::new(),
             float_pool: HashMap::new(),
+            string_pool: Vec::new(),
+            string_indexes: HashMap::new(),
+            asm_string_pool: HashMap::new(),
         }
+    }
+
+    pub fn intern_asm_string(&mut self, s: &str) -> String {
+        if let Some(name) = self.asm_string_pool.get(s) {
+            return name.clone();
+        }
+
+        let name = format!(".LC{}", mktmp());
+
+        self.static_consts.push(StaticConst {
+            name: name.clone(),
+            init: StaticInit::String(s.to_owned()),
+            ty: Type::String,
+            alignment: 8,
+        });
+
+        self.asm_string_pool.insert(s.to_owned(), name.clone());
+
+        name
     }
 
     pub fn intern_float(&mut self, literal: Literal) -> String {

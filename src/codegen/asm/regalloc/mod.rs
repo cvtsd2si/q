@@ -445,7 +445,7 @@ impl AsmOp {
             Self::Reg(reg) | Self::Mem(reg, _) => {
                 ud.uses.insert(AsmLocation::Reg(*reg));
             }
-            Self::Imm(_) | Self::Data(_, _) => {}
+            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _) => {}
         }
     }
 
@@ -460,7 +460,7 @@ impl AsmOp {
             Self::Mem(reg, _) => {
                 ud.uses.insert(AsmLocation::Reg(*reg));
             }
-            Self::Imm(_) | Self::Data(_, _) => {}
+            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _) => {}
         }
     }
 }

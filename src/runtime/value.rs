@@ -87,6 +87,7 @@ pub enum ValueTag {
     Float64 = 9,
     Bool = 10,
     Void = 11,
+    Str = 12,
 }
 
 impl From<Literal> for Value {
@@ -123,7 +124,7 @@ impl From<Type> for ValueTag {
             Type::Float32 => ValueTag::Float32,
             Type::Float64 => ValueTag::Float64,
             Type::Boolean => ValueTag::Bool,
-            _ => unimplemented!(),
+            Type::String => ValueTag::Str,
         }
     }
 }
@@ -402,6 +403,7 @@ impl TryFrom<u64> for ValueTag {
             9 => Self::Float64,
             10 => Self::Bool,
             11 => Self::Void,
+            12 => Self::Str,
             _ => return Err(()),
         })
     }
@@ -431,7 +433,26 @@ impl std::fmt::Display for Value {
             }
 
             ValueTag::Bool => write!(f, "{}", self.payload != 0),
+
             ValueTag::Void => write!(f, "()"),
+
+            ValueTag::Str => {
+                let ptr = self.payload as *const u8;
+
+                unsafe {
+                    /* Read the length (first 8 bytes).  */
+                    let len = std::ptr::read_unaligned(ptr.cast::<u64>());
+                    let len = u64::from_le(len) as usize;
+
+                    /* Read the contents which begin immediately after the length.  */
+                    let bytes = std::slice::from_raw_parts(ptr.add(8), len);
+
+                    /* Convert the bytes into rust &str.  */
+                    let s = std::str::from_utf8(bytes).map_err(|_| std::fmt::Error)?;
+
+                    f.write_str(s)
+                }
+            }
         }
     }
 }

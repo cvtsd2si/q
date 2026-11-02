@@ -180,6 +180,7 @@ impl<'src> Iterator for Tokenizer<'src> {
                 '%' => single_or_double!('=', TokenKind::PercentEqual),
                 '^' => single_or_double!('=', TokenKind::CaretEqual),
                 '=' => single_or_double!('=', TokenKind::DoubleEqual),
+                '"' => self.tokenize_string(idx),
                 _ if ch.is_ascii_digit() => self.tokenize_number(idx, ch),
                 _ if ch.is_alphabetic() || ch == '_' => {
                     while self
@@ -278,6 +279,34 @@ impl<'src> Tokenizer<'src> {
         }
 
         has_digit
+    }
+
+    fn tokenize_string(&mut self, start: usize) -> Result<Token, QError> {
+        loop {
+            match self.chars.next() {
+                Some((idx, '"')) => {
+                    return Ok(Token {
+                        kind: TokenKind::String,
+                        span: Span {
+                            start,
+                            end: idx + 1,
+                        },
+                    });
+                }
+                Some(_) => {}
+                None => {
+                    return Err(QError {
+                        kind: QErrorKind::Tokenize,
+                        msg: "Unterminated string literal".into(),
+                        code: 1,
+                        span: Span {
+                            start,
+                            end: self.src.len(),
+                        },
+                    });
+                }
+            }
+        }
     }
 
     fn tokenize_number(&mut self, start: usize, first: char) -> Result<Token, QError> {

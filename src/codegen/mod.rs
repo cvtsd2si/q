@@ -21,6 +21,11 @@ pub struct CodegenContext {
     pub funcs: HashMap<String, usize>,
     pub static_consts: Vec<StaticConst>,
     pub float_pool: HashMap<(u8, u64), String>,
+    /* Bytecode  */
+    pub string_pool: Vec<String>,
+    pub string_indexes: HashMap<String, usize>,
+    /* ASM  */
+    pub asm_string_pool: HashMap<String, String>,
 }
 
 impl Default for CodegenContext {
@@ -52,6 +57,19 @@ impl CodegenContext {
         let idx = structure.len();
 
         structure.insert(name.to_owned(), idx);
+
+        idx
+    }
+
+    pub fn intern_string(&mut self, s: &str) -> usize {
+        if let Some(&idx) = self.string_indexes.get(s) {
+            return idx;
+        }
+
+        let idx = self.string_pool.len();
+
+        self.string_pool.push(s.to_owned());
+        self.string_indexes.insert(s.to_owned(), idx);
 
         idx
     }

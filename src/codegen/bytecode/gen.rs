@@ -13,6 +13,7 @@ use crate::{
 #[derive(Debug, Clone, Copy)]
 pub enum Op {
     Const(Literal),
+    StrConst(usize),
     Unary(UnaryExpressionKind),
     Binary(BinaryExpressionKind),
     Ret,
@@ -31,6 +32,7 @@ pub type Bytecode = Vec<Op>;
 #[derive(Debug)]
 pub struct BytecodeProg {
     pub funcs: Vec<BytecodeFunc>,
+    pub strings: Vec<String>,
 }
 
 #[derive(Debug)]
@@ -43,7 +45,10 @@ pub struct BytecodeFunc {
 
 impl Codegen<BytecodeProg> for IRProg {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<BytecodeProg, QError> {
-        let mut bytecode_prog = BytecodeProg { funcs: vec![] };
+        let mut bytecode_prog = BytecodeProg {
+            funcs: vec![],
+            strings: vec![],
+        };
 
         for f in self.functions() {
             ctx.register::<BytecodeFunc>(&f.name);
@@ -52,6 +57,9 @@ impl Codegen<BytecodeProg> for IRProg {
         for f in self.functions() {
             bytecode_prog.funcs.push(f.codegen(ctx)?);
         }
+
+        bytecode_prog.strings = std::mem::take(&mut ctx.string_pool);
+        ctx.string_indexes.clear();
 
         Ok(bytecode_prog)
     }
@@ -126,7 +134,7 @@ impl Codegen<Bytecode> for IRInstr {
 
                 let (name, dst_ty) = match dst {
                     IRVal::Var { name, ty } => (name, ty),
-                    IRVal::Const(_) => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 /* Change the dst ValueTag.  */
@@ -151,7 +159,7 @@ impl Codegen<Bytecode> for IRInstr {
 
                 let name = match dst {
                     IRVal::Var { name, .. } => name,
-                    IRVal::Const(_) => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 ctx.register::<String>(name);
@@ -168,7 +176,7 @@ impl Codegen<Bytecode> for IRInstr {
             } => {
                 let name = match dst {
                     IRVal::Var { name, .. } => name,
-                    IRVal::Const(_) => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 ctx.register::<String>(name);
@@ -220,7 +228,7 @@ impl Codegen<Bytecode> for IRInstr {
 
                 let dst_name = match dst {
                     IRVal::Var { name, .. } => name,
-                    IRVal::Const(_) => unreachable!(),
+                    _ => unreachable!(),
                 };
 
                 ctx.register::<String>(dst_name);
@@ -333,6 +341,7 @@ impl IRVal {
     fn load_op(&self, ctx: &mut CodegenContext) -> Op {
         match self {
             IRVal::Const(konst) => Op::Const(*konst),
+            IRVal::Str(string) => Op::StrConst(ctx.intern_string(string)),
             IRVal::Var { name, .. } => {
                 if let Some(idx) = ctx.get::<String>(name) {
                     Op::Deepget(idx)
@@ -345,7 +354,7 @@ impl IRVal {
 
     fn store_op(&self, ctx: &CodegenContext) -> Op {
         match self {
-            IRVal::Const(_) => unreachable!(),
+            IRVal::Const(_) | IRVal::Str(_) => unreachable!(),
             IRVal::Var { name, .. } => {
                 if let Some(idx) = ctx.get::<String>(name) {
                     Op::Deepset(idx)

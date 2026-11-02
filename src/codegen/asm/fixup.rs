@@ -74,6 +74,15 @@ impl Fixup for AsmInstr {
 impl AsmInstr {
     fn rewrite_once(self) -> Result<Vec<AsmInstr>, AsmInstr> {
         match self {
+            AsmInstr::Mov {
+                src: AsmOp::PseudoMem(name, offset),
+                dst,
+                asm_ty: AsmType::Quad,
+            } => Ok(vec![AsmInstr::Lea {
+                src: AsmOp::Data(name, offset),
+                dst,
+            }]),
+
             /* 'mov' cannot move a value from one mem addr to another.  */
             AsmInstr::Mov { src, dst, asm_ty } if is_mem(&src) && is_mem(&dst) => {
                 let scratch = match asm_ty {

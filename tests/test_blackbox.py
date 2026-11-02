@@ -17,6 +17,12 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    # strings
+    "print_str.q": {
+        "ret": 0,
+        "stdout": ["spam", "eggs"],
+        "stderr": [],
+    },
     # ir optimizations
     "constants.q": {
         "ret": 0,
@@ -77,13 +83,13 @@ TEST_CASES = {
     "f32_not.q": {
         "ret": 1,
         "stdout": [],
-        "stderr": ["Invalid operand type Float32 for unary BitwiseNot"],
+        "stderr": ["Invalid operand type f32 for unary BitwiseNot"],
     },
     # f64 bitwise not
     "f64_not.q": {
         "ret": 1,
         "stdout": [],
-        "stderr": ["Invalid operand type Float64 for unary BitwiseNot"],
+        "stderr": ["Invalid operand type f64 for unary BitwiseNot"],
     },
     # bitwise u8
     "bitwise_u8.q": {
@@ -190,7 +196,7 @@ TEST_CASES = {
         "ret": 1,
         "stdout": [],
         "stderr": [
-            "Comparisons require operands of the same type, got Int32 and UInt64"
+            "Comparisons require operands of the same type, got i32 and u64"
         ],
     },
     # bitwise shifts
@@ -1242,8 +1248,8 @@ def test_program(program: Path, jit: bool, optimizations: bool):
     actual_stdout = result.stdout.splitlines()[-len(expected_stdout) :]
     assert actual_stdout == expected_stdout
 
-    expected_stderr = expected.get("stderr")
-    if expected_stderr:
-        actual_stderr = result.stderr.splitlines()
-        if not any(x in actual_stderr for x in expected_stderr):
-            assert False
+    expected_stderr = expected.get("stderr", [])
+    assert all(s in result.stderr for s in expected_stderr), (
+       f"Expected stderr to contain {expected_stderr!r}, "
+        f"got: {result.stderr!r}"
+    )

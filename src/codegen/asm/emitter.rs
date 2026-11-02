@@ -49,9 +49,24 @@ impl Emit for StaticConst {
         writeln!(f, "\t.balign 0x{:x}", self.alignment)?;
         writeln!(f, "{}:", self.name)?;
 
-        match self.init {
+        match &self.init {
             StaticInit::Float(value) => writeln!(f, "\t.long 0x{:08x}", value.to_bits()),
             StaticInit::Double(value) => writeln!(f, "\t.quad 0x{:016x}", value.to_bits()),
+            StaticInit::String(s) => {
+                writeln!(f, "\t.quad 0x{:016x}", s.len())?;
+
+                for chunk in s.as_bytes().chunks(16) {
+                    let bytes = chunk
+                        .iter()
+                        .map(|byte| format!("{byte:#04x}"))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+
+                    writeln!(f, "\t.byte {bytes}")?;
+                }
+
+                Ok(())
+            }
         }
     }
 }

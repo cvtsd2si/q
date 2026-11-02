@@ -904,6 +904,7 @@ impl<'src> Parser<'src> {
                     })
                 }
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
+                TokenKind::String => self.parse_string(),
                 TokenKind::LParen => self.parse_grouping(),
                 _ => unreachable!("got: {token:?}"),
             },
@@ -959,6 +960,21 @@ impl<'src> Parser<'src> {
         let expr = self.parse_expr()?;
         self.consume(TokenKind::RParen)?;
         Ok(expr)
+    }
+
+    fn parse_string(&mut self) -> Result<Expression, QError> {
+        let token = self.consume(TokenKind::String)?;
+
+        let contents_span = Span {
+            start: token.span.start + 1,
+            end: token.span.end - 1,
+        };
+
+        Ok(Expression::Literal {
+            val: LiteralVal::String(self.src_from_span(contents_span)),
+            ty: Some(Type::String),
+            span: token.span,
+        })
     }
 
     fn parse_bool(&mut self, token: &Token) -> Result<Expression, QError> {

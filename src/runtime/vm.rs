@@ -40,6 +40,7 @@ pub struct Vm {
     pc: usize,
     bytecode: BytecodeProg,
     fp: usize,
+    strings: Vec<Box<[u8]>>,
     jit: Option<JitState>,
 }
 
@@ -55,6 +56,10 @@ impl Vm {
                 msg: "No 'main' fn.".into(),
                 span: Span { start: 0, end: 0 },
             })?;
+
+        dbg!(&bytecode.strings);
+
+        let strings = bytecode.strings.iter().map(|s| encode_string(s)).collect();
 
         let jit = if enable_jit {
             Some(JitState::new(&bytecode)?)
@@ -75,6 +80,7 @@ impl Vm {
             func: entrypoint,
             pc: 0,
             fp: 0,
+            strings,
             jit,
             bytecode,
         })
@@ -129,6 +135,7 @@ impl Vm {
 
             match op {
                 Op::Const(konst) => self.handle_op_const(konst),
+                Op::StrConst(idx) => self.handle_op_strconst(idx),
                 Op::Binary(kind) => self.handle_op_binary(kind),
                 Op::Unary(kind) => self.handle_op_unary(kind),
                 Op::Print => self.handle_op_print()?,
@@ -368,6 +375,14 @@ impl Vm {
 
     fn handle_op_const(&mut self, n: Literal) {
         self.stack.push(n.into());
+    }
+
+    fn handle_op_strconst(&mut self, idx: usize) {
+        let ptr = self.strings[idx].as_ptr();
+        self.stack.push(Value {
+            tag: ValueTag::Str,
+            payload: ptr as u64,
+        });
     }
 
     fn handle_op_unary(&mut self, kind: UnaryExpressionKind) {
@@ -613,4 +628,13 @@ struct Frame {
     func: usize,
     pc: usize,
     ptr: usize,
+}
+
+fn encode_string(s: &str) -> Box<[u8]> {
+    let mut buf = Vec::with_capacity(8 + s.len());
+
+    buf.extend_from_slice(&(s.len() as u64).to_le_bytes());
+    buf.extend_from_slice(s.as_bytes());
+
+    buf.into_boxed_slice()
 }

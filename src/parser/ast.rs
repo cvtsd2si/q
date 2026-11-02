@@ -212,7 +212,7 @@ impl std::fmt::Debug for Type {
             Self::Boolean => "bool",
             Self::Float32 => "f32",
             Self::Float64 => "f64",
-            _ => unimplemented!(),
+            Self::String => "str",
         };
 
         write!(f, "{s}")
@@ -266,6 +266,7 @@ pub enum LiteralVal {
     NegativeInteger(u128),
     Float(String),
     Bool(bool),
+    String(String),
 }
 
 impl TryFrom<(&LiteralVal, Type)> for Literal {
@@ -404,6 +405,7 @@ impl Type {
             Type::UInt16 | Type::Int16 => 2,
             Type::Int32 | Type::UInt32 | Type::Float32 => 4,
             Type::UInt64 | Type::Int64 | Type::Float64 => 8,
+            Type::String => 8,
             _ => unreachable!(),
         }
     }
@@ -421,7 +423,7 @@ impl Type {
             Type::Int64 => std::mem::size_of::<i64>(),
             Type::Float32 => std::mem::size_of::<f32>(),
             Type::Float64 => std::mem::size_of::<f64>(),
-            _ => unimplemented!(),
+            Type::String => 8,
         }
     }
 }

@@ -582,6 +582,16 @@ fn typecheck_expr(
 
             let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
 
+            // FIXME: allow string comparisons
+            if operand_ty == Type::String {
+                return Err(QError {
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("No string comparisons for now."),
+                    code: 1,
+                    span,
+                });
+            }
+
             let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 
@@ -847,14 +857,17 @@ fn typecheck_literal(
         LiteralVal::Bool(_) => Type::Boolean,
         LiteralVal::Integer(_) | LiteralVal::NegativeInteger(_) => Type::Int32,
         LiteralVal::Float(_) => Type::Float64,
+        LiteralVal::String(_) => Type::String,
     });
 
-    Literal::try_from((&val, ty)).map_err(|msg| QError {
-        code: 1,
-        kind: QErrorKind::Typecheck,
-        msg,
-        span,
-    })?;
+    if !matches!((&val, ty), (LiteralVal::String(_), Type::String)) {
+        Literal::try_from((&val, ty)).map_err(|msg| QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg,
+            span,
+        })?;
+    }
 
     Ok(Expression::Literal {
         val,

@@ -140,7 +140,7 @@ impl JitCompiler {
         for konst in &ctx.static_consts {
             StaticConst {
                 name: konst.name.clone(),
-                init: konst.init,
+                init: konst.init.clone(),
                 ty: konst.ty,
                 alignment: konst.alignment,
             }
