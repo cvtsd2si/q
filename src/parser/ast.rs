@@ -182,7 +182,7 @@ pub enum BinaryExpressionKind {
     NotEqual,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum Type {
     UInt8,
     Int8,
@@ -196,6 +196,25 @@ pub enum Type {
     Float64,
     Boolean,
     String,
+}
+
+impl std::fmt::Debug for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            Self::UInt8 => "u8",
+            Self::Int8 => "i8",
+            Self::UInt16 => "u16",
+            Self::Int16 => "i16",
+            Self::UInt32 => "u32",
+            Self::Int32 => "i32",
+            Self::UInt64 => "u64",
+            Self::Int64 => "i64",
+            Self::Boolean => "bool",
+            _ => unimplemented!(),
+        };
+
+        write!(f, "{s}")
+    }
 }
 
 impl From<Token> for Type {

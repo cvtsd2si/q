@@ -704,9 +704,9 @@ fn typecheck_expr(
                                 "arg {} of {target:?}: expected {:?}, got {:?}",
                                 i + 1,
                                 param_ty,
-                                arg.ty()
+                                arg.ty(),
                             ),
-                            span,
+                            span: arg.span(),
                         });
                     }
 
