@@ -210,6 +210,8 @@ impl std::fmt::Debug for Type {
             Self::UInt64 => "u64",
             Self::Int64 => "i64",
             Self::Boolean => "bool",
+            Self::Float32 => "f32",
+            Self::Float64 => "f64",
             _ => unimplemented!(),
         };
 
