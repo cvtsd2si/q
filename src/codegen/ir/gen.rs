@@ -26,28 +26,12 @@ impl Irfy for Program {
     }
 }
 
-#[derive(Debug)]
-pub enum IRBlockItem {
-    Decl(IRDecl),
-    Stmt(IRStmt),
-}
-
-#[derive(Debug)]
-pub enum IRDecl {
-    Fn(IRFunc),
-}
-
-#[derive(Debug)]
-pub struct IRStmt {
-    pub body: Vec<IRInstr>,
-}
-
 impl Irfy for BlockItem {
     type Output = IRBlockItem;
     fn irfy(self) -> Self::Output {
         match self {
             BlockItem::Decl(decl) => IRBlockItem::Decl(decl.irfy()),
-            BlockItem::Stmt(_stmt) => unimplemented!(),
+            BlockItem::Stmt(stmt) => IRBlockItem::Stmt(stmt.irfy()),
         }
     }
 }
@@ -1075,6 +1059,22 @@ fn fmt_conversion(
     dst_ty: &Type,
 ) -> std::fmt::Result {
     write!(f, "{dst} = {name}({src}: {src_ty:?} -> {dst_ty:?})")
+}
+
+#[derive(Debug)]
+pub enum IRBlockItem {
+    Decl(IRDecl),
+    Stmt(IRStmt),
+}
+
+#[derive(Debug)]
+pub enum IRDecl {
+    Fn(IRFunc),
+}
+
+#[derive(Debug)]
+pub struct IRStmt {
+    pub body: Vec<IRInstr>,
 }
 
 #[derive(Debug, Clone)]
