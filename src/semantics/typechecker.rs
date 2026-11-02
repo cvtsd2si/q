@@ -345,7 +345,7 @@ fn typecheck_expr(
                     code: 1,
                     kind: QErrorKind::Typecheck,
                     msg: format!("Referenced an unknown variable: {:?}.", sym),
-                    span: expr.span(),
+                    span, 
                 });
             }
 
@@ -356,7 +356,7 @@ fn typecheck_expr(
                     code: 1,
                     kind: QErrorKind::Typecheck,
                     msg: "Referenced an unknown type.".to_string(),
-                    span: expr.span(),
+                    span,
                 });
             }
 
@@ -402,7 +402,7 @@ fn typecheck_expr(
                         "Expected unary expr of type {operand_ty:?}, got {:?}",
                         expr.ty()
                     ),
-                    span: expr.span(),
+                    span,
                 });
             }
 
@@ -435,7 +435,7 @@ fn typecheck_expr(
                     code: 1,
                     kind: QErrorKind::Typecheck,
                     msg: format!("Invalid operand type {operand_ty:?} for unary {kind:?}"),
-                    span: expr.span(),
+                    span,
                 });
             }
 
@@ -451,7 +451,7 @@ fn typecheck_expr(
                     kind: QErrorKind::Typecheck,
                     code: 1,
                     msg: format!("Expected {expected:?}, got {result_ty:?}."),
-                    span: expr.span(),
+                    span,
                 });
             }
 
@@ -667,11 +667,10 @@ fn typecheck_expr(
             if let Some(expected) = expected_ty
                 && s.ret_ty != Some(expected)
             {
-                let t = s.ret_ty;
                 return Err(QError {
                     code: 1,
                     kind: QErrorKind::Typecheck,
-                    msg: format!("Expected {expected:?}, but fn {target} returns {t:?}"),
+                    msg: format!("Expected {expected:?}, but fn {target} returns {:?}", s.ret_ty),
                     span,
                 });
             }
@@ -728,8 +727,8 @@ fn typecheck_expr(
                 return Err(QError {
                     code: 1,
                     kind: QErrorKind::Typecheck,
-                    msg: "lhs must be assignable".to_string(),
-                    span,
+                    msg: "LHS of assignment must be an lvalue.".to_string(),
+                    span: lhs.span(),
                 });
             }
 
@@ -973,7 +972,7 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
                     code: 1,
                     kind: QErrorKind::Typecheck,
                     msg: "lhs of assign expr must be a var".to_string(),
-                    span: expr.span(),
+                    span: lhs.span(),
                 });
             }
 
