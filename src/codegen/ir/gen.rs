@@ -14,15 +14,13 @@ impl Irfy for Program {
     type Output = IRProg;
 
     fn irfy(self) -> Self::Output {
-        let mut ir_prog = IRProg {
-            block_items: vec![],
-        };
-
-        for block_item in self.block_items {
-            ir_prog.block_items.push(block_item.irfy());
+        IRProg {
+            block_items: self
+                .block_items
+                .into_iter()
+                .map(|block_item| block_item.irfy())
+                .collect(),
         }
-
-        ir_prog
     }
 }
 
@@ -46,31 +44,33 @@ impl Irfy for Declaration {
                 ret,
                 params,
                 body,
-            } => {
-                let mut f = IRFunc {
-                    name: name.to_owned(),
-                    params: params.to_vec(),
-                    body: vec![],
-                    ret_ty: ret,
-                };
-
-                if let Statement::Block { body } = body {
-                    for stmt in body {
-                        f.body.extend(stmt.irfy().body);
-                    }
-                }
-
-                if ret.is_none() {
-                    f.body.push(IRInstr::Ret {
-                        val: None,
-                        ret_ty: None,
-                    });
-                }
-
-                IRDecl::Fn(f)
-            }
+            } => IRDecl::Fn(irfy_fn(name, ret, params, body)),
         }
     }
+}
+
+fn irfy_fn(name: String, ret_ty: Option<Type>, params: Vec<Param>, body: Statement) -> IRFunc {
+    let mut f = IRFunc {
+        name,
+        params,
+        body: vec![],
+        ret_ty,
+    };
+
+    if let Statement::Block { body } = body {
+        for stmt in body {
+            f.body.extend(stmt.irfy().body);
+        }
+    }
+
+    if ret_ty.is_none() {
+        f.body.push(IRInstr::Ret {
+            val: None,
+            ret_ty: None,
+        });
+    }
+
+    f
 }
 
 impl Irfy for Statement {
@@ -676,53 +676,6 @@ fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) 
     dst
 }
 
-#[derive(Debug)]
-pub struct IRProg {
-    pub block_items: Vec<IRBlockItem>,
-}
-
-impl IRProg {
-    pub fn functions(&self) -> impl Iterator<Item = &IRFunc> {
-        self.block_items.iter().filter_map(|item| match item {
-            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
-            IRBlockItem::Stmt(_) => None,
-        })
-    }
-
-    pub fn functions_mut(&mut self) -> impl Iterator<Item = &mut IRFunc> {
-        self.block_items.iter_mut().filter_map(|item| match item {
-            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
-            IRBlockItem::Stmt(_) => None,
-        })
-    }
-
-    pub fn function(&self, index: usize) -> Option<&IRFunc> {
-        self.functions().nth(index)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct IRFunc {
-    pub name: String,
-    pub params: Vec<Param>,
-    pub body: Vec<IRInstr>,
-    pub ret_ty: Option<Type>,
-}
-
-#[derive(Debug, Clone)]
-pub struct IRStaticConst {
-    pub name: String,
-    pub ty: Type,
-    pub init: StaticInit,
-    pub alignment: usize,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StaticInit {
-    Float(f32),
-    Double(f64),
-}
-
 #[derive(Clone)]
 pub enum IRInstr {
     Cpy {
@@ -1065,6 +1018,45 @@ fn fmt_conversion(
 pub enum IRBlockItem {
     Decl(IRDecl),
     Stmt(IRStmt),
+}
+
+#[derive(Debug)]
+pub struct IRProg {
+    pub block_items: Vec<IRBlockItem>,
+}
+
+impl IRProg {
+    pub fn functions(&self) -> impl Iterator<Item = &IRFunc> {
+        self.block_items.iter().filter_map(|item| match item {
+            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
+            IRBlockItem::Stmt(_) => None,
+        })
+    }
+
+    pub fn functions_mut(&mut self) -> impl Iterator<Item = &mut IRFunc> {
+        self.block_items.iter_mut().filter_map(|item| match item {
+            IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
+            IRBlockItem::Stmt(_) => None,
+        })
+    }
+
+    pub fn function(&self, index: usize) -> Option<&IRFunc> {
+        self.functions().nth(index)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct IRFunc {
+    pub name: String,
+    pub params: Vec<Param>,
+    pub body: Vec<IRInstr>,
+    pub ret_ty: Option<Type>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum StaticInit {
+    Float(f32),
+    Double(f64),
 }
 
 #[derive(Debug)]
