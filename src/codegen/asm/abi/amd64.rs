@@ -90,7 +90,19 @@ pub const SYSV_GP_RETURN: AsmReg = AsmReg::Ax;
 pub const SSE_CALL_SAVE_TY: AsmType = AsmType::Double;
 
 /// General-purpose registers allocatable by the register allocator.
-pub const GP_ALLOCATABLE: &[AsmReg] = &[AsmReg::R8, AsmReg::R9]; // FIXME: add more GP regs
+pub const GP_ALLOCATABLE: &[AsmReg] = &[
+    AsmReg::Di,
+    AsmReg::Si,
+    AsmReg::Bx,
+    AsmReg::Dx,
+    AsmReg::Cx,
+    AsmReg::R8,
+    AsmReg::R9,
+    AsmReg::R12,
+    AsmReg::R13,
+    AsmReg::R14,
+    AsmReg::R15,
+];
 
 /// SSE registers allocatable by the register allocator.
 pub const SSE_ALLOCATABLE: &[AsmReg] = &[
