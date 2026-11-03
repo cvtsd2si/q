@@ -5,6 +5,7 @@ use crate::parser::ast::{
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::{QError, QErrorKind};
 use std::collections::VecDeque;
+use std::mem::replace;
 
 pub struct Parser<'src> {
     src: &'src str,
@@ -970,8 +971,16 @@ impl<'src> Parser<'src> {
             end: token.span.end - 1,
         };
 
+        let contents = self.src_from_span(contents_span);
+        let contents = contents
+            .replace("\\n", "\n")
+            .replace("\\r", "\r")
+            .replace("\\t", "\t")
+            .replace("\\0", "\0")
+            .replace("\\\"", "\"");
+
         Ok(Expression::Literal {
-            val: LiteralVal::String(self.src_from_span(contents_span)),
+            val: LiteralVal::String(contents),
             ty: Some(Type::String),
             span: token.span,
         })

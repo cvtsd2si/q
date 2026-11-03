@@ -293,6 +293,28 @@ impl<'src> Tokenizer<'src> {
                         },
                     });
                 }
+                Some((idx, '\\')) => match self.chars.next() {
+                    Some((_, '\\' | '"' | 'n' | 'r' | 't' | '0')) => {}
+                    Some((end, ch)) => {
+                        return Err(QError {
+                            kind: QErrorKind::Tokenize,
+                            msg: format!("Invalid escape sequence: \\{ch}"),
+                            code: 1,
+                            span: Span { start: idx, end },
+                        });
+                    }
+                    None => {
+                        return Err(QError {
+                            kind: QErrorKind::Tokenize,
+                            msg: "Unterminated string literal".into(),
+                            code: 1,
+                            span: Span {
+                                start,
+                                end: self.src.len(),
+                            },
+                        });
+                    }
+                },
                 Some(_) => {}
                 None => {
                     return Err(QError {
