@@ -6,8 +6,8 @@ use crate::{
         Codegen, CodegenContext, StaticConst,
         asm::abi::{
             amd64::{
-                GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
-                rt_arg_reg,
+                GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_ARG_REGS, SYSV_GP_RETURN,
+                SYSV_STACK_ALIGNMENT, rt_arg_reg,
             },
             internal::{
                 JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG,
@@ -268,6 +268,7 @@ impl std::fmt::Display for ConditionCode {
 pub enum RtFn {
     Print,
     Call,
+    Strcmp,
 }
 
 impl RtFn {
@@ -275,6 +276,7 @@ impl RtFn {
         match self {
             RtFn::Print => std::mem::offset_of!(Rt, print),
             RtFn::Call => std::mem::offset_of!(Rt, call),
+            RtFn::Strcmp => std::mem::offset_of!(Rt, strcmp),
         }
     }
 }
@@ -629,6 +631,67 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                 insert_epilogue(&mut instrs);
                 instrs.push(AsmInstr::Ret);
                 instrs.push(AsmInstr::Newline);
+
+                Ok(instrs)
+            }
+
+            IRInstr::Bin {
+                kind,
+                lhs,
+                rhs,
+                dst,
+                operand_ty: Type::String,
+            } => {
+                let mut instrs = vec![
+                    AsmInstr::Comment(format!("String comparison (kind: {kind:?})")),
+                    AsmInstr::Newline,
+                ];
+
+                let cc = match kind {
+                    BinaryExpressionKind::Less => ConditionCode::L,
+                    BinaryExpressionKind::Greater => ConditionCode::G,
+                    BinaryExpressionKind::GreaterEqual => ConditionCode::Ge,
+                    BinaryExpressionKind::LessEqual => ConditionCode::Le,
+                    BinaryExpressionKind::Equal => ConditionCode::E,
+                    BinaryExpressionKind::NotEqual => ConditionCode::Ne,
+                    _ => unreachable!("got: {kind:?}"),
+                };
+
+                instrs.extend([
+                    AsmInstr::Comment("Store lhs into a register.".into()),
+                    AsmInstr::Mov {
+                        src: lhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(SYSV_GP_ARG_REGS[0]),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment("Store rhs into a register.".into()),
+                    AsmInstr::Mov {
+                        src: rhs.codegen(ctx)?,
+                        dst: AsmOp::Reg(SYSV_GP_ARG_REGS[1]),
+                        asm_ty: AsmType::Quad,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::CallRt {
+                        target: RtFn::Strcmp,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Comment(
+                        "Compare the return value against 0.  0 = eq;  -1 = less,  1 = greater"
+                            .into(),
+                    ),
+                    AsmInstr::Cmp {
+                        src: AsmOp::Imm(0),
+                        dst: AsmOp::Reg(JIT_RETURN_PAYLOAD),
+                        asm_ty: AsmType::Long,
+                    },
+                    AsmInstr::Newline,
+                    AsmInstr::Setcc {
+                        cc,
+                        dst: dst.codegen(ctx)?,
+                    },
+                    AsmInstr::Newline,
+                ]);
 
                 Ok(instrs)
             }
@@ -1400,13 +1463,13 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                             asm_ty: AsmType::Quad,
                         },
                     },
+                    AsmInstr::Newline,
                     AsmInstr::Comment(format!("{} = ValueTag", tag_arg.as_width(AsmType::Quad))),
                     AsmInstr::Mov {
                         src: AsmOp::Imm(tag as i64),
                         dst: AsmOp::Reg(tag_arg),
                         asm_ty: AsmType::Quad,
                     },
-                    AsmInstr::Newline,
                     AsmInstr::CallRt {
                         target: RtFn::Print,
                     },

@@ -240,7 +240,12 @@ impl std::fmt::Display for AsmInstr {
                 let scratch = RT_CALL_SCRATCH.as_width(AsmType::Quad);
                 let retval = SYSV_GP_RETURN.as_width(AsmType::Long);
 
-                writeln!(f, "# Load {target:?} from {rt} into {scratch} and call it.")?;
+                writeln!(f)?;
+
+                writeln!(
+                    f,
+                    "\t# Load {target:?} from {rt} into {scratch} and call it."
+                )?;
                 writeln!(f, "\tmovq 0x{offset:x}({rt}), {scratch}")?;
                 writeln!(f, "\tcall *{scratch}")?;
                 writeln!(f)?;

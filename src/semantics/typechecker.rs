@@ -582,16 +582,6 @@ fn typecheck_expr(
 
             let operand_ty = op_hint.unwrap_or_else(|| default_numeric_ty(&lhs));
 
-            // FIXME: allow string comparisons
-            if operand_ty == Type::String {
-                return Err(QError {
-                    kind: QErrorKind::Typecheck,
-                    msg: format!("No string comparisons for now."),
-                    code: 1,
-                    span,
-                });
-            }
-
             let lhs = typecheck_expr(typechecker, *lhs, Some(operand_ty))?;
             let rhs = typecheck_expr(typechecker, *rhs, Some(operand_ty))?;
 

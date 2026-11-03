@@ -192,6 +192,7 @@ pub fn rt_arg_regs(target: RtFn) -> impl Iterator<Item = AsmReg> {
     let count = match target {
         RtFn::Print => 3,
         RtFn::Call => 5,
+        RtFn::Strcmp => 2,
     };
 
     SYSV_GP_ARG_REGS.iter().copied().take(count)

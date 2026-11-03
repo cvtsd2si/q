@@ -23,6 +23,11 @@ TEST_CASES = {
         "stdout": ["spam", "eggs"],
         "stderr": [],
     },
+    "str_comparisons.q": {
+        "ret": 0,
+        "stdout": ["true"] * 10,
+        "stderr": []
+    },
     # ir optimizations
     "constants.q": {
         "ret": 0,

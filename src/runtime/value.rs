@@ -360,6 +360,13 @@ impl std::cmp::PartialOrd for Value {
 
             (Void, Void) => Some(std::cmp::Ordering::Equal),
 
+            (Str, Str) => unsafe {
+                let lhs_bytes = string_bytes(self.payload);
+                let rhs_bytes = string_bytes(rhs.payload);
+
+                Some(lhs_bytes.cmp(rhs_bytes))
+            },
+
             _ => None,
         }
     }
@@ -437,15 +444,8 @@ impl std::fmt::Display for Value {
             ValueTag::Void => write!(f, "()"),
 
             ValueTag::Str => {
-                let ptr = self.payload as *const u8;
-
                 unsafe {
-                    /* Read the length (first 8 bytes).  */
-                    let len = std::ptr::read_unaligned(ptr.cast::<u64>());
-                    let len = u64::from_le(len) as usize;
-
-                    /* Read the contents which begin immediately after the length.  */
-                    let bytes = std::slice::from_raw_parts(ptr.add(8), len);
+                    let bytes = string_bytes(self.payload);
 
                     /* Convert the bytes into rust &str.  */
                     let s = std::str::from_utf8(bytes).map_err(|_| std::fmt::Error)?;
@@ -462,6 +462,16 @@ pub fn print_value(value: Value) -> std::io::Result<()> {
     let mut stdout = stdout.lock();
 
     writeln!(stdout, "{value}")
+}
+
+pub unsafe fn string_bytes<'a>(payload: u64) -> &'a [u8] {
+    let ptr = payload as *const u8;
+
+    /* Read the first 8 bytes (len).  */
+    let len = unsafe { u64::from_le(ptr.cast::<u64>().read_unaligned()) as usize };
+
+    /* Construct a slice from the rest of the bytes.  */
+    unsafe { std::slice::from_raw_parts(ptr.add(8), len) }
 }
 
 impl From<Value> for Literal {

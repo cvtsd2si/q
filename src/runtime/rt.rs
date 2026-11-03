@@ -1,7 +1,9 @@
+use std::cmp::Ordering;
+
 use crate::{
     QError,
     runtime::{
-        value::{Value, ValueTag, print_value},
+        value::{Value, ValueTag, print_value, string_bytes},
         vm::Vm,
     },
 };
@@ -21,6 +23,11 @@ pub struct Rt {
         usize,        // argc
         *mut Value,   // retval
     ) -> u32,
+
+    pub strcmp: unsafe extern "C" fn(
+        u64, // lhs
+        u64, // rhs
+    ) -> i32,
 }
 
 #[repr(u32)]
@@ -34,6 +41,7 @@ pub enum RtResult {
 pub static RT: Rt = Rt {
     print: jit_print,
     call: jit_call,
+    strcmp: jit_strcmp,
 };
 
 pub extern "C" fn jit_print(_vm: *mut Vm, tag: u64, payload: u64) -> u32 {
@@ -110,5 +118,15 @@ pub unsafe extern "C" fn jit_call(
             }
             Err(QError { code, .. }) => code,
         }
+    }
+}
+
+pub unsafe extern "C" fn jit_strcmp(lhs: u64, rhs: u64) -> i32 {
+    let ordering = unsafe { string_bytes(lhs).cmp(string_bytes(rhs)) };
+
+    match ordering {
+        Ordering::Less => -1,
+        Ordering::Equal => 0,
+        Ordering::Greater => 1,
     }
 }
