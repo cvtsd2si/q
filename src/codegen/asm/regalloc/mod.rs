@@ -45,20 +45,7 @@ impl Regalloc for AsmFunc {
 
         self.space = allocation.frame_space;
 
-        assert_no_pseudos(&self.body);
-
         Ok(self)
-    }
-}
-
-fn assert_no_pseudos(body: &[AsmInstr]) {
-    for instr in body {
-        for operand in instr.operands().into_iter().flatten() {
-            assert!(
-                !matches!(operand, AsmOp::Pseudo { .. }),
-                "Unallocated pseudo-register in {instr:?}"
-            );
-        }
     }
 }
 
@@ -72,7 +59,7 @@ struct Allocation {
     /* Which pseudo-registers must survive a particular instruction?
      * For each asm instr, the Vec contains a BTreeSet containing the
      * pseudo-registers that must survive the instruction at that idx.  */
-    live_through_calls: Vec<BTreeSet<String>>,
+    live_across_calls: Vec<BTreeSet<String>>,
     /* The final, correctly aligned allocation size.  */
     frame_space: usize,
 }
@@ -85,23 +72,7 @@ impl Allocation {
 
         let liveness = Liveness::<AsmLocation>::analyze(body, &cfg);
 
-        let live_through_calls = body
-            .iter()
-            .zip(&liveness.instrs)
-            .map(|(instr, live)| {
-                if !instr.is_call() {
-                    return BTreeSet::new();
-                }
-
-                live.live_in
-                    .intersection(&live.live_out)
-                    .filter_map(|location| match location {
-                        AsmLocation::Pseudo(name) => Some(name.clone()),
-                        _ => None,
-                    })
-                    .collect()
-            })
-            .collect();
+        let live_across_calls = find_live_across_calls(body, &liveness);
 
         let classes = collect_reg_classes(body).map_err(|msg| RegAllocError { msg })?;
 
@@ -141,7 +112,7 @@ impl Allocation {
             registers: BTreeMap::new(),
             spill_slots: BTreeMap::new(),
             callee_saved: BTreeSet::new(),
-            live_through_calls,
+            live_across_calls,
             frame_space: func.space,
         };
 
@@ -229,7 +200,7 @@ impl Allocation {
                 continue;
             }
 
-            let regs: Vec<_> = self.live_through_calls[idx]
+            let regs: Vec<_> = self.live_across_calls[idx]
                 .iter()
                 .filter_map(|name| self.registers.get(name).copied())
                 .filter(|reg| needs_caller_save(*reg))
@@ -282,6 +253,28 @@ impl Allocation {
             }
         }
     }
+}
+
+fn find_live_across_calls(
+    body: &[AsmInstr],
+    liveness: &Liveness<AsmLocation>,
+) -> Vec<BTreeSet<String>> {
+    body.iter()
+        .zip(&liveness.instrs)
+        .map(|(instr, live)| {
+            if !instr.is_call() {
+                return BTreeSet::new();
+            }
+
+            live.live_in
+                .intersection(&live.live_out)
+                .filter_map(|location| match location {
+                    AsmLocation::Pseudo(name) => Some(name.clone()),
+                    _ => None,
+                })
+                .collect()
+        })
+        .collect()
 }
 
 /// Iterate through the instructions, and for each individual instruction, gather up the pseudo
