@@ -293,10 +293,12 @@ impl Vm {
             .position(|&ir_idx| ir_idx >= end_ir)
             .unwrap_or(bytecode_func.body.len());
 
-        // eprintln!(
-        //     "[JIT] compiling func={} pc={} ir={}..{}",
-        //     func, start_pc, start_ir, end_ir,
-        // );
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "[JIT] compiling func={} pc={} ir={}..{}",
+                func, start_pc, start_ir, end_ir,
+            );
+        }
 
         let mut jit = JitCompiler::new();
 
@@ -337,16 +339,20 @@ impl Vm {
         let body = block.code.as_ptr();
         let end_pc = block.end_pc;
 
-        // eprintln!(
-        //     "[JIT] EXECUTING {:p}, pc={}..{}",
-        //     block.code.mem, block.start_pc, block.end_pc,
-        // );
+        if cfg!(debug_assertions) {
+            eprintln!(
+                "[JIT] EXECUTING {:p}, pc={}..{}",
+                block.code.mem, block.start_pc, block.end_pc,
+            );
+        }
 
         let args = self.stack[self.fp..].as_ptr();
         let native_entrypoints = jit.native_entrypoints.as_ptr();
         let r = unsafe { entry(self as *mut Vm, &RT, args, body, end_pc, native_entrypoints) };
 
-        // eprintln!("[JIT] native returned {:?}", r);
+        if cfg!(debug_assertions) {
+            eprintln!("[JIT] native returned {:?}", r);
+        }
 
         match r.kind {
             JIT_CONTINUE => JitExit::Continue(r.next_pc as usize),

@@ -5,7 +5,6 @@ use crate::parser::ast::{
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::{QError, QErrorKind};
 use std::collections::VecDeque;
-use std::mem::replace;
 
 pub struct Parser<'src> {
     src: &'src str,
