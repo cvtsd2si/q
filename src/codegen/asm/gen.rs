@@ -6,8 +6,8 @@ use crate::{
         Codegen, CodegenContext, StaticConst,
         asm::abi::{
             amd64::{
-                GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_ARG_REGS, SYSV_GP_RETURN,
-                SYSV_STACK_ALIGNMENT, rt_arg_reg,
+                GP_SCRATCH_1, GP_SCRATCH_2, SSE_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT,
+                rt_arg_reg,
             },
             internal::{
                 JIT_ARGS, JIT_ENTRYPOINTS, JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG,
@@ -647,6 +647,9 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                     AsmInstr::Newline,
                 ];
 
+                let lhs_reg = rt_arg_reg(RtFn::Strcmp, 0);
+                let rhs_reg = rt_arg_reg(RtFn::Strcmp, 1);
+
                 let cc = match kind {
                     BinaryExpressionKind::Less => ConditionCode::L,
                     BinaryExpressionKind::Greater => ConditionCode::G,
@@ -661,14 +664,14 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                     AsmInstr::Comment("Store lhs into a register.".into()),
                     AsmInstr::Mov {
                         src: lhs.codegen(ctx)?,
-                        dst: AsmOp::Reg(SYSV_GP_ARG_REGS[0]),
+                        dst: AsmOp::Reg(lhs_reg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment("Store rhs into a register.".into()),
                     AsmInstr::Mov {
                         src: rhs.codegen(ctx)?,
-                        dst: AsmOp::Reg(SYSV_GP_ARG_REGS[1]),
+                        dst: AsmOp::Reg(rhs_reg),
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Newline,
