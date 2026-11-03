@@ -380,6 +380,12 @@ pub enum AsmReg {
     Xmm5,
     Xmm6,
     Xmm7,
+    Xmm8,
+    Xmm9,
+    Xmm10,
+    Xmm11,
+    Xmm12,
+    Xmm13,
     Xmm14,
     Xmm15,
 }
@@ -395,6 +401,12 @@ impl AsmReg {
             Self::Xmm5 => "%xmm5",
             Self::Xmm6 => "%xmm6",
             Self::Xmm7 => "%xmm7",
+            Self::Xmm8 => "%xmm8",
+            Self::Xmm9 => "%xmm9",
+            Self::Xmm10 => "%xmm10",
+            Self::Xmm11 => "%xmm11",
+            Self::Xmm12 => "%xmm12",
+            Self::Xmm13 => "%xmm13",
             Self::Xmm14 => "%xmm14",
             Self::Xmm15 => "%xmm15",
 
@@ -440,6 +452,12 @@ impl AsmReg {
                 | Self::Xmm5
                 | Self::Xmm6
                 | Self::Xmm7
+                | Self::Xmm8
+                | Self::Xmm9
+                | Self::Xmm10
+                | Self::Xmm11
+                | Self::Xmm12
+                | Self::Xmm13
                 | Self::Xmm14
                 | Self::Xmm15
         )

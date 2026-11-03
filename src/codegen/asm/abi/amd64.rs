@@ -90,7 +90,7 @@ pub const SYSV_GP_RETURN: AsmReg = AsmReg::Ax;
 pub const SSE_CALL_SAVE_TY: AsmType = AsmType::Double;
 
 /// General-purpose registers allocatable by the register allocator.
-pub const GP_ALLOCATABLE: &[AsmReg] = &[AsmReg::R8, AsmReg::R9, AsmReg::Bx];
+pub const GP_ALLOCATABLE: &[AsmReg] = &[AsmReg::R8, AsmReg::R9]; // FIXME: add more GP regs
 
 /// SSE registers allocatable by the register allocator.
 pub const SSE_ALLOCATABLE: &[AsmReg] = &[
@@ -102,15 +102,12 @@ pub const SSE_ALLOCATABLE: &[AsmReg] = &[
     AsmReg::Xmm5,
     AsmReg::Xmm6,
     AsmReg::Xmm7,
-    /* AsmReg::Xmm8,
-     * AsmReg::Xmm9,
-     * AsmReg::Xmm10,
-     * AsmReg::Xmm11,
-     * AsmReg::Xmm12,
-     * AsmReg::Xmm13,
-     * AsmReg::Xmm14,
-     * AsmReg::Xmm15,
-     */
+    AsmReg::Xmm8,
+    AsmReg::Xmm9,
+    AsmReg::Xmm10,
+    AsmReg::Xmm11,
+    AsmReg::Xmm12,
+    AsmReg::Xmm13,
 ];
 
 /// Caller-saved registers.
@@ -132,12 +129,12 @@ pub const CALLER_SAVED: &[AsmReg] = &[
     AsmReg::Xmm5,
     AsmReg::Xmm6,
     AsmReg::Xmm7,
-    /* AsmReg::Xmm8,
-     * AsmReg::Xmm9,
-     * AsmReg::Xmm10,
-     * AsmReg::Xmm11,
-     * AsmReg::Xmm12,
-     * AsmReg::Xmm13,  */
+    AsmReg::Xmm8,
+    AsmReg::Xmm9,
+    AsmReg::Xmm10,
+    AsmReg::Xmm11,
+    AsmReg::Xmm12,
+    AsmReg::Xmm13,
     AsmReg::Xmm14,
     AsmReg::Xmm15,
 ];
