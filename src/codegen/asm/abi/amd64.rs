@@ -90,7 +90,7 @@ pub const SYSV_GP_RETURN: AsmReg = AsmReg::Ax;
 pub const SSE_CALL_SAVE_TY: AsmType = AsmType::Double;
 
 /// General-purpose registers allocatable by the register allocator.
-pub const GP_ALLOCATABLE: &[AsmReg] = &[AsmReg::R8, AsmReg::R9];
+pub const GP_ALLOCATABLE: &[AsmReg] = &[AsmReg::R8, AsmReg::R9, AsmReg::Bx];
 
 /// SSE registers allocatable by the register allocator.
 pub const SSE_ALLOCATABLE: &[AsmReg] = &[
@@ -142,6 +142,16 @@ pub const CALLER_SAVED: &[AsmReg] = &[
     AsmReg::Xmm15,
 ];
 
+/// Callee-saved registers.
+pub const CALLEE_SAVED: &[AsmReg] = &[
+    AsmReg::Bx,
+    AsmReg::Bp,
+    AsmReg::R12,
+    AsmReg::R13,
+    AsmReg::R14,
+    AsmReg::R15,
+];
+
 /// General-purpose registers used for passing arguments to the called
 /// function by the SystemV AMD64 ABI.
 pub const SYSV_GP_ARG_REGS: &[AsmReg] = &[
@@ -180,12 +190,20 @@ pub fn is_caller_saved(reg: AsmReg) -> bool {
     CALLER_SAVED.contains(&reg)
 }
 
+pub fn is_callee_saved(reg: AsmReg) -> bool {
+    CALLEE_SAVED.contains(&reg)
+}
+
 pub fn is_allocatable(reg: AsmReg) -> bool {
     GP_ALLOCATABLE.contains(&reg) || SSE_ALLOCATABLE.contains(&reg)
 }
 
 pub fn needs_caller_save(reg: AsmReg) -> bool {
     is_allocatable(reg) && is_caller_saved(reg)
+}
+
+pub fn needs_callee_save(reg: AsmReg) -> bool {
+    is_allocatable(reg) && is_callee_saved(reg)
 }
 
 pub fn rt_arg_regs(target: RtFn) -> impl Iterator<Item = AsmReg> {

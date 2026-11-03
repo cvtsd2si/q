@@ -359,6 +359,7 @@ pub enum AsmReg {
     Bp,
     Sp,
     Ax,
+    Bx,
     R8,
     R9,
     R10,
@@ -400,6 +401,7 @@ impl AsmReg {
             _ => {
                 let names = match self {
                     Self::Ax => ["%al", "%ax", "%eax", "%rax"],
+                    Self::Bx => ["%bl", "%bx", "%ebx", "%rbx"],
                     Self::Cx => ["%cl", "%cx", "%ecx", "%rcx"],
                     Self::Dx => ["%dl", "%dx", "%edx", "%rdx"],
                     Self::Si => ["%sil", "%si", "%esi", "%rsi"],
@@ -1616,6 +1618,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
 
                 let fallback_label = format!(".L{}_call_fallback_{id}", ctx.current_fn);
                 let done_label = format!(".L{}_call_done_{id}", ctx.current_fn);
+                let native_ok_label = format!(".L{}_call_native_ok_{id}", ctx.current_fn);
 
                 body.extend([
                     AsmInstr::Comment(format!(
@@ -1728,9 +1731,12 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                         asm_ty: AsmType::Quad,
                     },
                     AsmInstr::Jmpcc {
-                        cc: ConditionCode::E,
-                        target: format!("{}_rt_err", ctx.current_fn),
+                        cc: ConditionCode::Ne,
+                        target: native_ok_label.clone(),
                     },
+                    AsmInstr::Bin { kind: AsmInstrBinKind::Add, lhs: AsmOp::Imm(frame_space as i64), rhs: AsmOp::Reg(AsmReg::Sp), asm_ty: AsmType::Quad },
+                    AsmInstr::Jmp { target: format!("{}_rt_err", ctx.current_fn) },
+                    AsmInstr::Label(native_ok_label),
                     AsmInstr::Newline,
                     AsmInstr::Comment(
                         "The native call succeeded.  The return payload is in the JIT payload register."

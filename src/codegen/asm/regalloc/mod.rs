@@ -17,7 +17,7 @@ use crate::{
         abi::{
             amd64::{
                 CALLER_SAVED, GP_PUSH_BYTES, SSE_CALL_SAVE_TY, SYSV_STACK_ALIGNMENT,
-                needs_caller_save, rt_arg_regs,
+                needs_callee_save, needs_caller_save, rt_arg_regs,
             },
             call_live_in_regs,
             internal::{JIT_RETURN_KIND, JIT_RETURN_PAYLOAD, JIT_RETURN_TAG, JIT_RT},
@@ -212,8 +212,11 @@ impl Regalloc for AsmFunc {
         /* Remove moves between identical physical locations.  */
         self.body.retain(|instr| !is_redundant_move(instr));
 
-        /*. Update the required stack-frame size.  */
+        /* Update the required stack-frame size.  */
         self.space = space;
+
+        /* Preserve callee-saved registers.  */
+        preserve_callee_saved(&mut self.body, &mut self.space);
 
         /* Assert there are no pseudo-registers left.  */
         for instr in &self.body {
@@ -309,6 +312,86 @@ fn assign_spill_slots(
     let space = used.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
 
     (slots, space)
+}
+
+fn find_used_callee_saved_regs(body: &[AsmInstr]) -> BTreeSet<AsmReg> {
+    body.iter()
+        .flat_map(|instr| instr.use_def().defs)
+        .filter_map(|location| match location {
+            AsmLocation::Reg(reg) if needs_callee_save(reg) => Some(reg),
+            _ => None,
+        })
+        .collect()
+}
+
+fn find_prologue_idx(body: &[AsmInstr]) -> usize {
+    body.iter()
+        .position(|instr| {
+            matches!(
+                instr,
+                AsmInstr::Bin {
+                    kind: AsmInstrBinKind::Sub,
+                    lhs: AsmOp::Imm(0),
+                    rhs: AsmOp::Reg(AsmReg::Sp),
+                    asm_ty: AsmType::Quad,
+                }
+            )
+        })
+        .unwrap()
+}
+
+fn preserve_callee_saved(body: &mut Vec<AsmInstr>, frame_space: &mut usize) {
+    /* Find all modified callee-saved registers.  */
+    let saved = find_used_callee_saved_regs(body);
+
+    /* Nothing to preserve.  */
+    if saved.is_empty() {
+        return;
+    }
+
+    /* Calculate the space consumed by pushq instructions.  */
+    let push_bytes = saved.len() * GP_PUSH_BYTES;
+
+    /* Align the total stack consumption to `SYSV_STACK_ALIGNMENT` bytes.  */
+    let total = (*frame_space + push_bytes).div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
+
+    /* `pushq` allocates its own stack space.  */
+    *frame_space = total - push_bytes;
+
+    /* Find the prologue's stack allocation instruction.  */
+    let prologue_idx = find_prologue_idx(body);
+
+    /* Save registers after allocating the stack frame.  */
+    body.splice(
+        prologue_idx + 1..prologue_idx + 1,
+        saved
+            .iter()
+            .copied()
+            .map(|reg| AsmInstr::Push(AsmOp::Reg(reg))),
+    );
+
+    /* Restore registers before every epilogue.  */
+    for idx in (0..body.len()).rev() {
+        let is_epilogue = matches!(
+            &body[idx],
+            AsmInstr::Mov {
+                src: AsmOp::Reg(AsmReg::Bp),
+                dst: AsmOp::Reg(AsmReg::Sp),
+                asm_ty: AsmType::Quad,
+            }
+        );
+
+        if is_epilogue {
+            body.splice(
+                idx..idx,
+                saved
+                    .iter()
+                    .rev()
+                    .copied()
+                    .map(|reg| AsmInstr::Pop(AsmOp::Reg(reg))),
+            );
+        }
+    }
 }
 
 fn call_save_restore(regs: &[AsmReg]) -> (Vec<AsmInstr>, Vec<AsmInstr>) {
