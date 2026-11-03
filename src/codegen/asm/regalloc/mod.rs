@@ -154,9 +154,7 @@ impl Allocation {
         let mut representative_slots = BTreeMap::new();
 
         for name in spilled {
-            let size = *sizes.get(name).expect("Missing spill size");
-
-            assert!(size.is_power_of_two());
+            let size = *sizes.get(name).unwrap();
 
             used = used.div_ceil(size) * size;
             used += size;
