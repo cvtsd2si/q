@@ -87,7 +87,7 @@ impl Regalloc for AsmFunc {
         let precolored_moves = collect_precolored_moves(&self.body);
 
         /* Coalesce pseudo-registers.  */
-        let mut coalescing = Coalescer::new(graph, &reg_classes);
+        let mut coalescer = Coalescer::new(graph, &reg_classes);
 
         loop {
             let mut changed = false;
@@ -97,12 +97,12 @@ impl Regalloc for AsmFunc {
              * NOTE: `try_coalesce()` also calls `try_coalesce_precolored()`
              *       so if the move is eligible, it might end up coalesced here.  */
             for mov in &moves {
-                changed |= coalescing.try_coalesce(mov);
+                changed |= coalescer.try_coalesce(mov);
             }
 
             /* Attempt pseudo-to-precolored coalescing.  */
             for (name, reg) in &precolored_moves {
-                changed |= coalescing.try_coalesce_precolored(name, *reg);
+                changed |= coalescer.try_coalesce_precolored(name, *reg);
             }
 
             if !changed {
@@ -122,7 +122,7 @@ impl Regalloc for AsmFunc {
         let mut spill_costs = BTreeMap::new();
 
         for (name, cost) in original_costs {
-            if let Some(rep) = coalescing.reps.get(&name)
+            if let Some(rep) = coalescer.reps.get(&name)
                 && let InterferenceNode::Pseudo(rep) = rep
             {
                 *spill_costs.entry(rep.clone()).or_insert(0) += cost;
@@ -130,17 +130,17 @@ impl Regalloc for AsmFunc {
         }
 
         /* Color the coalesced graph.  */
-        let (colored, spilled) = coalescing.graph.color(&reg_classes, &spill_costs);
+        let (colored, spilled) = coalescer.graph.color(&reg_classes, &spill_costs);
 
         /* Assign stack slots to spilled representatives.  */
-        let spill_sizes = collect_spill_sizes(&self.body, &coalescing.reps);
+        let spill_sizes = collect_spill_sizes(&self.body, &coalescer.reps);
         let (spill_slots, space) = assign_spill_slots(&spilled, &spill_sizes, self.space);
 
         /* Restore locations for every original pseudo.  */
         let mut assignments = BTreeMap::new();
         let mut slots = BTreeMap::new();
 
-        for (name, representative) in &coalescing.reps {
+        for (name, representative) in &coalescer.reps {
             match representative {
                 /* This pseudo was merged into a physical register.  */
                 InterferenceNode::Reg(reg) => {
