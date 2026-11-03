@@ -519,7 +519,6 @@ impl LivenessInstruction for AsmInstr {
             AsmInstr::Setcc { dst, .. } => {
                 ud.uses.insert(AsmLocation::Flags);
 
-                dst.add_uses(&mut ud);
                 dst.add_defs(&mut ud);
             }
 
