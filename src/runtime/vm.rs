@@ -57,8 +57,6 @@ impl Vm {
                 span: Span { start: 0, end: 0 },
             })?;
 
-        dbg!(&bytecode.strings);
-
         let strings = bytecode.strings.iter().map(|s| encode_string(s)).collect();
 
         let jit = if enable_jit {
