@@ -8,7 +8,7 @@ mod visit_reads;
 
 use std::str::FromStr;
 
-use crate::codegen::ir::r#gen::IRProg;
+use crate::codegen::ir::r#gen::{IRInstr, IRProg};
 
 #[derive(Debug, Clone, Copy)]
 pub enum Optimization {
@@ -46,6 +46,14 @@ impl Optimize for IRProg {
 
     fn optimize(mut self, enabled: &[Optimization]) -> Self::Output {
         for func in self.functions_mut() {
+            if func
+                .body
+                .iter()
+                .any(|i| matches!(i, IRInstr::GetAddr { .. }))
+            {
+                continue;
+            }
+
             loop {
                 let mut changed = false;
 

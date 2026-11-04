@@ -169,11 +169,13 @@ impl Expression {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UnaryExpressionKind {
     Negate,
     LogicalNot,
     BitwiseNot,
+    AddrOf,
+    Deref,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

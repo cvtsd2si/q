@@ -391,6 +391,37 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
             ty: ty.unwrap(),
         }),
 
+        Expression::Unary {
+            kind: UnaryExpressionKind::AddrOf,
+            expr,
+            ty,
+            ..
+        } => {
+            let ptr_ty = ty.unwrap();
+            match irfy_expr(instrs, expr, types) {
+                ExpRes::Plain(var @ IRVal::Var { .. }) => {
+                    let dst = mkirvar(ptr_ty);
+                    instrs.push(IRInstr::GetAddr {
+                        src: var,
+                        dst: dst.clone(),
+                    });
+                    ExpRes::Plain(dst)
+                }
+                ExpRes::DereferencedPtr(ptr) => ExpRes::Plain(ptr),
+                ExpRes::SubObject { .. } => todo!("address of subobject"),
+                ExpRes::Plain(_) => unreachable!("typechecker rejects address of rvalue"),
+            }
+        }
+
+        Expression::Unary {
+            kind: UnaryExpressionKind::Deref,
+            expr,
+            ..
+        } => {
+            let ptr = irfy_expr_and_cvt(instrs, expr, types);
+            ExpRes::DereferencedPtr(ptr)
+        }
+
         Expression::Unary { kind, expr, ty, .. } => {
             let operand_ty = ty.unwrap();
 
@@ -541,7 +572,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
                 .map(|arg| irfy_expr_and_cvt(instrs, arg, types))
                 .collect();
 
-            let dst = mkirvar(ty.unwrap());
+            let dst = mkirvar(ty.unwrap_or(Type::Int32));
 
             instrs.push(IRInstr::Call {
                 target: target.to_owned(),
@@ -1110,6 +1141,8 @@ impl std::fmt::Debug for IRInstr {
                     UnaryExpressionKind::Negate => "-",
                     UnaryExpressionKind::LogicalNot => "!",
                     UnaryExpressionKind::BitwiseNot => "~",
+                    UnaryExpressionKind::Deref => "*",
+                    UnaryExpressionKind::AddrOf => "&",
                 };
 
                 write!(f, "{dst} = {op}{src}")

@@ -17,24 +17,25 @@ use crate::{
 };
 
 macro_rules! unop {
-    ($stack:expr, $op:tt) => {
-        let obj = $stack.pop().unwrap();
-        $stack.push(($op obj).into());
+    ($self:expr, $op:tt) => {
+        let obj = $self.pop();
+        $self.push(($op obj).into());
     };
 }
 
 macro_rules! binop {
-    ($stack:expr, $op:tt) => {
-        let b = $stack.pop().unwrap();
-        let a = $stack.pop().unwrap();
+    ($self:expr, $op:tt) => {
+        let b = $self.pop();
+        let a = $self.pop();
 
-        $stack.push((a $op b).into());
+        $self.push((a $op b).into());
     };
 }
 
 pub struct Vm<'types> {
     mem: Vec<u8>,
     stack: Vec<Value>,
+    tos: usize,
     fp_stack: Vec<Frame>,
     ir: IRProg,
     func: usize,
@@ -72,6 +73,8 @@ impl<'types> Vm<'types> {
             None
         };
 
+        let tos = bytecode.funcs[entrypoint].locals_count;
+
         let mut vm = Vm {
             mem: Vec::with_capacity(16 * 1024 * 1024),
             stack: vec![
@@ -79,8 +82,9 @@ impl<'types> Vm<'types> {
                     tag: ValueTag::Void,
                     payload: 0,
                 };
-                bytecode.funcs[entrypoint].locals_count
+                1024
             ],
+            tos,
             fp_stack: Vec::new(),
             ir,
             func: entrypoint,
@@ -94,19 +98,40 @@ impl<'types> Vm<'types> {
 
         for aggregate in &vm.bytecode.funcs[entrypoint].aggregates {
             let start = vm.mem.len();
+            let end = start + aggregate.1.size;
+
+            vm.mem.resize(end, 0);
+
             let slot = Value {
                 tag: ValueTag::Array,
                 payload: unsafe { vm.mem.as_mut_ptr().add(start) as u64 },
             };
+
             vm.stack[aggregate.1.slot] = slot;
         }
 
         Ok(vm)
     }
 
+    #[inline(always)]
+    fn push(&mut self, value: Value) {
+        assert!(self.tos < self.stack.len(), "stack overflow");
+
+        self.stack[self.tos] = value;
+        self.tos += 1;
+    }
+
+    #[inline(always)]
+    fn pop(&mut self) -> Value {
+        assert!(self.tos > 0, "stack underflow");
+
+        self.tos -= 1;
+        self.stack[self.tos]
+    }
+
     pub fn exec(&mut self) -> Result<Value, QError> {
         let r = self.exec_until(None);
-        assert_eq!(self.stack.len(), 0);
+        assert_eq!(self.tos, 0);
 
         r
     }
@@ -166,7 +191,7 @@ impl<'types> Vm<'types> {
                     continue;
                 }
                 Op::Cvt { src_ty, dst_ty } => self.handle_op_cvt(src_ty, dst_ty),
-                Op::GetAddr(local) => self.handle_op_getaddr(local),
+                Op::GetAddr { local, ty } => self.handle_op_getaddr(local, ty),
                 Op::Load(ty) => self.handle_op_load(ty),
                 Op::Store(ty) => self.handle_op_store(ty),
                 Op::AddPtr { scale } => self.handle_op_addptr(scale),
@@ -178,7 +203,7 @@ impl<'types> Vm<'types> {
                 }
                 Op::Ret | Op::RetVoid => {
                     let v = if matches!(op, Op::Ret) {
-                        self.stack.pop().unwrap()
+                        self.pop()
                     } else {
                         Value {
                             tag: ValueTag::Void,
@@ -212,9 +237,13 @@ impl<'types> Vm<'types> {
         eprint!("stack: [");
 
         for (idx, obj) in self.stack.iter().enumerate() {
+            if idx == self.tos {
+                break;
+            }
+
             eprint!("{obj}");
 
-            if idx != self.stack.len() - 1 {
+            if idx != self.tos - 1 {
                 eprint!(", ");
             }
         }
@@ -266,7 +295,7 @@ impl<'types> Vm<'types> {
     fn finish_ret(&mut self, v: Value, stop_depth: Option<usize>) -> Option<Value> {
         match self.handle_op_ret(v) {
             Some(v) => Some(v),
-            None if stop_depth == Some(self.fp_stack.len()) => Some(self.stack.pop().unwrap()),
+            None if stop_depth == Some(self.fp_stack.len()) => Some(self.pop()),
             None => None,
         }
     }
@@ -276,7 +305,7 @@ impl<'types> Vm<'types> {
         let old_pc = self.pc;
         let old_fp = self.fp;
 
-        let old_stack_len = self.stack.len();
+        let old_tos = self.tos;
         let old_depth = self.fp_stack.len();
 
         let f = self.ir.function(target).unwrap();
@@ -295,13 +324,15 @@ impl<'types> Vm<'types> {
             });
         }
 
-        self.stack.extend(args);
+        for &arg in args {
+            self.push(arg);
+        }
 
         self.handle_op_call(target, args.len());
 
         let r = self.exec_until(Some(old_depth));
 
-        self.stack.truncate(old_stack_len);
+        self.tos = old_tos;
         self.fp_stack.truncate(old_depth);
 
         self.func = old_func;
@@ -408,12 +439,12 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_const(&mut self, n: Literal) {
-        self.stack.push(n.into());
+        self.push(n.into());
     }
 
     fn handle_op_strconst(&mut self, idx: usize) {
         let ptr = self.strings[idx].as_ptr();
-        self.stack.push(Value {
+        self.push(Value {
             tag: ValueTag::Str,
             payload: ptr as u64,
         });
@@ -426,6 +457,7 @@ impl<'types> Vm<'types> {
             LogicalNot => self.handle_op_not(),
             BitwiseNot => self.handle_op_not(),
             Negate => self.handle_op_neg(),
+            _ => unreachable!(),
         }
     }
 
@@ -455,101 +487,101 @@ impl<'types> Vm<'types> {
 
     #[inline(always)]
     fn handle_op_add(&mut self) {
-        binop!(self.stack, +);
+        binop!(self, +);
     }
 
     #[inline(always)]
     fn handle_op_sub(&mut self) {
-        binop!(self.stack, -);
+        binop!(self, -);
     }
 
     #[inline(always)]
     fn handle_op_mul(&mut self) {
-        binop!(self.stack, *);
+        binop!(self, *);
     }
 
     #[inline(always)]
     fn handle_op_div(&mut self) {
-        binop!(self.stack, /);
+        binop!(self, /);
     }
 
     #[inline(always)]
     fn handle_op_rem(&mut self) {
-        binop!(self.stack, %);
+        binop!(self, %);
     }
 
     #[inline(always)]
     fn handle_op_bitor(&mut self) {
-        binop!(self.stack, |);
+        binop!(self, |);
     }
 
     #[inline(always)]
     fn handle_op_bitand(&mut self) {
-        binop!(self.stack, &);
+        binop!(self, &);
     }
 
     #[inline(always)]
     fn handle_op_bitxor(&mut self) {
-        binop!(self.stack, ^);
+        binop!(self, ^);
     }
 
     #[inline(always)]
     fn handle_op_shl(&mut self) {
-        binop!(self.stack, <<);
+        binop!(self, <<);
     }
 
     #[inline(always)]
     fn handle_op_shr(&mut self) {
-        binop!(self.stack, >>);
+        binop!(self, >>);
     }
 
     #[inline(always)]
     fn handle_op_lt(&mut self) {
-        binop!(self.stack, <);
+        binop!(self, <);
     }
 
     #[inline(always)]
     fn handle_op_gt(&mut self) {
-        binop!(self.stack, >);
+        binop!(self, >);
     }
 
     #[inline(always)]
     fn handle_op_ge(&mut self) {
-        binop!(self.stack, >=);
+        binop!(self, >=);
     }
 
     #[inline(always)]
     fn handle_op_le(&mut self) {
-        binop!(self.stack, <=);
+        binop!(self, <=);
     }
 
     #[inline(always)]
     fn handle_op_ne(&mut self) {
-        binop!(self.stack, !=);
+        binop!(self, !=);
     }
 
     #[inline(always)]
     fn handle_op_eq(&mut self) {
-        binop!(self.stack, ==);
+        binop!(self, ==);
     }
 
     #[inline(always)]
     fn handle_op_neg(&mut self) {
-        unop!(self.stack, -);
+        unop!(self, -);
     }
 
     #[inline(always)]
     fn handle_op_not(&mut self) {
-        unop!(self.stack, !);
+        unop!(self, !);
     }
 
     fn handle_op_cvt(&mut self, src_ty: Type, dst_ty: Type) {
-        let value = self.stack.pop().unwrap();
-        self.stack.push(value.cast(src_ty, dst_ty));
+        let value = self.pop();
+        self.push(value.cast(src_ty, dst_ty));
     }
 
     fn handle_op_print(&mut self) -> Result<(), QError> {
-        let obj = self.stack.pop().unwrap();
+        let obj = self.pop();
         print_value(obj).map_err(|_| QError {
             kind: QErrorKind::Vm,
             msg: "print_value failed".to_string(),
@@ -559,17 +591,17 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_deepget(&mut self, idx: usize) {
-        self.stack.push(self.stack[self.fp + idx]);
+        self.push(self.stack[self.fp + idx]);
     }
 
     fn handle_op_deepset(&mut self, idx: usize) {
-        let obj = self.stack.pop().unwrap();
+        let obj = self.pop();
         self.stack[self.fp + idx] = obj;
     }
 
     #[inline(always)]
     fn handle_op_jz(&mut self, target: usize) {
-        let cond = self.stack.pop().unwrap();
+        let cond = self.pop();
 
         if cond.payload == 0 {
             self.pc = target;
@@ -582,7 +614,7 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_call(&mut self, target: usize, argc: usize) {
-        let fp = self.stack.len() - argc;
+        let fp = self.tos - argc;
 
         self.fp_stack.push(Frame {
             func: self.func,
@@ -591,17 +623,19 @@ impl<'types> Vm<'types> {
             mem_base: self.mem.len(),
         });
 
+        let locals = self.bytecode.funcs[target].locals_count;
+        let end = fp + locals;
+
         self.func = target;
         self.pc = 0;
         self.fp = fp;
 
-        self.stack.resize(
-            fp + self.bytecode.funcs[self.func].locals_count,
-            Value {
-                tag: ValueTag::Void,
-                payload: 0,
-            },
-        );
+        self.stack[fp + argc..end].fill(Value {
+            tag: ValueTag::Void,
+            payload: 0,
+        });
+
+        self.tos = end;
 
         for aggregate in self.bytecode.funcs[self.func].aggregates.values() {
             let start = self.mem.len();
@@ -618,42 +652,36 @@ impl<'types> Vm<'types> {
         }
     }
 
-    fn handle_op_getaddr(&mut self, local: usize) {
+    fn handle_op_getaddr(&mut self, local: usize, ty: Type) {
         let obj = self.stack[self.fp + local];
-        match obj.tag {
-            ValueTag::Array => {
-                self.stack.push(Value {
-                    tag: ValueTag::Ptr,
-                    payload: obj.payload,
-                });
-            }
-            _ => {
-                let addr = &mut self.stack[self.fp + local].payload as *mut u64;
-                self.stack.push(Value {
-                    tag: ValueTag::Ptr,
-                    payload: addr as u64,
-                });
-            }
-        }
+        let ptr = match obj.tag {
+            ValueTag::Array => obj.payload,
+            _ => &mut self.stack[self.fp + local].payload as *mut u64 as u64,
+        };
+
+        self.push(Value {
+            tag: ValueTag::Ptr,
+            payload: ptr,
+        });
     }
 
     fn handle_op_addptr(&mut self, scale: usize) {
-        let index = self.stack.pop().unwrap();
-        let base = self.stack.pop().unwrap();
+        let index = self.pop();
+        let base = self.pop();
 
         let base = base.payload as *mut u8;
         let offset = index.payload as isize * scale as isize;
 
         let ptr = base.wrapping_offset(offset);
 
-        self.stack.push(Value {
+        self.push(Value {
             tag: ValueTag::Ptr,
             payload: ptr as u64,
         });
     }
 
     fn handle_op_load(&mut self, ty: Type) {
-        let pointer = self.stack.pop().unwrap();
+        let pointer = self.pop();
         assert_eq!(pointer.tag, ValueTag::Ptr);
 
         let size = ty.size_of(self.types);
@@ -675,15 +703,15 @@ impl<'types> Vm<'types> {
             _ => bits,
         };
 
-        self.stack.push(Value {
+        self.push(Value {
             tag: ty.into(),
             payload,
         });
     }
 
     fn handle_op_store(&mut self, ty: Type) {
-        let value = self.stack.pop().unwrap();
-        let pointer = self.stack.pop().unwrap();
+        let value = self.pop();
+        let pointer = self.pop();
 
         assert_eq!(pointer.tag, ValueTag::Ptr);
 
@@ -698,7 +726,7 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_cpy_to_offset(&mut self, local: usize, offset: usize, ty: Type) {
-        let value = self.stack.pop().unwrap();
+        let value = self.pop();
         let obj = self.stack[self.fp + local];
 
         let raw_bytes = obj.payload as *mut u8;
@@ -732,14 +760,14 @@ impl<'types> Vm<'types> {
             _ => bits,
         };
 
-        self.stack.push(Value {
+        self.push(Value {
             tag: ty.into(),
             payload,
         });
     }
 
     fn handle_op_ret(&mut self, v: Value) -> Option<Value> {
-        self.stack.truncate(self.fp);
+        self.tos = self.fp;
 
         match self.fp_stack.pop() {
             Some(frame) => {
@@ -749,7 +777,7 @@ impl<'types> Vm<'types> {
                 self.pc = frame.pc;
                 self.fp = frame.ptr;
 
-                self.stack.push(v);
+                self.push(v);
 
                 None
             }

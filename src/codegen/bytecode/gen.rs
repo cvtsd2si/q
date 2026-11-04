@@ -31,7 +31,10 @@ pub enum Op {
         src_ty: Type,
         dst_ty: Type,
     },
-    GetAddr(usize),
+    GetAddr {
+        local: usize,
+        ty: Type,
+    },
     Load(Type),
     Store(Type),
     AddPtr {
@@ -417,13 +420,19 @@ impl Codegen<Bytecode> for IRInstr {
             ]),
 
             IRInstr::GetAddr { src, dst } => {
-                let IRVal::Var { name, .. } = src else {
+                let IRVal::Var { name, ty } = src else {
                     unreachable!("GetAddr expects a variable");
                 };
 
                 let slot = ctx.get::<String>(name).unwrap();
 
-                Ok(vec![Op::GetAddr(slot), dst.store_op(ctx)])
+                Ok(vec![
+                    Op::GetAddr {
+                        local: slot,
+                        ty: *ty,
+                    },
+                    dst.store_op(ctx),
+                ])
             }
 
             IRInstr::CpyFromOffset { src, offset, dst } => {

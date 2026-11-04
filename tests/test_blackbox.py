@@ -17,17 +17,53 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    "arrays.q": {
+        "ret": 0,
+        "stdout": [
+            "10",
+            "20",
+            "30",
+            "40",
+            "20",
+            "25",
+            "26",
+            "35",
+            "50",
+            "51",
+            "40",
+            "10",
+            "100",
+            "250",
+            "300",
+            "51",
+        ],
+        "stderr": [],
+    },
+    "ptr.q": {
+        "ret": 0,
+        "stdout": [
+            "10",
+            "20",
+            "30",
+            "31",
+            "50",
+            "50",
+            "60",
+            "61",
+            "70",
+            "100",
+            "70",
+            "200",
+        ],
+        "stderr": [],
+    },
     # strings
     "print_str.q": {
         "ret": 0,
         "stdout": ["spam", "eggs"],
         "stderr": [],
     },
-    "str_comparisons.q": {
-        "ret": 0,
-        "stdout": ["true"] * 10,
-        "stderr": []
-    },
+    "str_comparisons.q": {"ret": 0, "stdout": ["true"] * 10, "stderr": []},
     # ir optimizations
     "constants.q": {
         "ret": 0,
@@ -200,9 +236,7 @@ TEST_CASES = {
     "comparison_diff_types.q": {
         "ret": 1,
         "stdout": [],
-        "stderr": [
-            "Comparisons require operands of the same type, got i32 and u64"
-        ],
+        "stderr": ["Comparisons require operands of the same type, got i32 and u64"],
     },
     # bitwise shifts
     "u8_shl.q": {
@@ -1255,6 +1289,5 @@ def test_program(program: Path, jit: bool, optimizations: bool):
 
     expected_stderr = expected.get("stderr", [])
     assert all(s in result.stderr for s in expected_stderr), (
-       f"Expected stderr to contain {expected_stderr!r}, "
-        f"got: {result.stderr!r}"
+        f"Expected stderr to contain {expected_stderr!r}, got: {result.stderr!r}"
     )

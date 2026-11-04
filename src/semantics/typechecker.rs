@@ -369,6 +369,59 @@ fn typecheck_expr(
             ty: _,
             span,
         } => {
+            if matches!(
+                kind,
+                UnaryExpressionKind::AddrOf | UnaryExpressionKind::Deref
+            ) {
+                if kind == UnaryExpressionKind::AddrOf && !is_assignable(&expr) {
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Typecheck,
+                        msg: "Cannot take the address of a non-lvalue".into(),
+                        span: expr.span(),
+                    });
+                }
+
+                let expr = typecheck_expr(typechecker, *expr, None)?;
+                let operand_ty = expr.ty().ok_or_else(|| QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: "Cannot determine operand type".into(),
+                    span,
+                })?;
+                let result_ty = match kind {
+                    UnaryExpressionKind::AddrOf => typechecker.types.intern_ptr(operand_ty),
+                    UnaryExpressionKind::Deref => {
+                        let Type::Ptr(id) = operand_ty else {
+                            return Err(QError {
+                                code: 1,
+                                kind: QErrorKind::Typecheck,
+                                msg: format!("Cannot dereference non-pointer {operand_ty:?}"),
+                                span,
+                            });
+                        };
+                        typechecker.types.get_pointer(id)
+                    }
+                    _ => unreachable!(),
+                };
+                if let Some(expected) = expected_ty {
+                    if expected != result_ty {
+                        return Err(QError {
+                            code: 1,
+                            kind: QErrorKind::Typecheck,
+                            msg: format!("Expected {expected:?}, got {result_ty:?}"),
+                            span,
+                        });
+                    }
+                }
+                return Ok(Expression::Unary {
+                    kind,
+                    expr: Box::new(expr),
+                    ty: Some(result_ty),
+                    span,
+                });
+            }
+
             if matches!(kind, UnaryExpressionKind::Negate)
                 && let Expression::Literal {
                     val: LiteralVal::Integer(n),
@@ -386,6 +439,7 @@ fn typecheck_expr(
                 UnaryExpressionKind::Negate | UnaryExpressionKind::BitwiseNot => {
                     merge_types(expected_ty, op_hint)?.unwrap_or_else(|| default_numeric_ty(&expr))
                 }
+                UnaryExpressionKind::AddrOf | UnaryExpressionKind::Deref => unreachable!(),
             };
 
             let expr = typecheck_expr(typechecker, *expr, Some(operand_ty))?;
@@ -424,6 +478,7 @@ fn typecheck_expr(
                         | Type::UInt64
                         | Type::Int64
                 ),
+                UnaryExpressionKind::AddrOf | UnaryExpressionKind::Deref => unreachable!(),
             };
 
             if !is_valid_ty {
@@ -438,6 +493,7 @@ fn typecheck_expr(
             let result_ty = match kind {
                 UnaryExpressionKind::LogicalNot => Type::Boolean,
                 UnaryExpressionKind::Negate | UnaryExpressionKind::BitwiseNot => operand_ty,
+                UnaryExpressionKind::AddrOf | UnaryExpressionKind::Deref => unreachable!(),
             };
 
             if let Some(expected) = expected_ty
@@ -1131,6 +1187,14 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
             UnaryExpressionKind::BitwiseNot | UnaryExpressionKind::Negate => {
                 known_ty(typechecker, expr)
             }
+            UnaryExpressionKind::AddrOf => {
+                let pointee = known_ty(typechecker, expr)?;
+                Ok(pointee.map(|ty| typechecker.types.intern_ptr(ty)))
+            }
+            UnaryExpressionKind::Deref => match known_ty(typechecker, expr)? {
+                Some(Type::Ptr(id)) => Ok(Some(typechecker.types.get_pointer(id))),
+                _ => Ok(None),
+            },
         },
 
         Expression::Binary { kind, lhs, rhs, .. } => {
@@ -1224,7 +1288,11 @@ pub struct FnSignature {
 
 fn is_assignable(expr: &Expression) -> bool {
     match expr {
-        Expression::Variable { .. } => true,
+        Expression::Variable { .. }
+        | Expression::Unary {
+            kind: UnaryExpressionKind::Deref,
+            ..
+        } => true,
         Expression::Index { array, .. } => is_assignable(array),
         _ => false,
     }

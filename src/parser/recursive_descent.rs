@@ -119,7 +119,13 @@ impl<'src, 'types> Parser<'src, 'types> {
                 | TokenKind::Break
                 | TokenKind::Continue
                 | TokenKind::Goto
-                | TokenKind::Identifier => self.parse_stmt().map(BlockItem::Stmt),
+                | TokenKind::Identifier
+                | TokenKind::Star
+                | TokenKind::Ampersand
+                | TokenKind::Minus
+                | TokenKind::Bang
+                | TokenKind::Tilde
+                | TokenKind::LParen => self.parse_stmt().map(BlockItem::Stmt),
                 _ => Err(QError {
                     code: 1,
                     kind: QErrorKind::Parse,
@@ -174,7 +180,13 @@ impl<'src, 'types> Parser<'src, 'types> {
                 {
                     self.parse_labeled()
                 }
-                TokenKind::Identifier => self.parse_expr_stmt(),
+                TokenKind::Identifier
+                | TokenKind::Star
+                | TokenKind::Ampersand
+                | TokenKind::Minus
+                | TokenKind::Bang
+                | TokenKind::Tilde
+                | TokenKind::LParen => self.parse_expr_stmt(),
                 _ => Err(QError {
                     code: 1,
                     kind: QErrorKind::Parse,
@@ -814,12 +826,20 @@ impl<'src, 'types> Parser<'src, 'types> {
     }
 
     fn unary(&mut self) -> Result<Expression, QError> {
-        if self.check_many_greedy(&[TokenKind::Minus, TokenKind::Bang, TokenKind::Tilde]) {
+        if self.check_many_greedy(&[
+            TokenKind::Minus,
+            TokenKind::Bang,
+            TokenKind::Tilde,
+            TokenKind::Ampersand,
+            TokenKind::Star,
+        ]) {
             let kind = match self.prev {
                 Some(token) => match token.kind {
                     TokenKind::Minus => UnaryExpressionKind::Negate,
                     TokenKind::Bang => UnaryExpressionKind::LogicalNot,
                     TokenKind::Tilde => UnaryExpressionKind::BitwiseNot,
+                    TokenKind::Ampersand => UnaryExpressionKind::AddrOf,
+                    TokenKind::Star => UnaryExpressionKind::Deref,
                     _ => unreachable!(),
                 },
                 None => {
@@ -1049,6 +1069,14 @@ impl<'src, 'types> Parser<'src, 'types> {
     }
 
     fn parse_type(&mut self) -> Result<Type, QError> {
+        if self.check(TokenKind::Star) {
+            self.consume(TokenKind::Star)?;
+
+            let pointee = self.parse_type()?;
+
+            return Ok(self.types.intern_ptr(pointee));
+        }
+
         if self.check(TokenKind::LBracket) {
             self.consume(TokenKind::LBracket)?;
 
