@@ -48,6 +48,20 @@ fn transfer_constant(instr: &IRInstr, facts: &mut HashMap<String, Literal>) {
     /* Does this instruction assign a value to a variable?
      * If yes, extract the dst and dst_ty.
      * If not, return.  */
+    match instr {
+        IRInstr::Store { .. } => {
+            facts.clear();
+        }
+
+        IRInstr::CpyToOffset { dst, .. } => {
+            if let IRVal::Var { name, .. } = dst {
+                facts.remove(name);
+            }
+        }
+
+        _ => {}
+    }
+
     let Some(IRVal::Var {
         name: dst,
         ty: dst_ty,

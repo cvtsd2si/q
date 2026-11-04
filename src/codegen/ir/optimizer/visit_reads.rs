@@ -22,14 +22,39 @@ pub(super) fn visit_reads(instr: &mut IRInstr, mut visit: impl FnMut(&mut IRVal)
             visit(lhs);
             visit(rhs);
         }
+
         IRInstr::Ret { val: Some(val), .. }
         | IRInstr::Print { val, .. }
         | IRInstr::Jz { cond: val, .. } => visit(val),
+
         IRInstr::Call { args, .. } => {
             for arg in args {
                 visit(arg);
             }
         }
-        IRInstr::Ret { val: None, .. } | IRInstr::Label(_) | IRInstr::Jmp { .. } => {}
+
+        IRInstr::Load { src_ptr, .. } => {
+            visit(src_ptr);
+        }
+
+        IRInstr::Store { src, dst_ptr } => {
+            visit(src);
+            visit(dst_ptr);
+        }
+
+        IRInstr::AddPtr { ptr, index, .. } => {
+            visit(ptr);
+            visit(index);
+        }
+
+        IRInstr::CpyToOffset { src, .. } => {
+            visit(src);
+        }
+
+        IRInstr::GetAddr { .. }
+        | IRInstr::CpyFromOffset { .. }
+        | IRInstr::Ret { val: None, .. }
+        | IRInstr::Label(_)
+        | IRInstr::Jmp { .. } => {}
     }
 }

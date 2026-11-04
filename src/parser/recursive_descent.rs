@@ -1,27 +1,29 @@
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
-    Statement, Type, UnaryExpressionKind,
+    Statement, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::{QError, QErrorKind};
 use std::collections::VecDeque;
 
-pub struct Parser<'src> {
+pub struct Parser<'src, 'types> {
     src: &'src str,
     tokens: VecDeque<Token>,
     curr: Option<Token>,
     prev: Option<Token>,
     curr_ret_ty: Option<Type>,
+    types: &'types mut TypeInterner,
 }
 
-impl<'src> Parser<'src> {
-    pub fn new(src: &'src str, tokens: VecDeque<Token>) -> Self {
+impl<'src, 'types> Parser<'src, 'types> {
+    pub fn new(src: &'src str, tokens: VecDeque<Token>, types: &'types mut TypeInterner) -> Self {
         Self {
             src,
             tokens,
             curr: None,
             prev: None,
             curr_ret_ty: None,
+            types,
         }
     }
 
@@ -214,7 +216,7 @@ impl<'src> Parser<'src> {
         while !self.check(TokenKind::RParen) {
             let param_name = self.consume(TokenKind::Identifier)?;
             self.consume(TokenKind::Colon)?;
-            let param_ty = self.consume_primitive()?.into();
+            let param_ty = self.parse_type()?;
 
             params.push(Param {
                 name: self.src_from_span(param_name.span),
@@ -233,7 +235,7 @@ impl<'src> Parser<'src> {
         let ret_ty = if self.check(TokenKind::Arrow) {
             self.consume(TokenKind::Arrow)?;
 
-            Some(Type::from(self.consume_primitive()?))
+            Some(Type::from(self.parse_type()?))
         } else {
             None
         };
@@ -296,7 +298,7 @@ impl<'src> Parser<'src> {
 
         let ty = if self.check(TokenKind::Colon) {
             self.consume(TokenKind::Colon)?;
-            Some(self.consume_primitive()?.into())
+            Some(self.parse_type()?)
         } else {
             None
         };
@@ -843,21 +845,41 @@ impl<'src> Parser<'src> {
             });
         }
 
-        self.call()
+        self.postfix()
     }
 
-    fn call(&mut self) -> Result<Expression, QError> {
+    fn postfix(&mut self) -> Result<Expression, QError> {
         let mut expr = self.primary()?;
-        let begin = expr.span();
 
         loop {
             if self.check(TokenKind::LParen) {
-                let target = match expr {
-                    Expression::Variable { name, .. } => name,
-                    _ => unreachable!(),
+                let begin = expr.span();
+
+                let Expression::Variable { name, .. } = expr else {
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Parse,
+                        msg: "Expected function name".into(),
+                        span: begin,
+                    });
                 };
 
-                expr = self.finish_call(&target, begin)?;
+                expr = self.finish_call(&name, begin)?;
+            } else if self.check(TokenKind::LBracket) {
+                let begin = expr.span();
+
+                self.consume(TokenKind::LBracket)?;
+
+                let index = self.parse_expr()?;
+
+                let end = self.consume(TokenKind::RBracket)?.span;
+
+                expr = Expression::Index {
+                    array: Box::new(expr),
+                    index: Box::new(index),
+                    ty: None,
+                    span: begin + end,
+                };
             } else {
                 break;
             }
@@ -906,6 +928,7 @@ impl<'src> Parser<'src> {
                 TokenKind::True | TokenKind::False => self.parse_bool(&token),
                 TokenKind::String => self.parse_string(),
                 TokenKind::LParen => self.parse_grouping(),
+                TokenKind::LBracket => self.parse_array_literal(),
                 _ => unreachable!("got: {token:?}"),
             },
             None => Err(QError {
@@ -993,6 +1016,96 @@ impl<'src> Parser<'src> {
             ty: Some(Type::Boolean),
             span: token.span,
         })
+    }
+
+    fn parse_array_literal(&mut self) -> Result<Expression, QError> {
+        let begin = self.consume(TokenKind::LBracket)?.span;
+
+        let mut elements = Vec::new();
+
+        if !self.check(TokenKind::RBracket) {
+            loop {
+                elements.push(self.parse_expr()?);
+
+                if !self.check(TokenKind::Comma) {
+                    break;
+                }
+
+                self.consume(TokenKind::Comma)?;
+
+                if self.check(TokenKind::RBracket) {
+                    break;
+                }
+            }
+        }
+
+        let end = self.consume(TokenKind::RBracket)?.span;
+
+        Ok(Expression::ArrayLiteral {
+            elements,
+            ty: None,
+            span: begin + end,
+        })
+    }
+
+    fn parse_type(&mut self) -> Result<Type, QError> {
+        if self.check(TokenKind::LBracket) {
+            self.consume(TokenKind::LBracket)?;
+
+            let element = self.parse_type()?;
+
+            self.consume(TokenKind::Semicolon)?;
+
+            let length = self.parse_array_length()?;
+
+            self.consume(TokenKind::RBracket)?;
+
+            Ok(self.types.intern_array(element, length))
+        } else {
+            Ok(self.consume_primitive()?.into())
+        }
+    }
+
+    fn parse_array_length(&mut self) -> Result<usize, QError> {
+        let token = self.curr.ok_or_else(|| QError {
+            code: 1,
+            kind: QErrorKind::Parse,
+            msg: "Expected array length".into(),
+            span: self.prev.map_or(Span { start: 0, end: 0 }, |t| t.span),
+        })?;
+
+        let TokenKind::Number(number) = token.kind else {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
+                msg: "Expected integer array length".into(),
+                span: token.span,
+            });
+        };
+
+        if !matches!(number.kind, NumberKind::Integer { .. }) || number.suffix.is_some() {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Parse,
+                msg: "Array length must be an unsuffixed integer".into(),
+                span: token.span,
+            });
+        }
+
+        let LiteralVal::Integer(value) = self.parse_numeric_val(&number)? else {
+            unreachable!()
+        };
+
+        let length = usize::try_from(value).map_err(|_| QError {
+            code: 1,
+            kind: QErrorKind::Parse,
+            msg: "Array length is too large".into(),
+            span: token.span,
+        })?;
+
+        self.advance();
+
+        Ok(length)
     }
 
     fn src_from_span(&self, span: Span) -> String {

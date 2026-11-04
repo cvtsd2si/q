@@ -5,7 +5,7 @@ pub mod ir;
 use crate::{
     QError,
     codegen::{bytecode::r#gen::BytecodeFunc, ir::r#gen::StaticInit},
-    parser::ast::Type,
+    parser::ast::{Type, TypeInterner},
 };
 
 use std::{any::TypeId, collections::HashMap};
@@ -15,7 +15,7 @@ pub trait Codegen<T> {
 }
 
 #[derive(Debug)]
-pub struct CodegenContext {
+pub struct CodegenContext<'types> {
     pub current_fn: String,
     pub locals: HashMap<String, usize>,
     pub funcs: HashMap<String, usize>,
@@ -26,15 +26,24 @@ pub struct CodegenContext {
     pub string_indexes: HashMap<String, usize>,
     /* ASM  */
     pub asm_string_pool: HashMap<String, String>,
+    pub types: &'types TypeInterner,
 }
 
-impl Default for CodegenContext {
-    fn default() -> Self {
-        Self::new()
+impl<'types> CodegenContext<'types> {
+    pub fn new(types: &'types TypeInterner) -> Self {
+        Self {
+            current_fn: String::new(),
+            locals: HashMap::new(),
+            funcs: HashMap::new(),
+            static_consts: Vec::new(),
+            float_pool: HashMap::new(),
+            string_pool: Vec::new(),
+            string_indexes: HashMap::new(),
+            asm_string_pool: HashMap::new(),
+            types,
+        }
     }
-}
 
-impl CodegenContext {
     pub fn get<T: 'static>(&self, name: &str) -> Option<usize> {
         match TypeId::of::<T>() {
             id if id == TypeId::of::<String>() => self.locals.get(name).copied(),

@@ -23,8 +23,30 @@ pub enum Op {
     Deepset(usize),
     Jz(usize),
     Jmp(usize),
-    Call { target: usize, argc: usize },
-    Cvt { src_ty: Type, dst_ty: Type },
+    Call {
+        target: usize,
+        argc: usize,
+    },
+    Cvt {
+        src_ty: Type,
+        dst_ty: Type,
+    },
+    GetAddr(usize),
+    Load(Type),
+    Store(Type),
+    AddPtr {
+        scale: usize,
+    },
+    CpyToOffset {
+        local: usize,
+        offset: usize,
+        ty: Type,
+    },
+    CpyFromOffset {
+        local: usize,
+        offset: usize,
+        ty: Type,
+    },
 }
 
 pub type Bytecode = Vec<Op>;
@@ -41,6 +63,13 @@ pub struct BytecodeFunc {
     pub body: Bytecode,
     pub locals_count: usize,
     pub ir_map: Vec<usize>,
+    pub aggregates: HashMap<usize, AggregateLocal>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AggregateLocal {
+    pub slot: usize,
+    pub size: usize,
 }
 
 impl Codegen<BytecodeProg> for IRProg {
@@ -73,9 +102,33 @@ impl Codegen<BytecodeFunc> for IRFunc {
             ctx.register::<String>(&param.name);
         }
 
+        let mut aggregates = HashMap::new();
+
         for instr in &self.body {
             if let Some(IRVal::Var { name, .. }) = instr.dst() {
                 ctx.register::<String>(name);
+            }
+
+            let aggregate = match instr {
+                IRInstr::GetAddr { src, .. } | IRInstr::CpyFromOffset { src, .. } => Some(src),
+                IRInstr::CpyToOffset { dst, .. } => Some(dst),
+                _ => None,
+            };
+
+            if let Some(IRVal::Var {
+                name,
+                ty: Type::Array(id),
+            }) = aggregate
+            {
+                let slot = ctx.register::<String>(name);
+
+                aggregates.insert(
+                    slot,
+                    AggregateLocal {
+                        slot,
+                        size: Type::Array(*id).size_of(ctx.types),
+                    },
+                );
             }
         }
 
@@ -84,6 +137,7 @@ impl Codegen<BytecodeFunc> for IRFunc {
             body: vec![],
             locals_count: ctx.locals.len(),
             ir_map: vec![],
+            aggregates,
         };
 
         let mut labels = HashMap::new();
@@ -331,6 +385,78 @@ impl Codegen<Bytecode> for IRInstr {
                         dst_ty: *dst_ty,
                     },
                     dst.store_op(ctx),
+                ])
+            }
+
+            IRInstr::Load { src_ptr, dst } => {
+                let ty = dst.ty();
+
+                Ok(vec![src_ptr.load_op(ctx), Op::Load(ty), dst.store_op(ctx)])
+            }
+
+            IRInstr::Store { src, dst_ptr } => {
+                let Type::Ptr(id) = dst_ptr.ty() else {
+                    unreachable!("Store requires a pointer");
+                };
+
+                let ty = ctx.types.get_pointer(id);
+
+                Ok(vec![dst_ptr.load_op(ctx), src.load_op(ctx), Op::Store(ty)])
+            }
+
+            IRInstr::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => Ok(vec![
+                ptr.load_op(ctx),
+                index.load_op(ctx),
+                Op::AddPtr { scale: *scale },
+                dst.store_op(ctx),
+            ]),
+
+            IRInstr::GetAddr { src, dst } => {
+                let IRVal::Var { name, .. } = src else {
+                    unreachable!("GetAddr expects a variable");
+                };
+
+                let slot = ctx.get::<String>(name).unwrap();
+
+                Ok(vec![Op::GetAddr(slot), dst.store_op(ctx)])
+            }
+
+            IRInstr::CpyFromOffset { src, offset, dst } => {
+                let IRVal::Var { name, .. } = src else {
+                    unreachable!("CpyFromOffset expects a variable");
+                };
+
+                let slot = ctx.get::<String>(name).unwrap();
+
+                Ok(vec![
+                    Op::CpyFromOffset {
+                        local: slot,
+                        offset: *offset,
+                        ty: dst.ty(),
+                    },
+                    dst.store_op(ctx),
+                ])
+            }
+
+            IRInstr::CpyToOffset { src, dst, offset } => {
+                let IRVal::Var { name, .. } = dst else {
+                    unreachable!("CpyToOffset expects a variable");
+                };
+
+                let slot = ctx.get::<String>(name).unwrap();
+
+                Ok(vec![
+                    src.load_op(ctx),
+                    Op::CpyToOffset {
+                        local: slot,
+                        offset: *offset,
+                        ty: src.ty(),
+                    },
                 ])
             }
         }

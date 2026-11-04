@@ -1,4 +1,5 @@
 use crate::tokenizer::token::{Span, Suffix, Token, TokenKind};
+use std::collections::HashMap;
 
 #[derive(Debug)]
 pub struct Program {
@@ -89,6 +90,17 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    ArrayLiteral {
+        elements: Vec<Expression>,
+        ty: Option<Type>,
+        span: Span,
+    },
+    Index {
+        array: Box<Expression>,
+        index: Box<Expression>,
+        ty: Option<Type>,
+        span: Span,
+    },
     Variable {
         name: String,
         ty: Option<Type>,
@@ -131,12 +143,14 @@ impl Expression {
     pub fn span(&self) -> Span {
         match self {
             Expression::Literal { span, .. } => *span,
+            Expression::ArrayLiteral { span, .. } => *span,
             Expression::Variable { span, .. } => *span,
             Expression::Binary { span, .. } => *span,
             Expression::Call { span, .. } => *span,
             Expression::Assign { span, .. } => *span,
             Expression::Unary { span, .. } => *span,
             Expression::Cast { span, .. } => *span,
+            Expression::Index { span, .. } => *span,
         }
     }
 
@@ -149,6 +163,8 @@ impl Expression {
             Expression::Assign { ty, .. } => *ty,
             Expression::Unary { ty, .. } => *ty,
             Expression::Cast { ty, .. } => *ty,
+            Expression::ArrayLiteral { ty, .. } => *ty,
+            Expression::Index { ty, .. } => *ty,
         }
     }
 }
@@ -182,7 +198,7 @@ pub enum BinaryExpressionKind {
     NotEqual,
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Type {
     UInt8,
     Int8,
@@ -196,6 +212,115 @@ pub enum Type {
     Float64,
     Boolean,
     String,
+    Array(ArrayTypeId),
+    Ptr(PtrTypeId),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ArrayTypeId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ArrayType {
+    pub element: Type,
+    pub length: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PtrTypeId(pub usize);
+
+#[derive(Debug, Default)]
+pub struct TypeInterner {
+    arrays: Vec<ArrayType>,
+    array_lookup: HashMap<ArrayType, ArrayTypeId>,
+
+    ptrs: Vec<Type>,
+    ptr_lookup: HashMap<Type, PtrTypeId>,
+}
+
+impl TypeInterner {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn debug(&self, ty: Type) -> TypeDebug<'_> {
+        TypeDebug { ty, types: self }
+    }
+
+    pub fn intern_array(&mut self, element: Type, length: usize) -> Type {
+        let array = ArrayType { element, length };
+
+        if let Some(&id) = self.array_lookup.get(&array) {
+            return Type::Array(id);
+        }
+
+        let id = ArrayTypeId(self.arrays.len().try_into().expect("too many array types"));
+
+        self.arrays.push(array);
+        self.array_lookup.insert(array, id);
+
+        Type::Array(id)
+    }
+
+    pub fn get_array(&self, id: ArrayTypeId) -> ArrayType {
+        self.arrays[id.0 as usize]
+    }
+
+    pub fn intern_ptr(&mut self, pointee: Type) -> Type {
+        if let Some(&id) = self.ptr_lookup.get(&pointee) {
+            return Type::Ptr(id);
+        }
+
+        let id = PtrTypeId(self.ptrs.len());
+
+        self.ptrs.push(pointee);
+        self.ptr_lookup.insert(pointee, id);
+
+        Type::Ptr(id)
+    }
+
+    pub fn get_pointer(&self, id: PtrTypeId) -> Type {
+        self.ptrs[id.0]
+    }
+}
+
+pub struct TypeDebug<'a> {
+    pub ty: Type,
+    pub types: &'a TypeInterner,
+}
+
+impl std::fmt::Debug for TypeDebug<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.ty {
+            Type::Array(id) => {
+                let array = self.types.get_array(id);
+
+                write!(
+                    f,
+                    "[{:?}; {}]",
+                    TypeDebug {
+                        ty: array.element,
+                        types: self.types,
+                    },
+                    array.length,
+                )
+            }
+
+            Type::Ptr(id) => {
+                let pointee = self.types.get_pointer(id);
+
+                write!(
+                    f,
+                    "*{:?}",
+                    TypeDebug {
+                        ty: pointee,
+                        types: self.types,
+                    }
+                )
+            }
+
+            ty => write!(f, "{ty:?}"),
+        }
+    }
 }
 
 impl std::fmt::Debug for Type {
@@ -213,6 +338,8 @@ impl std::fmt::Debug for Type {
             Self::Float32 => "f32",
             Self::Float64 => "f64",
             Self::String => "str",
+            Self::Array(id) => &format!("Array({id:?})"),
+            Self::Ptr(id) => &format!("Ptr({id:?})"),
         };
 
         write!(f, "{s}")
@@ -399,18 +526,23 @@ impl Type {
         matches!(self, Type::Int8 | Type::Int16 | Type::Int32 | Type::Int64)
     }
 
-    pub fn alignment(self) -> usize {
+    pub fn alignment(self, types: &TypeInterner) -> usize {
         match self {
             Type::UInt8 | Type::Int8 => 1,
             Type::UInt16 | Type::Int16 => 2,
             Type::Int32 | Type::UInt32 | Type::Float32 => 4,
             Type::UInt64 | Type::Int64 | Type::Float64 => 8,
             Type::String => 8,
+            Type::Array(id) => {
+                let array = types.get_array(id);
+                array.element.alignment(types)
+            }
+            Type::Ptr(_) => 8,
             _ => unreachable!(),
         }
     }
 
-    pub fn size_of(self) -> usize {
+    pub fn size_of(self, types: &TypeInterner) -> usize {
         match self {
             Type::Boolean => std::mem::size_of::<bool>(),
             Type::UInt8 => std::mem::size_of::<u8>(),
@@ -424,6 +556,11 @@ impl Type {
             Type::Float32 => std::mem::size_of::<f32>(),
             Type::Float64 => std::mem::size_of::<f64>(),
             Type::String => 8,
+            Type::Array(id) => {
+                let array = types.get_array(id);
+                array.element.size_of(types) * array.length
+            }
+            Type::Ptr(_) => 8,
         }
     }
 }

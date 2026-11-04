@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use crate::{
     QError,
     codegen::{
@@ -171,6 +169,7 @@ pub enum AsmType {
     Quad,
     Float,
     Double,
+    Bytearray,
 }
 
 impl AsmType {
@@ -182,6 +181,7 @@ impl AsmType {
             AsmType::Quad => "q",
             AsmType::Float => "ss",
             AsmType::Double => "sd",
+            _ => unreachable!(),
         }
     }
 
@@ -191,6 +191,7 @@ impl AsmType {
             AsmType::Word => 2,
             AsmType::Long | AsmType::Float => 4,
             AsmType::Quad | AsmType::Double => 8,
+            _ => unreachable!(),
         }
     }
 }
@@ -204,7 +205,8 @@ impl From<Type> for AsmType {
             Type::Int64 | Type::UInt64 => AsmType::Quad,
             Type::Float32 => AsmType::Float,
             Type::Float64 => AsmType::Double,
-            Type::String => AsmType::Quad,
+            Type::String | Type::Ptr(_) => AsmType::Quad,
+            Type::Array(_) => AsmType::Bytearray,
         }
     }
 }
@@ -310,12 +312,21 @@ impl From<BinaryExpressionKind> for AsmInstrBinKind {
 
 #[derive(Debug, Clone)]
 pub enum AsmOp {
-    Pseudo { name: String, ty: Type },
+    Pseudo {
+        name: String,
+        ty: Type,
+    },
     Reg(AsmReg),
     Imm(i64),
     Mem(AsmReg, isize),
-    PseudoMem(String, isize),
+    PseudoMem(String, isize, Type),
+    StaticAddr(String, isize),
     Data(String, isize),
+    Indexed {
+        base: AsmReg,
+        index: AsmReg,
+        scale: usize,
+    },
 }
 
 impl AsmOp {
@@ -344,12 +355,20 @@ impl std::fmt::Display for AsmOp {
                 reg.as_width(AsmType::Quad)
             ),
             AsmOp::Mem(reg, offset) => write!(f, "0x{offset:x}({})", reg.as_width(AsmType::Quad)),
-            AsmOp::Pseudo { .. } | AsmOp::PseudoMem(_, _) => unreachable!(),
+            AsmOp::Pseudo { .. } | AsmOp::PseudoMem(_, _, _) | AsmOp::StaticAddr(_, _) => {
+                unreachable!()
+            }
             AsmOp::Data(ident, offset) => match *offset {
                 0 => write!(f, "{ident}(%rip)"),
                 n if n > 0 => write!(f, "{ident}+0x{n:x}(%rip)"),
                 n => write!(f, "{ident}-0x{:x}(%rip)", n.unsigned_abs()),
             },
+            AsmOp::Indexed { base, index, scale } => write!(
+                f,
+                "({}, {}, {scale})",
+                base.as_width(AsmType::Quad),
+                index.as_width(AsmType::Quad),
+            ),
         }
     }
 }
@@ -436,6 +455,7 @@ impl AsmReg {
                     AsmType::Word => names[1],
                     AsmType::Long | AsmType::Float => names[2],
                     AsmType::Quad | AsmType::Double => names[3],
+                    _ => unreachable!(),
                 }
             }
         }
@@ -534,16 +554,25 @@ impl Codegen<AsmFunc> for IRFunc {
 impl Codegen<Vec<AsmInstr>> for IRInstr {
     fn codegen(&self, ctx: &mut CodegenContext) -> Result<Vec<AsmInstr>, QError> {
         match self {
-            IRInstr::Cpy { src, src_ty, dst } => Ok(vec![
-                AsmInstr::Comment(format!("Copying {src_ty:?}")),
-                AsmInstr::Mov {
-                    src: src.codegen(ctx)?,
-                    dst: dst.codegen(ctx)?,
-                    asm_ty: (*src_ty).into(),
-                },
-                AsmInstr::Newline,
-            ]),
+            IRInstr::Cpy { src, src_ty, dst } => {
+                let mut instrs = vec![AsmInstr::Comment(format!("Copying {src_ty:?}"))];
 
+                if matches!(src_ty, Type::Array(_)) {
+                    instrs.extend(copy_bytes(
+                        src.codegen(ctx)?,
+                        dst.codegen(ctx)?,
+                        src_ty.size_of(ctx.types),
+                    ));
+                } else {
+                    instrs.push(AsmInstr::Mov {
+                        src: src.codegen(ctx)?,
+                        dst: dst.codegen(ctx)?,
+                        asm_ty: (*src_ty).into(),
+                    });
+                }
+
+                Ok(instrs)
+            }
             IRInstr::Ret { val, ret_ty } => {
                 let mut instrs = vec![
                     AsmInstr::Comment("Store the JIT return payload".into()),
@@ -1129,7 +1158,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                  * i16/u16: count & 15
                  * i32/u32: count & 31
                  * i64/u64: count & 63  */
-                let shift_mask = (operand_ty.size_of() * 8 - 1) as i64;
+                let shift_mask = (operand_ty.size_of(ctx.types) * 8 - 1) as i64;
 
                 let instrs = vec![
                     AsmInstr::Comment(format!(
@@ -1462,7 +1491,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                     },
                     AsmInstr::Newline,
                     AsmInstr::Comment(format!("{} = payload", payload_arg.as_width(AsmType::Quad))),
-                    match (ty.size_of(), ty.is_signed()) {
+                    match (ty.size_of(ctx.types), ty.is_signed()) {
                         (4, _) if *ty == Type::Float32 => AsmInstr::Mov {
                             src: val,
                             dst: AsmOp::Reg(payload_arg),
@@ -2140,7 +2169,7 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                             name: format!("static_const.{}", mktmp()),
                             init: StaticInit::Double(i64_ceil_as_f64),
                             ty: Type::Float64,
-                            alignment: Type::alignment(Type::Float64),
+                            alignment: Type::alignment(Type::Float64, ctx.types),
                         };
 
                         ctx.static_consts.push(static_const.clone());
@@ -2543,6 +2572,242 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                     _ => unreachable!(),
                 }
             }
+
+            IRInstr::Load { src_ptr, dst } => {
+                let ty = dst.ty();
+
+                let mut instrs = vec![AsmInstr::Mov {
+                    src: src_ptr.codegen(ctx)?,
+                    dst: AsmOp::Reg(GP_SCRATCH_2),
+                    asm_ty: AsmType::Quad,
+                }];
+
+                if matches!(ty, Type::Array(_)) {
+                    instrs.extend(copy_bytes(
+                        AsmOp::Mem(GP_SCRATCH_2, 0),
+                        dst.codegen(ctx)?,
+                        ty.size_of(ctx.types),
+                    ));
+                } else {
+                    instrs.push(AsmInstr::Mov {
+                        src: AsmOp::Mem(GP_SCRATCH_2, 0),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty: ty.into(),
+                    });
+                }
+
+                Ok(instrs)
+            }
+
+            IRInstr::Store { src, dst_ptr } => {
+                let ty = src.ty();
+
+                let mut instrs = vec![AsmInstr::Mov {
+                    src: dst_ptr.codegen(ctx)?,
+                    dst: AsmOp::Reg(GP_SCRATCH_2),
+                    asm_ty: AsmType::Quad,
+                }];
+
+                if matches!(ty, Type::Array(_)) {
+                    instrs.extend(copy_bytes(
+                        src.codegen(ctx)?,
+                        AsmOp::Mem(GP_SCRATCH_2, 0),
+                        ty.size_of(ctx.types),
+                    ));
+                } else {
+                    instrs.push(AsmInstr::Mov {
+                        src: src.codegen(ctx)?,
+                        dst: AsmOp::Mem(GP_SCRATCH_2, 0),
+                        asm_ty: ty.into(),
+                    });
+                }
+
+                Ok(instrs)
+            }
+
+            IRInstr::GetAddr { src, dst } => Ok(vec![AsmInstr::Lea {
+                src: src.codegen(ctx)?,
+                dst: dst.codegen(ctx)?,
+            }]),
+
+            IRInstr::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => {
+                if let IRVal::Const(Literal::Int64(k)) = index {
+                    if let Ok(displacement) = i32::try_from((*k as i128) * (*scale as i128)) {
+                        return Ok(vec![
+                            AsmInstr::Mov {
+                                src: ptr.codegen(ctx)?,
+                                dst: AsmOp::Reg(GP_SCRATCH_1),
+                                asm_ty: AsmType::Quad,
+                            },
+                            AsmInstr::Lea {
+                                src: AsmOp::Mem(GP_SCRATCH_1, displacement as isize),
+                                dst: dst.codegen(ctx)?,
+                            },
+                        ]);
+                    }
+                }
+
+                let index_ty = index.ty();
+                let mut instrs = vec![];
+
+                match index_ty {
+                    Type::Int8 | Type::Int16 | Type::Int32 => {
+                        instrs.push(AsmInstr::Movsx {
+                            src: index.codegen(ctx)?,
+                            src_ty: index_ty.into(),
+                            dst: AsmOp::Reg(GP_SCRATCH_2),
+                            dst_ty: AsmType::Quad,
+                        });
+                    }
+
+                    Type::UInt8 | Type::UInt16 | Type::Boolean => {
+                        instrs.push(AsmInstr::Movzx {
+                            src: index.codegen(ctx)?,
+                            src_ty: index_ty.into(),
+                            dst: AsmOp::Reg(GP_SCRATCH_2),
+                            dst_ty: AsmType::Quad,
+                        });
+                    }
+
+                    Type::UInt32 => {
+                        instrs.push(AsmInstr::Mov {
+                            src: index.codegen(ctx)?,
+                            dst: AsmOp::Reg(GP_SCRATCH_2),
+                            asm_ty: AsmType::Long,
+                        });
+                    }
+
+                    Type::Int64 | Type::UInt64 => {
+                        instrs.push(AsmInstr::Mov {
+                            src: index.codegen(ctx)?,
+                            dst: AsmOp::Reg(GP_SCRATCH_2),
+                            asm_ty: AsmType::Quad,
+                        });
+                    }
+
+                    _ => unreachable!("invalid pointer index"),
+                }
+
+                let native_scale = if matches!(*scale, 1 | 2 | 4 | 8) {
+                    *scale
+                } else {
+                    instrs.push(AsmInstr::Bin {
+                        kind: AsmInstrBinKind::Mul,
+                        lhs: AsmOp::Imm(
+                            i32::try_from(*scale).expect("pointer scale too large") as i64
+                        ),
+                        rhs: AsmOp::Reg(GP_SCRATCH_2),
+                        asm_ty: AsmType::Quad,
+                    });
+
+                    1
+                };
+
+                instrs.push(AsmInstr::Mov {
+                    src: ptr.codegen(ctx)?,
+                    dst: AsmOp::Reg(GP_SCRATCH_1),
+                    asm_ty: AsmType::Quad,
+                });
+
+                instrs.push(AsmInstr::Lea {
+                    src: AsmOp::Indexed {
+                        base: GP_SCRATCH_1,
+                        index: GP_SCRATCH_2,
+                        scale: native_scale,
+                    },
+                    dst: dst.codegen(ctx)?,
+                });
+
+                Ok(instrs)
+            }
+
+            IRInstr::CpyToOffset { src, dst, offset } => {
+                let src_op = src.codegen(ctx)?;
+                let dst_op = AsmOp::PseudoMem(dst.to_string(), *offset as isize, dst.ty());
+
+                if matches!(src.ty(), Type::Array(_)) {
+                    Ok(copy_bytes(src_op, dst_op, src.ty().size_of(ctx.types)))
+                } else {
+                    Ok(vec![AsmInstr::Mov {
+                        src: src_op,
+                        dst: dst_op,
+                        asm_ty: src.ty().into(),
+                    }])
+                }
+            }
+
+            IRInstr::CpyFromOffset { src, offset, dst } => {
+                let ty = src.ty();
+
+                if matches!(ty, Type::Array(_)) {
+                    Ok(copy_bytes(
+                        AsmOp::PseudoMem(src.to_string(), *offset as isize, ty),
+                        dst.codegen(ctx)?,
+                        dst.ty().size_of(ctx.types),
+                    ))
+                } else {
+                    Ok(vec![AsmInstr::Mov {
+                        src: AsmOp::PseudoMem(src.to_string(), *offset as isize, ty),
+                        dst: dst.codegen(ctx)?,
+                        asm_ty: ty.into(),
+                    }])
+                }
+            }
+        }
+    }
+}
+
+fn copy_bytes(src: AsmOp, dst: AsmOp, byte_count: usize) -> Vec<AsmInstr> {
+    /* If there are no bytes to copy, return an empty vector. */
+    if byte_count == 0 {
+        return vec![];
+    }
+
+    /* Determine the appropriate operand type and size based on the number of bytes left to copy. */
+    let (operand_type, operand_size) = if byte_count >= 8 {
+        /* If 8 bytes or more, use `Quadword` (8 bytes). */
+        (AsmType::Quad, 8)
+    } else if byte_count >= 4 {
+        /* If fewer than 8 bytes but at least 4, use `Longword` (4 bytes). */
+        (AsmType::Long, 4)
+    } else if byte_count >= 2 {
+        (AsmType::Word, 2)
+    } else {
+        (AsmType::Byte, 1)
+    };
+
+    /* Calculate the next source and destination operands. */
+    let next_src = add_offset(operand_size, src.clone());
+    let next_dst = add_offset(operand_size, dst.clone());
+
+    /* Calculate the number of bytes left to copy after this operation. */
+    let bytes_left = byte_count - operand_size;
+
+    let mut instructions = vec![AsmInstr::Mov {
+        asm_ty: operand_type,
+        src,
+        dst,
+    }];
+
+    /* Recursively copy the remaining bytes by calling `copy_bytes` with updated operands and bytes left. */
+    instructions.extend(copy_bytes(next_src, next_dst, bytes_left));
+
+    instructions
+}
+
+fn add_offset(byte_count: usize, operand: AsmOp) -> AsmOp {
+    match operand {
+        AsmOp::PseudoMem(name, offset, ty) => {
+            AsmOp::PseudoMem(name.clone(), offset + byte_count as isize, ty)
+        }
+        AsmOp::Mem(base, offset) => AsmOp::Mem(base, offset + byte_count as isize),
+        _ => {
+            unreachable!()
         }
     }
 }
@@ -2567,13 +2832,17 @@ impl Codegen<AsmOp> for IRVal {
                     Ok(op)
                 }
             },
-            IRVal::Var { name, ty } => Ok(AsmOp::Pseudo {
-                name: name.into(),
-                ty: *ty,
-            }),
+            IRVal::Var { name, ty } => match ty {
+                Type::Array(_) => Ok(AsmOp::PseudoMem(name.clone(), 0, *ty)),
+
+                _ => Ok(AsmOp::Pseudo {
+                    name: name.clone(),
+                    ty: *ty,
+                }),
+            },
             IRVal::Str(s) => {
                 let interned = ctx.intern_asm_string(s);
-                let op = AsmOp::PseudoMem(interned.to_string(), 0);
+                let op = AsmOp::StaticAddr(interned.to_string(), 0);
 
                 Ok(op)
             }
@@ -2635,20 +2904,7 @@ where
     body.sink(AsmInstr::Newline);
 }
 
-impl CodegenContext {
-    pub fn new() -> Self {
-        Self {
-            current_fn: String::new(),
-            locals: HashMap::new(),
-            funcs: HashMap::new(),
-            static_consts: Vec::new(),
-            float_pool: HashMap::new(),
-            string_pool: Vec::new(),
-            string_indexes: HashMap::new(),
-            asm_string_pool: HashMap::new(),
-        }
-    }
-
+impl CodegenContext<'_> {
     pub fn intern_asm_string(&mut self, s: &str) -> String {
         if let Some(name) = self.asm_string_pool.get(s) {
             return name.clone();
@@ -2685,7 +2941,7 @@ impl CodegenContext {
             name: name.clone(),
             ty,
             init,
-            alignment: ty.alignment(),
+            alignment: ty.alignment(self.types),
         });
 
         name

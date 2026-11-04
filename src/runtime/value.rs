@@ -88,6 +88,8 @@ pub enum ValueTag {
     Bool = 10,
     Void = 11,
     Str = 12,
+    Array = 13,
+    Ptr = 14,
 }
 
 impl From<Literal> for Value {
@@ -125,6 +127,8 @@ impl From<Type> for ValueTag {
             Type::Float64 => ValueTag::Float64,
             Type::Boolean => ValueTag::Bool,
             Type::String => ValueTag::Str,
+            Type::Array(_) => ValueTag::Array,
+            Type::Ptr(_) => ValueTag::Ptr,
         }
     }
 }
@@ -411,6 +415,8 @@ impl TryFrom<u64> for ValueTag {
             10 => Self::Bool,
             11 => Self::Void,
             12 => Self::Str,
+            13 => Self::Array,
+            14 => Self::Ptr,
             _ => return Err(()),
         })
     }
@@ -452,6 +458,14 @@ impl std::fmt::Display for Value {
 
                     f.write_str(s)
                 }
+            }
+
+            ValueTag::Array => {
+                write!(f, "<array at {:p}>", self.payload as usize as *const u8)
+            }
+
+            ValueTag::Ptr => {
+                write!(f, "{:p}", self.payload as usize as *const u8)
             }
         }
     }

@@ -47,7 +47,9 @@ impl<'src> Iterator for Tokenizer<'src> {
             }
 
             let token = match ch {
-                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '~' => Ok(Token::single(ch, idx)),
+                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '~' | '[' | ']' => {
+                    Ok(Token::single(ch, idx))
+                }
                 '-' => {
                     if self.chars.next_if(|(_, ch)| *ch == '=').is_some() {
                         Ok(Token {

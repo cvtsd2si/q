@@ -2,28 +2,24 @@ use std::collections::HashMap;
 
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
-    Statement, Type, UnaryExpressionKind,
+    Statement, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::Span;
 use crate::{QError, QErrorKind};
 
-pub struct Typechecker {
+pub struct Typechecker<'types> {
     pub sym_table: HashMap<String, Symbol>,
     pub funcs: HashMap<String, FnSignature>,
+    pub types: &'types mut TypeInterner,
 }
 
-impl Typechecker {
-    pub fn new() -> Self {
+impl<'types> Typechecker<'types> {
+    pub fn new(types: &'types mut TypeInterner) -> Self {
         Self {
             sym_table: HashMap::new(),
             funcs: HashMap::new(),
+            types,
         }
-    }
-}
-
-impl Default for Typechecker {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -726,7 +722,7 @@ fn typecheck_expr(
 
         Expression::Assign { lhs, rhs, span, .. } => {
             /* Ensure lhs is assignable.  */
-            if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
+            if !is_assignable(&lhs) {
                 return Err(QError {
                     code: 1,
                     kind: QErrorKind::Typecheck,
@@ -823,6 +819,13 @@ fn typecheck_expr(
                 span,
             })
         }
+
+        Expression::ArrayLiteral { elements, span, .. } => {
+            typecheck_array_literal(typechecker, elements, expected_ty, span)
+        }
+        Expression::Index {
+            array, index, span, ..
+        } => typecheck_index(typechecker, *array, *index, expected_ty, span),
     }
 }
 
@@ -862,6 +865,182 @@ fn typecheck_literal(
     Ok(Expression::Literal {
         val,
         ty: Some(ty),
+        span,
+    })
+}
+
+fn typecheck_array_literal(
+    typechecker: &mut Typechecker<'_>,
+    elements: Vec<Expression>,
+    expected_ty: Option<Type>,
+    span: Span,
+) -> Result<Expression, QError> {
+    let length = elements.len();
+
+    let mut element_ty = match expected_ty {
+        Some(Type::Array(id)) => {
+            let array = typechecker.types.get_array(id);
+
+            if array.length != length {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("Expected array of length {}, got {}", array.length, length,),
+                    span,
+                });
+            }
+
+            Some(array.element)
+        }
+
+        Some(ty) => {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Expected {ty:?}, got an array"),
+                span,
+            });
+        }
+
+        None => None,
+    };
+
+    let mut checked_elements = Vec::with_capacity(length);
+
+    for element in elements {
+        let checked = typecheck_expr(typechecker, element, element_ty)?;
+
+        let actual_ty = checked.ty().ok_or_else(|| QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: "Cannot determine array element type".into(),
+            span: checked.span(),
+        })?;
+
+        if let Some(expected) = element_ty {
+            if actual_ty != expected {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("Expected array element of type {expected:?}, got {actual_ty:?}"),
+                    span: checked.span(),
+                });
+            }
+        } else {
+            element_ty = Some(actual_ty);
+        }
+
+        checked_elements.push(checked);
+    }
+
+    let element_ty = element_ty.ok_or_else(|| QError {
+        code: 1,
+        kind: QErrorKind::Typecheck,
+        msg: "Cannot infer the type of an empty array".into(),
+        span,
+    })?;
+
+    let array_ty =
+        expected_ty.unwrap_or_else(|| typechecker.types.intern_array(element_ty, length));
+
+    Ok(Expression::ArrayLiteral {
+        elements: checked_elements,
+        ty: Some(array_ty),
+        span,
+    })
+}
+
+fn typecheck_index(
+    typechecker: &mut Typechecker<'_>,
+    array: Expression,
+    index: Expression,
+    expected_ty: Option<Type>,
+    span: Span,
+) -> Result<Expression, QError> {
+    let array = typecheck_expr(typechecker, array, None)?;
+
+    let array_ty = array.ty().ok_or_else(|| QError {
+        code: 1,
+        kind: QErrorKind::Typecheck,
+        msg: "Cannot determine indexed expression type".into(),
+        span: array.span(),
+    })?;
+
+    let Type::Array(id) = array_ty else {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!("Cannot index type {array_ty:?}"),
+            span,
+        });
+    };
+
+    let array_info = typechecker.types.get_array(id);
+
+    let element_ty = array_info.element;
+    let length = array_info.length;
+
+    let index = typecheck_expr(typechecker, index, None)?;
+
+    let index_ty = index.ty().ok_or_else(|| QError {
+        code: 1,
+        kind: QErrorKind::Typecheck,
+        msg: "Cannot determine array index type".into(),
+        span: index.span(),
+    })?;
+
+    if !index_ty.is_int() {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!("Array index must be an integer, got {index_ty:?}"),
+            span: index.span(),
+        });
+    }
+
+    match &index {
+        Expression::Literal {
+            val: LiteralVal::Integer(n),
+            ..
+        } if *n >= length as u128 => {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Array index {n} out of bounds for length {length}"),
+                span: index.span(),
+            });
+        }
+
+        Expression::Literal {
+            val: LiteralVal::NegativeInteger(_),
+            ..
+        } => {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: "Array index cannot be negative".into(),
+                span: index.span(),
+            });
+        }
+
+        _ => {}
+    }
+
+    if let Some(expected) = expected_ty
+        && expected != element_ty
+    {
+        return Err(QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!("Expected {expected:?}, got {element_ty:?}"),
+            span,
+        });
+    }
+
+    Ok(Expression::Index {
+        array: array.into(),
+        index: index.into(),
+        ty: Some(element_ty),
         span,
     })
 }
@@ -973,7 +1152,7 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
         }
 
         Expression::Assign { lhs, .. } => {
-            if !matches!(lhs.as_ref(), Expression::Variable { .. }) {
+            if !is_assignable(lhs) {
                 return Err(QError {
                     code: 1,
                     kind: QErrorKind::Typecheck,
@@ -986,6 +1165,17 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
         }
 
         Expression::Cast { target_ty, .. } => Ok(Some(*target_ty)),
+
+        Expression::ArrayLiteral { ty, .. } => Ok(*ty),
+
+        Expression::Index { array, .. } => match known_ty(typechecker, array)? {
+            Some(Type::Array(id)) => {
+                let info = typechecker.types.get_array(id);
+                Ok(Some(info.element))
+            }
+
+            _ => Ok(None),
+        },
     }
 }
 
@@ -1030,4 +1220,12 @@ pub struct Symbol {
 pub struct FnSignature {
     pub params: Vec<Type>,
     pub ret_ty: Option<Type>,
+}
+
+fn is_assignable(expr: &Expression) -> bool {
+    match expr {
+        Expression::Variable { .. } => true,
+        Expression::Index { array, .. } => is_assignable(array),
+        _ => false,
+    }
 }

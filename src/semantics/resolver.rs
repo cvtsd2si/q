@@ -373,6 +373,27 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             ty,
             span,
         }),
+
+        Expression::ArrayLiteral { elements, ty, span } => Ok(Expression::ArrayLiteral {
+            elements: elements
+                .into_iter()
+                .map(|e| resolve_expr(resolver, e))
+                .collect::<Result<Vec<Expression>, _>>()?,
+            ty,
+            span,
+        }),
+
+        Expression::Index {
+            array,
+            index,
+            ty,
+            span,
+        } => Ok(Expression::Index {
+            array: resolve_expr(resolver, *array)?.into(),
+            index: resolve_expr(resolver, *index)?.into(),
+            ty,
+            span,
+        }),
     }
 }
 

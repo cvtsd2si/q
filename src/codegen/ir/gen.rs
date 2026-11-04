@@ -2,23 +2,23 @@ use std::sync::atomic::AtomicU64;
 
 use crate::parser::ast::{
     BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
-    Statement, Type, UnaryExpressionKind,
+    Statement, Type, TypeInterner, UnaryExpressionKind,
 };
 
 pub trait Irfy {
     type Output;
-    fn irfy(self) -> Self::Output;
+    fn irfy(self, types: &mut TypeInterner) -> Self::Output;
 }
 
 impl Irfy for Program {
     type Output = IRProg;
 
-    fn irfy(self) -> Self::Output {
+    fn irfy(self, types: &mut TypeInterner) -> Self::Output {
         IRProg {
             block_items: self
                 .block_items
                 .into_iter()
-                .map(|block_item| block_item.irfy())
+                .map(|block_item| block_item.irfy(types))
                 .collect(),
         }
     }
@@ -26,10 +26,10 @@ impl Irfy for Program {
 
 impl Irfy for BlockItem {
     type Output = IRBlockItem;
-    fn irfy(self) -> Self::Output {
+    fn irfy(self, types: &mut TypeInterner) -> Self::Output {
         match self {
-            BlockItem::Decl(decl) => IRBlockItem::Decl(decl.irfy()),
-            BlockItem::Stmt(stmt) => IRBlockItem::Stmt(stmt.irfy()),
+            BlockItem::Decl(decl) => IRBlockItem::Decl(decl.irfy(types)),
+            BlockItem::Stmt(stmt) => IRBlockItem::Stmt(stmt.irfy(types)),
         }
     }
 }
@@ -37,19 +37,25 @@ impl Irfy for BlockItem {
 impl Irfy for Declaration {
     type Output = IRDecl;
 
-    fn irfy(self) -> Self::Output {
+    fn irfy(self, types: &mut TypeInterner) -> Self::Output {
         match self {
             Declaration::Fn {
                 name,
                 ret,
                 params,
                 body,
-            } => IRDecl::Fn(irfy_fn(name, ret, params, body)),
+            } => IRDecl::Fn(irfy_fn(name, ret, params, body, types)),
         }
     }
 }
 
-fn irfy_fn(name: String, ret_ty: Option<Type>, params: Vec<Param>, body: Statement) -> IRFunc {
+fn irfy_fn(
+    name: String,
+    ret_ty: Option<Type>,
+    params: Vec<Param>,
+    body: Statement,
+    types: &mut TypeInterner,
+) -> IRFunc {
     let mut f = IRFunc {
         name,
         params,
@@ -59,7 +65,7 @@ fn irfy_fn(name: String, ret_ty: Option<Type>, params: Vec<Param>, body: Stateme
 
     if let Statement::Block { body } = body {
         for stmt in body {
-            f.body.extend(stmt.irfy().body);
+            f.body.extend(stmt.irfy(types).body);
         }
     }
 
@@ -76,27 +82,35 @@ fn irfy_fn(name: String, ret_ty: Option<Type>, params: Vec<Param>, body: Stateme
 impl Irfy for Statement {
     type Output = IRStmt;
 
-    fn irfy(self) -> Self::Output {
+    fn irfy(self, types: &mut TypeInterner) -> Self::Output {
         let mut instrs = vec![];
 
         match self {
-            Statement::Let { name, init, ty } => {
-                let r = irfy_expr_and_cvt(&mut instrs, &init);
-                let dst = IRVal::Var {
-                    name,
-                    ty: ty.unwrap(),
-                };
+            Statement::Let { name, init, ty } => match ty.unwrap() {
+                Type::Array(_) => {
+                    let dst = IRVal::Var {
+                        name,
+                        ty: ty.unwrap(),
+                    };
+                    irfy_compound_init(&mut instrs, &dst, 0, &init, types);
+                }
 
-                instrs.push(IRInstr::Cpy {
-                    src: r,
-                    src_ty: ty.unwrap(),
-                    dst,
-                });
-            }
+                ty => {
+                    let src = irfy_expr_and_cvt(&mut instrs, &init, types);
+
+                    let dst = IRVal::Var { name, ty };
+
+                    instrs.push(IRInstr::Cpy {
+                        src,
+                        src_ty: ty,
+                        dst,
+                    });
+                }
+            },
 
             Statement::Ret { value, ret_ty } => {
                 if let Some(value) = &value {
-                    let r = irfy_expr_and_cvt(&mut instrs, value);
+                    let r = irfy_expr_and_cvt(&mut instrs, value, types);
 
                     instrs.push(IRInstr::Ret {
                         val: Some(r),
@@ -109,7 +123,7 @@ impl Irfy for Statement {
 
             Statement::Print { value } => {
                 let ty = value.ty().unwrap();
-                let r = irfy_expr_and_cvt(&mut instrs, &value);
+                let r = irfy_expr_and_cvt(&mut instrs, &value, types);
 
                 instrs.push(IRInstr::Print { val: r, ty });
             }
@@ -119,7 +133,7 @@ impl Irfy for Statement {
                 then_block,
                 else_block,
             } => {
-                let r = irfy_expr_and_cvt(&mut instrs, &cond);
+                let r = irfy_expr_and_cvt(&mut instrs, &cond, types);
 
                 let tmp = mktmp();
 
@@ -129,7 +143,7 @@ impl Irfy for Statement {
                         target: format!("End.{}", tmp),
                     });
 
-                    instrs.extend(then_block.irfy().body);
+                    instrs.extend(then_block.irfy(types).body);
 
                     instrs.push(IRInstr::Label(format!("End.{}", tmp)));
                 } else {
@@ -137,7 +151,7 @@ impl Irfy for Statement {
                         cond: r,
                         target: format!("Else.{}", tmp),
                     });
-                    instrs.extend(then_block.irfy().body);
+                    instrs.extend(then_block.irfy(types).body);
 
                     instrs.push(IRInstr::Jmp {
                         target: format!("End.{}", tmp),
@@ -146,7 +160,7 @@ impl Irfy for Statement {
                     instrs.push(IRInstr::Label(format!("Else.{}", tmp)));
 
                     if let Some(else_block) = else_block {
-                        instrs.extend(else_block.irfy().body);
+                        instrs.extend(else_block.irfy(types).body);
                     }
 
                     instrs.push(IRInstr::Label(format!("End.{}", tmp)));
@@ -155,7 +169,7 @@ impl Irfy for Statement {
 
             Statement::Block { body } => {
                 for stmt in body {
-                    instrs.extend(stmt.irfy().body);
+                    instrs.extend(stmt.irfy(types).body);
                 }
             }
 
@@ -168,7 +182,7 @@ impl Irfy for Statement {
                 instrs.push(IRInstr::Label(continue_label.clone()));
 
                 /* eval the cond at the start of each iteration  */
-                let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+                let cond = irfy_expr_and_cvt(&mut instrs, &cond, types);
 
                 /* exit the loop if the cond is false  */
                 instrs.push(IRInstr::Jz {
@@ -177,7 +191,7 @@ impl Irfy for Statement {
                 });
 
                 /* exec the loop body  */
-                instrs.extend(body.irfy().body);
+                instrs.extend(body.irfy(types).body);
 
                 /* start the next iteration  */
                 instrs.push(IRInstr::Jmp {
@@ -198,13 +212,13 @@ impl Irfy for Statement {
                 instrs.push(IRInstr::Label(start_label.clone()));
 
                 /* exec the loop body at least once */
-                instrs.extend(body.irfy().body);
+                instrs.extend(body.irfy(types).body);
 
                 /* continue stmts jmp here to eval the cond  */
                 instrs.push(IRInstr::Label(continue_label.clone()));
 
                 /* eval the cond  */
-                let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+                let cond = irfy_expr_and_cvt(&mut instrs, &cond, types);
 
                 /* exit the loop if the cond is false  */
                 instrs.push(IRInstr::Jz {
@@ -236,14 +250,14 @@ impl Irfy for Statement {
 
                 /* exec the init once  */
                 if let Some(init) = init {
-                    instrs.extend(init.irfy().body);
+                    instrs.extend(init.irfy(types).body);
                 }
 
                 /* eval the cond at the start of each iteration  */
                 instrs.push(IRInstr::Label(start_label.clone()));
 
                 if let Some(cond) = cond {
-                    let cond = irfy_expr_and_cvt(&mut instrs, &cond);
+                    let cond = irfy_expr_and_cvt(&mut instrs, &cond, types);
 
                     instrs.push(IRInstr::Jz {
                         cond,
@@ -252,14 +266,14 @@ impl Irfy for Statement {
                 }
 
                 /* exec the loop body  */
-                instrs.extend(body.irfy().body);
+                instrs.extend(body.irfy(types).body);
 
                 /* continue stmts jmp here, before the advancement  */
                 instrs.push(IRInstr::Label(continue_label));
 
                 /* exec the advancement  */
                 if let Some(advancement) = advancement {
-                    irfy_expr(&mut instrs, &advancement);
+                    irfy_expr(&mut instrs, &advancement, types);
                 }
 
                 /* re-eval the cond  */
@@ -281,7 +295,7 @@ impl Irfy for Statement {
                 instrs.push(IRInstr::Label(continue_label.clone()));
 
                 /* exec the body  */
-                instrs.extend(body.irfy().body);
+                instrs.extend(body.irfy(types).body);
 
                 /* repeat indefinitely  */
                 instrs.push(IRInstr::Jmp {
@@ -314,11 +328,11 @@ impl Irfy for Statement {
 
             Statement::Labeled { name, stmt } => {
                 instrs.push(IRInstr::Label(format!("goto.{name}")));
-                instrs.extend(stmt.irfy().body);
+                instrs.extend(stmt.irfy(types).body);
             }
 
             Statement::Expr { expr } => {
-                irfy_expr(&mut instrs, &expr);
+                irfy_expr(&mut instrs, &expr, types);
             }
         }
 
@@ -326,15 +340,40 @@ impl Irfy for Statement {
     }
 }
 
-fn irfy_expr_and_cvt(instrs: &mut Vec<IRInstr>, expr: &Expression) -> IRVal {
-    let r = irfy_expr(instrs, expr);
+fn irfy_expr_and_cvt(
+    instrs: &mut Vec<IRInstr>,
+    expr: &Expression,
+    types: &mut TypeInterner,
+) -> IRVal {
+    let r = irfy_expr(instrs, expr, types);
 
     match r {
         ExpRes::Plain(val) => val,
+        ExpRes::DereferencedPtr(ptr) => {
+            let dst = mkirvar(expr.ty().unwrap());
+
+            instrs.push(IRInstr::Load {
+                src_ptr: ptr,
+                dst: dst.clone(),
+            });
+
+            dst
+        }
+        ExpRes::SubObject { base, offset } => {
+            let dst = mkirvar(expr.ty().unwrap());
+
+            // instrs.push(IRInstr::CpyFromOffset {
+            //     src: base,
+            //     offset,
+            //     dst: dst.clone(),
+            // });
+
+            dst
+        }
     }
 }
 
-fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
+fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInterner) -> ExpRes {
     match expr {
         Expression::Literal {
             val: LiteralVal::String(s),
@@ -355,7 +394,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         Expression::Unary { kind, expr, ty, .. } => {
             let operand_ty = ty.unwrap();
 
-            let src = irfy_expr_and_cvt(instrs, expr);
+            let src = irfy_expr_and_cvt(instrs, expr, types);
 
             let dst = mkirvar(operand_ty);
 
@@ -382,13 +421,13 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             let result = mkirvar(Type::Boolean);
 
-            let lhs = irfy_expr_and_cvt(instrs, lhs);
+            let lhs = irfy_expr_and_cvt(instrs, lhs, types);
             instrs.push(IRInstr::Jz {
                 cond: lhs.clone(),
                 target: false_label.clone(),
             });
 
-            let rhs = irfy_expr_and_cvt(instrs, rhs);
+            let rhs = irfy_expr_and_cvt(instrs, rhs, types);
             instrs.push(IRInstr::Jz {
                 cond: rhs.clone(),
                 target: false_label.clone(),
@@ -435,7 +474,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                 dst: result.clone(),
             });
 
-            let lhs = irfy_expr_and_cvt(instrs, lhs);
+            let lhs = irfy_expr_and_cvt(instrs, lhs, types);
             instrs.push(IRInstr::Jz {
                 cond: lhs.clone(),
                 target: true_label.clone(),
@@ -453,7 +492,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             instrs.push(IRInstr::Label(true_label));
 
-            let rhs = irfy_expr_and_cvt(instrs, rhs);
+            let rhs = irfy_expr_and_cvt(instrs, rhs, types);
             instrs.push(IRInstr::Jz {
                 cond: rhs.clone(),
                 target: end_label.clone(),
@@ -476,8 +515,8 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
             let operand_ty = lhs.ty().unwrap();
             let result_ty = ty.unwrap();
 
-            let lhs = irfy_expr_and_cvt(instrs, lhs);
-            let rhs = irfy_expr_and_cvt(instrs, rhs);
+            let lhs = irfy_expr_and_cvt(instrs, lhs, types);
+            let rhs = irfy_expr_and_cvt(instrs, rhs, types);
 
             let dst = mkirvar(result_ty);
 
@@ -499,7 +538,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
             let ir_args = args
                 .iter()
-                .map(|arg| irfy_expr_and_cvt(instrs, arg))
+                .map(|arg| irfy_expr_and_cvt(instrs, arg, types))
                 .collect();
 
             let dst = mkirvar(ty.unwrap());
@@ -516,12 +555,10 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
 
         Expression::Assign { lhs, rhs, ty, .. } => {
             /* Keep lhs as lvalue.  */
-            let lhs = irfy_expr(instrs, lhs);
+            let lhs = irfy_expr(instrs, lhs, types);
 
             /* Force lvalue-to-rvalue conversion for rhs.  */
-            let rhs = irfy_expr_and_cvt(instrs, rhs);
-
-            /* If lhs is a plain operand, just emit Cpy.  */
+            let rhs = irfy_expr_and_cvt(instrs, rhs, types);
 
             match lhs {
                 ExpRes::Plain(op) => {
@@ -530,6 +567,19 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
                         src_ty: ty.unwrap(),
                         dst: op,
                     });
+                }
+                ExpRes::DereferencedPtr(ptr) => {
+                    instrs.push(IRInstr::Store {
+                        src: rhs.clone(),
+                        dst_ptr: ptr,
+                    });
+                }
+                ExpRes::SubObject { base, offset } => {
+                    // instrs.push(IRInstr::CpyToOffset {
+                    //     src: rhs.clone(),
+                    //     dst: base,
+                    //     offset,
+                    // });
                 }
             }
 
@@ -542,16 +592,67 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression) -> ExpRes {
         } => {
             let src_ty = expr.ty().unwrap();
 
-            let src = irfy_expr_and_cvt(instrs, expr);
+            let src = irfy_expr_and_cvt(instrs, expr, types);
 
-            let dst = irfy_cast(instrs, src, src_ty, *target_ty);
+            let dst = irfy_cast(instrs, src, src_ty, *target_ty, types);
+
+            ExpRes::Plain(dst)
+        }
+
+        Expression::Index {
+            array, index, ty, ..
+        } => {
+            let element_ty = ty.unwrap();
+
+            /* Evaluate the array expression and obtain a pointer.  */
+            let ptr = irfy_array_base(instrs, array, types);
+
+            /* Evaluate the index expression.  */
+            let index = irfy_expr_and_cvt(instrs, index, types);
+
+            /* Determine the element size in bytes.  */
+            let scale = element_ty.size_of(types);
+
+            /* Create a pointer to the element.  */
+            let dst_ty = types.intern_ptr(element_ty);
+            let dst = mkirvar(dst_ty);
+
+            /* Calculate the address.  */
+            instrs.push(IRInstr::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst: dst.clone(),
+            });
+
+            ExpRes::DereferencedPtr(dst)
+        }
+
+        Expression::ArrayLiteral { ty, .. } => {
+            let ty = ty.unwrap();
+
+            /* Allocate a temporary aggregate object.  */
+            let dst = mkirvar(ty);
+
+            let IRVal::Var { name, .. } = &dst else {
+                unreachable!();
+            };
+
+            /* Initialize the aggregate recursively.  */
+            irfy_compound_init(instrs, &dst, 0, expr, types);
 
             ExpRes::Plain(dst)
         }
     }
 }
 
-fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) -> IRVal {
+fn irfy_cast(
+    instrs: &mut Vec<IRInstr>,
+    src: IRVal,
+    src_ty: Type,
+    dst_ty: Type,
+    types: &mut TypeInterner,
+) -> IRVal {
     /* Casting a val to its own type is a NOP.  */
     if src_ty == dst_ty {
         return src;
@@ -564,7 +665,7 @@ fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) 
         (from, to) if from.is_int() && to.is_int() => {
             use std::cmp::Ordering;
 
-            match from.size_of().cmp(&to.size_of()) {
+            match from.size_of(types).cmp(&to.size_of(types)) {
                 Ordering::Equal => IRInstr::Cpy {
                     src,
                     src_ty,
@@ -677,6 +778,98 @@ fn irfy_cast(instrs: &mut Vec<IRInstr>, src: IRVal, src_ty: Type, dst_ty: Type) 
     instrs.push(instr);
 
     dst
+}
+
+fn irfy_compound_init(
+    instrs: &mut Vec<IRInstr>,
+    dst: &IRVal,
+    offset: usize,
+    init: &Expression,
+    types: &mut TypeInterner,
+) {
+    match init {
+        Expression::ArrayLiteral {
+            elements,
+            ty: Some(Type::Array(id)),
+            ..
+        } => {
+            let array = types.get_array(*id);
+            let element_size = array.element.size_of(types);
+
+            for (i, element) in elements.iter().enumerate() {
+                let offset = offset + i * element_size;
+
+                irfy_compound_init(instrs, dst, offset, element, types);
+            }
+        }
+
+        _ => {
+            let src = irfy_expr_and_cvt(instrs, init, types);
+
+            instrs.push(IRInstr::CpyToOffset {
+                src,
+                dst: dst.to_owned(),
+                offset,
+            });
+        }
+    }
+}
+
+fn irfy_array_base(
+    instrs: &mut Vec<IRInstr>,
+    array: &Expression,
+    types: &mut TypeInterner,
+) -> IRVal {
+    let array_ty = array.ty().unwrap();
+
+    let Type::Array(id) = array_ty else {
+        unreachable!("expected array type");
+    };
+
+    let element_ty = types.get_array(id).element;
+    let ptr_ty = types.intern_ptr(element_ty);
+
+    let result = irfy_expr(instrs, array, types);
+
+    match result {
+        ExpRes::Plain(IRVal::Var { name, ty }) => {
+            let dst = mkirvar(ptr_ty);
+
+            instrs.push(IRInstr::GetAddr {
+                src: IRVal::Var { name, ty },
+                dst: dst.clone(),
+            });
+
+            dst
+        }
+
+        ExpRes::DereferencedPtr(ptr) => {
+            let src_ty = match &ptr {
+                IRVal::Var { ty, .. } => *ty,
+                _ => unreachable!(),
+            };
+
+            if src_ty == ptr_ty {
+                ptr
+            } else {
+                let dst = mkirvar(ptr_ty);
+
+                instrs.push(IRInstr::Cpy {
+                    src: ptr,
+                    src_ty,
+                    dst: dst.clone(),
+                });
+
+                dst
+            }
+        }
+
+        ExpRes::SubObject { .. } => {
+            todo!("address of subobject")
+        }
+
+        ExpRes::Plain(_) => unreachable!(),
+    }
 }
 
 #[derive(Clone)]
@@ -799,6 +992,34 @@ pub enum IRInstr {
         dst: IRVal,
         dst_ty: Type,
     },
+    GetAddr {
+        src: IRVal,
+        dst: IRVal,
+    },
+    Load {
+        src_ptr: IRVal,
+        dst: IRVal,
+    },
+    Store {
+        src: IRVal,
+        dst_ptr: IRVal,
+    },
+    AddPtr {
+        ptr: IRVal,
+        index: IRVal,
+        scale: usize,
+        dst: IRVal,
+    },
+    CpyToOffset {
+        src: IRVal,
+        dst: IRVal,
+        offset: usize,
+    },
+    CpyFromOffset {
+        src: IRVal,
+        offset: usize,
+        dst: IRVal,
+    },
 }
 
 impl IRInstr {
@@ -820,9 +1041,23 @@ impl IRInstr {
             | Self::FloatToInt { dst, .. }
             | Self::IntToFloat { dst, .. }
             | Self::FloatToUInt { dst, .. }
-            | Self::UIntToFloat { dst, .. } => Some(dst),
+            | Self::UIntToFloat { dst, .. }
+            | Self::GetAddr { dst, .. }
+            | Self::Load { dst, .. }
+            | Self::AddPtr { dst, .. }
+            | Self::CpyFromOffset { dst, .. } => Some(dst),
 
             _ => None,
+        }
+    }
+}
+
+impl IRVal {
+    pub fn ty(&self) -> Type {
+        match self {
+            IRVal::Str(_) => Type::String,
+            IRVal::Var { ty, .. } => *ty,
+            IRVal::Const(v) => Type::from(*v),
         }
     }
 }
@@ -1002,6 +1237,35 @@ impl std::fmt::Debug for IRInstr {
                 src_ty,
                 dst_ty,
             } => fmt_conversion(f, "uint_to_float", src, dst, src_ty, dst_ty),
+
+            Self::GetAddr { src, dst } => {
+                write!(f, "{dst} = &{src}")
+            }
+
+            Self::Load { src_ptr, dst } => {
+                write!(f, "{dst} = *{src_ptr}")
+            }
+
+            Self::Store { src, dst_ptr } => {
+                write!(f, "*{dst_ptr} = {src}")
+            }
+
+            Self::AddPtr {
+                ptr,
+                index,
+                scale,
+                dst,
+            } => {
+                write!(f, "{dst} = {ptr} + {index} * {scale}")
+            }
+
+            Self::CpyToOffset { src, dst, offset } => {
+                write!(f, "{dst}[byte {offset}] = {src}")
+            }
+
+            Self::CpyFromOffset { src, offset, dst } => {
+                write!(f, "{dst} = {src}[byte {offset}]")
+            }
         }
     }
 }
@@ -1106,6 +1370,8 @@ impl std::fmt::Display for IRVal {
 
 enum ExpRes {
     Plain(IRVal),
+    DereferencedPtr(IRVal),
+    SubObject { base: String, offset: usize },
 }
 
 fn mkirvar(ty: Type) -> IRVal {

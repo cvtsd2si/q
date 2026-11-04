@@ -4,7 +4,7 @@ use crate::{
         bytecode::r#gen::{BytecodeProg, Op},
         ir::r#gen::{IRInstr, IRProg},
     },
-    parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
+    parser::ast::{BinaryExpressionKind, Literal, Type, TypeInterner, UnaryExpressionKind},
     runtime::{
         jit::{
             JIT_CONTINUE, JIT_ERROR, JIT_RET, JIT_THRESHOLD, JitBlock, JitCompiler, JitExit,
@@ -32,7 +32,8 @@ macro_rules! binop {
     };
 }
 
-pub struct Vm {
+pub struct Vm<'types> {
+    mem: Vec<u8>,
     stack: Vec<Value>,
     fp_stack: Vec<Frame>,
     ir: IRProg,
@@ -42,10 +43,16 @@ pub struct Vm {
     fp: usize,
     strings: Vec<Box<[u8]>>,
     jit: Option<JitState>,
+    types: &'types TypeInterner,
 }
 
-impl Vm {
-    pub fn new(bytecode: BytecodeProg, ir: IRProg, enable_jit: bool) -> Result<Self, QError> {
+impl<'types> Vm<'types> {
+    pub fn new(
+        bytecode: BytecodeProg,
+        ir: IRProg,
+        enable_jit: bool,
+        types: &'types TypeInterner,
+    ) -> Result<Self, QError> {
         let entrypoint = bytecode
             .funcs
             .iter()
@@ -60,12 +67,13 @@ impl Vm {
         let strings = bytecode.strings.iter().map(|s| encode_string(s)).collect();
 
         let jit = if enable_jit {
-            Some(JitState::new(&bytecode)?)
+            Some(JitState::new(&bytecode, types)?)
         } else {
             None
         };
 
-        Ok(Vm {
+        let mut vm = Vm {
+            mem: Vec::with_capacity(16 * 1024 * 1024),
             stack: vec![
                 Value {
                     tag: ValueTag::Void,
@@ -81,7 +89,19 @@ impl Vm {
             strings,
             jit,
             bytecode,
-        })
+            types,
+        };
+
+        for aggregate in &vm.bytecode.funcs[entrypoint].aggregates {
+            let start = vm.mem.len();
+            let slot = Value {
+                tag: ValueTag::Array,
+                payload: unsafe { vm.mem.as_mut_ptr().add(start) as u64 },
+            };
+            vm.stack[aggregate.1.slot] = slot;
+        }
+
+        Ok(vm)
     }
 
     pub fn exec(&mut self) -> Result<Value, QError> {
@@ -146,6 +166,16 @@ impl Vm {
                     continue;
                 }
                 Op::Cvt { src_ty, dst_ty } => self.handle_op_cvt(src_ty, dst_ty),
+                Op::GetAddr(local) => self.handle_op_getaddr(local),
+                Op::Load(ty) => self.handle_op_load(ty),
+                Op::Store(ty) => self.handle_op_store(ty),
+                Op::AddPtr { scale } => self.handle_op_addptr(scale),
+                Op::CpyToOffset { local, offset, ty } => {
+                    self.handle_op_cpy_to_offset(local, offset, ty)
+                }
+                Op::CpyFromOffset { local, offset, ty } => {
+                    self.handle_op_cpy_from_offset(local, offset, ty)
+                }
                 Op::Ret | Op::RetVoid => {
                     let v = if matches!(op, Op::Ret) {
                         self.stack.pop().unwrap()
@@ -281,7 +311,7 @@ impl Vm {
         r
     }
 
-    fn compile_region(&self, func: usize, start_pc: usize) -> Option<JitBlock> {
+    fn compile_region(&mut self, func: usize, start_pc: usize) -> Option<JitBlock> {
         let bytecode_func = &self.bytecode.funcs[func];
 
         let start_ir = bytecode_func.ir_map.get(start_pc)?;
@@ -300,7 +330,7 @@ impl Vm {
             );
         }
 
-        let mut jit = JitCompiler::new();
+        let mut jit = JitCompiler::new(self.types);
 
         match jit.compile(&self.ir, func, *start_ir, end_ir, start_pc, end_pc) {
             Ok(Some(block)) => {
@@ -558,6 +588,7 @@ impl Vm {
             func: self.func,
             pc: self.pc,
             ptr: self.fp,
+            mem_base: self.mem.len(),
         });
 
         self.func = target;
@@ -571,6 +602,140 @@ impl Vm {
                 payload: 0,
             },
         );
+
+        for aggregate in self.bytecode.funcs[self.func].aggregates.values() {
+            let start = self.mem.len();
+            let end = start + aggregate.size;
+
+            self.mem.resize(end, 0);
+
+            let ptr = unsafe { self.mem.as_mut_ptr().add(start) };
+
+            self.stack[self.fp + aggregate.slot] = Value {
+                tag: ValueTag::Array,
+                payload: ptr as u64,
+            };
+        }
+    }
+
+    fn handle_op_getaddr(&mut self, local: usize) {
+        let obj = self.stack[self.fp + local];
+        match obj.tag {
+            ValueTag::Array => {
+                self.stack.push(Value {
+                    tag: ValueTag::Ptr,
+                    payload: obj.payload,
+                });
+            }
+            _ => {
+                let addr = &mut self.stack[self.fp + local].payload as *mut u64;
+                self.stack.push(Value {
+                    tag: ValueTag::Ptr,
+                    payload: addr as u64,
+                });
+            }
+        }
+    }
+
+    fn handle_op_addptr(&mut self, scale: usize) {
+        let index = self.stack.pop().unwrap();
+        let base = self.stack.pop().unwrap();
+
+        let base = base.payload as *mut u8;
+        let offset = index.payload as isize * scale as isize;
+
+        let ptr = base.wrapping_offset(offset);
+
+        self.stack.push(Value {
+            tag: ValueTag::Ptr,
+            payload: ptr as u64,
+        });
+    }
+
+    fn handle_op_load(&mut self, ty: Type) {
+        let pointer = self.stack.pop().unwrap();
+        assert_eq!(pointer.tag, ValueTag::Ptr);
+
+        let size = ty.size_of(self.types);
+        assert!(size <= 8, "aggregate loads need separate handling");
+
+        let mut bytes = [0u8; 8];
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(pointer.payload as *const u8, bytes.as_mut_ptr(), size);
+        }
+
+        let bits = u64::from_le_bytes(bytes);
+
+        let payload = match ty {
+            Type::Int8 => bits as i8 as i64 as u64,
+            Type::Int16 => bits as i16 as i64 as u64,
+            Type::Int32 => bits as i32 as i64 as u64,
+            Type::Boolean => (bits != 0) as u64,
+            _ => bits,
+        };
+
+        self.stack.push(Value {
+            tag: ty.into(),
+            payload,
+        });
+    }
+
+    fn handle_op_store(&mut self, ty: Type) {
+        let value = self.stack.pop().unwrap();
+        let pointer = self.stack.pop().unwrap();
+
+        assert_eq!(pointer.tag, ValueTag::Ptr);
+
+        let size = ty.size_of(self.types);
+        assert!(size <= 8, "aggregate stores need separate handling");
+
+        let bytes = value.payload.to_le_bytes();
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.payload as *mut u8, size);
+        }
+    }
+
+    fn handle_op_cpy_to_offset(&mut self, local: usize, offset: usize, ty: Type) {
+        let value = self.stack.pop().unwrap();
+        let obj = self.stack[self.fp + local];
+
+        let raw_bytes = obj.payload as *mut u8;
+        unsafe {
+            for (idx, byte) in value.payload.to_le_bytes().iter().enumerate() {
+                raw_bytes.add(offset + idx).write(*byte);
+            }
+        }
+    }
+
+    fn handle_op_cpy_from_offset(&mut self, local: usize, offset: usize, ty: Type) {
+        let obj = self.stack[self.fp + local];
+
+        let size = ty.size_of(self.types);
+
+        let base = self.mem.as_ptr() as usize;
+
+        let start = (obj.payload as usize) - base + offset;
+        let end = start + size;
+
+        let mut bytes = [0u8; 8];
+        bytes[..size].copy_from_slice(&self.mem[start..end]);
+
+        let bits = u64::from_le_bytes(bytes);
+
+        let payload = match ty {
+            Type::Int8 => bits as i8 as i64 as u64,
+            Type::Int16 => bits as i16 as i64 as u64,
+            Type::Int32 => bits as i32 as i64 as u64,
+            Type::Boolean => (bits != 0) as u64,
+            _ => bits,
+        };
+
+        self.stack.push(Value {
+            tag: ty.into(),
+            payload,
+        });
     }
 
     fn handle_op_ret(&mut self, v: Value) -> Option<Value> {
@@ -578,6 +743,8 @@ impl Vm {
 
         match self.fp_stack.pop() {
             Some(frame) => {
+                self.mem.truncate(frame.mem_base);
+
                 self.func = frame.func;
                 self.pc = frame.pc;
                 self.fp = frame.ptr;
@@ -599,13 +766,15 @@ struct JitState {
 }
 
 impl JitState {
-    fn new(bytecode: &BytecodeProg) -> Result<Self, QError> {
-        let shared_entry = JitCompiler::new().compile_entry().map_err(|e| QError {
-            kind: QErrorKind::Vm,
-            msg: e.msg,
-            code: RtResult::Internal as u32,
-            span: Span { start: 0, end: 0 },
-        })?;
+    fn new(bytecode: &BytecodeProg, types: &TypeInterner) -> Result<Self, QError> {
+        let shared_entry = JitCompiler::new(types)
+            .compile_entry()
+            .map_err(|e| QError {
+                kind: QErrorKind::Vm,
+                msg: e.msg,
+                code: RtResult::Internal as u32,
+                span: Span { start: 0, end: 0 },
+            })?;
 
         Ok(Self {
             hotness: bytecode
@@ -632,6 +801,7 @@ struct Frame {
     func: usize,
     pc: usize,
     ptr: usize,
+    mem_base: usize,
 }
 
 fn encode_string(s: &str) -> Box<[u8]> {

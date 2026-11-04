@@ -177,6 +177,7 @@ impl std::fmt::Display for AsmInstr {
                         lhs.as_width(*asm_ty),
                         rhs.as_width(*asm_ty)
                     ),
+                    _ => unreachable!(),
                 },
                 AsmInstrBinKind::DivDouble => writeln!(
                     f,
@@ -215,6 +216,7 @@ impl std::fmt::Display for AsmInstr {
                     AsmType::Quad => "cmpq",
                     AsmType::Float => "comiss",
                     AsmType::Double => "comisd",
+                    _ => unreachable!(),
                 };
                 writeln!(
                     f,

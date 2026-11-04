@@ -24,6 +24,20 @@ fn intersect_copies(facts: &mut CopyFacts, other: &CopyFacts) {
 }
 
 fn transfer_copy(instr: &IRInstr, facts: &mut CopyFacts) {
+    match instr {
+        IRInstr::Store { .. } => {
+            facts.clear();
+        }
+
+        IRInstr::CpyToOffset { dst, .. } => {
+            if let IRVal::Var { name: dst, .. } = dst {
+                facts.retain(|name, (source, _)| name != dst && source != dst);
+            }
+        }
+
+        _ => {}
+    }
+
     let Some(IRVal::Var {
         name: dst,
         ty: dst_ty,

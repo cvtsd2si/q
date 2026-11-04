@@ -25,16 +25,17 @@ use crate::{
         r#gen::{AsmFunc, AsmInstr, AsmInstrBinKind, AsmInstrUnaryKind, AsmOp, AsmReg, AsmType},
     },
     parser::ast::Type,
+    parser::ast::TypeInterner,
 };
 use std::collections::{BTreeMap, BTreeSet};
 
 pub trait Regalloc {
-    fn regalloc(self) -> Result<AsmFunc, RegAllocError>;
+    fn regalloc(self, types: &TypeInterner) -> Result<AsmFunc, RegAllocError>;
 }
 
 impl Regalloc for AsmFunc {
-    fn regalloc(mut self) -> Result<AsmFunc, RegAllocError> {
-        let allocation = Allocation::compute(&self)?;
+    fn regalloc(mut self, types: &TypeInterner) -> Result<AsmFunc, RegAllocError> {
+        let allocation = Allocation::compute(&self, types)?;
 
         allocation.rewrite(&mut self.body);
         allocation.preserve_callers(&mut self.body);
@@ -49,7 +50,7 @@ impl Regalloc for AsmFunc {
     }
 }
 
-struct Allocation {
+struct Allocation<'types> {
     /* Maps pseudo-registers to physical registers.  */
     registers: BTreeMap<String, AsmReg>,
     /* Maps spilled pseudo-registers to stack offsets.  */
@@ -62,10 +63,12 @@ struct Allocation {
     live_across_calls: Vec<BTreeSet<String>>,
     /* The final, correctly aligned allocation size.  */
     frame_space: usize,
+
+    types: &'types TypeInterner,
 }
 
-impl Allocation {
-    fn compute(func: &AsmFunc) -> Result<Self, RegAllocError> {
+impl<'types> Allocation<'types> {
+    fn compute(func: &AsmFunc, types: &'types TypeInterner) -> Result<Self, RegAllocError> {
         let body = &func.body;
 
         let cfg = Cfg::build(body).map_err(|msg| RegAllocError { msg })?;
@@ -114,6 +117,7 @@ impl Allocation {
             callee_saved: BTreeSet::new(),
             live_across_calls,
             frame_space: func.space,
+            types,
         };
 
         for (name, representative) in &coalescer.reps {
@@ -147,7 +151,7 @@ impl Allocation {
     }
 
     fn assign_spills(&mut self, func: &AsmFunc, coalescer: &Coalescer, spilled: &BTreeSet<String>) {
-        let sizes = collect_spill_sizes(&func.body, &coalescer.reps);
+        let sizes = collect_spill_sizes(&func.body, &coalescer.reps, self.types);
 
         let mut used = func.space.div_ceil(SYSV_STACK_ALIGNMENT) * SYSV_STACK_ALIGNMENT;
 
@@ -310,6 +314,7 @@ fn collect_spill_costs(instructions: &[AsmInstr]) -> BTreeMap<String, usize> {
 fn collect_spill_sizes(
     instructions: &[AsmInstr],
     representative: &BTreeMap<String, InterferenceNode>,
+    types: &TypeInterner,
 ) -> BTreeMap<String, usize> {
     let mut sizes = BTreeMap::<String, usize>::new();
 
@@ -318,7 +323,7 @@ fn collect_spill_sizes(
             if let AsmOp::Pseudo { name, ty } = operand
                 && let Some(InterferenceNode::Pseudo(rep)) = representative.get(name)
             {
-                let size = (*ty).size_of();
+                let size = (*ty).size_of(types);
                 sizes
                     .entry(rep.clone())
                     .and_modify(|existing| *existing = (*existing).max(size))
@@ -480,7 +485,12 @@ impl AsmOp {
             Self::Reg(reg) | Self::Mem(reg, _) => {
                 ud.uses.insert(AsmLocation::Reg(*reg));
             }
-            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _) => {}
+            Self::Indexed { base, index, .. } => {
+                ud.uses.insert(AsmLocation::Reg(*base));
+                ud.uses.insert(AsmLocation::Reg(*index));
+            }
+            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _, _) | Self::StaticAddr(_, _) => {
+            }
         }
     }
 
@@ -492,10 +502,15 @@ impl AsmOp {
             Self::Reg(reg) => {
                 ud.defs.insert(AsmLocation::Reg(*reg));
             }
+            Self::Indexed { base, index, .. } => {
+                ud.defs.insert(AsmLocation::Reg(*base));
+                ud.defs.insert(AsmLocation::Reg(*index));
+            }
             Self::Mem(reg, _) => {
                 ud.uses.insert(AsmLocation::Reg(*reg));
             }
-            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _) => {}
+            Self::Imm(_) | Self::Data(_, _) | Self::PseudoMem(_, _, _) | Self::StaticAddr(_, _) => {
+            }
         }
     }
 }
@@ -714,7 +729,7 @@ impl AsmInstr {
         }
     }
 
-    fn operands_mut(&mut self) -> [Option<&mut AsmOp>; 2] {
+    pub fn operands_mut(&mut self) -> [Option<&mut AsmOp>; 2] {
         match self {
             Self::Mov { src, dst, .. }
             | Self::Movsx { src, dst, .. }

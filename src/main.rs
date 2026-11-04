@@ -8,7 +8,7 @@ use q::{
             optimizer::{Optimization, Optimize},
         },
     },
-    parser::recursive_descent::Parser,
+    parser::{ast::TypeInterner, recursive_descent::Parser},
     runtime::vm::Vm,
     semantics::{
         label_collector::{LabelCollect, LabelCollector},
@@ -49,7 +49,9 @@ fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
         return Ok(0);
     }
 
-    let ast = Parser::new(src, tokens).parse()?;
+    let mut types = TypeInterner::new();
+
+    let ast = Parser::new(src, tokens, &mut types).parse()?;
 
     if opts.parse {
         println!("{:#?}", ast);
@@ -75,7 +77,7 @@ fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
         return Ok(0);
     }
 
-    let mut typechecker = Typechecker::new();
+    let mut typechecker = Typechecker::new(&mut types);
     let typechecked_ast = resolved_ast.typecheck(&mut typechecker)?;
 
     if opts.typecheck {
@@ -83,21 +85,23 @@ fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
         return Ok(0);
     }
 
-    let ir = typechecked_ast.irfy().optimize(&opts.optimizations);
+    let ir = typechecked_ast
+        .irfy(&mut types)
+        .optimize(&opts.optimizations);
 
     if opts.ir {
         println!("{:#?}", ir);
         return Ok(0);
     }
 
-    let bytecode: BytecodeProg = ir.codegen(&mut CodegenContext::new())?;
+    let bytecode: BytecodeProg = ir.codegen(&mut CodegenContext::new(&types))?;
 
     if opts.bytecode {
         println!("{:#?}", bytecode);
         return Ok(0);
     }
 
-    let mut vm = Vm::new(bytecode, ir, opts.jit)?;
+    let mut vm = Vm::new(bytecode, ir, opts.jit, &types)?;
     let r = vm.exec()?;
 
     Ok(r.payload as i32)

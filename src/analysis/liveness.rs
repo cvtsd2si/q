@@ -360,6 +360,39 @@ impl IRInstr {
                 ud.add_def(dst);
             }
 
+            Self::GetAddr { src, dst } => {
+                ud.add_use(src);
+                ud.add_def(dst);
+            }
+
+            Self::Load { src_ptr, dst } => {
+                ud.add_use(src_ptr);
+                ud.add_def(dst);
+            }
+
+            Self::Store { src, dst_ptr } => {
+                ud.add_use(src);
+                ud.add_use(dst_ptr);
+            }
+
+            Self::AddPtr {
+                ptr, index, dst, ..
+            } => {
+                ud.add_use(ptr);
+                ud.add_use(index);
+                ud.add_def(dst);
+            }
+
+            Self::CpyToOffset { src, dst, .. } => {
+                ud.add_use(src);
+                ud.add_use(dst);
+            }
+
+            Self::CpyFromOffset { src, dst, .. } => {
+                ud.add_use(src);
+                ud.add_def(dst);
+            }
+
             Self::Jmp { .. } | Self::Label(_) => {}
         }
 

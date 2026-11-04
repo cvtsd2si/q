@@ -1,5 +1,6 @@
 use crate::{
     codegen::{
+        Codegen, CodegenContext, StaticConst,
         asm::{
             abi::{
                 amd64::{GP_SCRATCH_1, SYSV_GP_RETURN, SYSV_STACK_ALIGNMENT},
@@ -17,11 +18,12 @@ use crate::{
                 insert_epilogue, insert_prologue,
             },
             regalloc::Regalloc,
+            replace_pseudo::ReplacePseudo,
         },
         bytecode::r#gen::BytecodeFunc,
         ir::r#gen::{IRFunc, IRInstr, IRProg},
-        {Codegen, CodegenContext, StaticConst},
     },
+    parser::ast::TypeInterner,
     runtime::{
         rt::Rt,
         value::{Value, ValueTag},
@@ -33,18 +35,19 @@ use libc::{
     MAP_ANON, MAP_FAILED, MAP_PRIVATE, PROT_EXEC, PROT_READ, PROT_WRITE, mmap, mprotect, munmap,
 };
 
-pub struct JitCompiler {
+pub struct JitCompiler<'types> {
     assembler: Keystone,
+    types: &'types TypeInterner,
 }
 
-impl JitCompiler {
-    pub fn new() -> Self {
+impl<'types> JitCompiler<'types> {
+    pub fn new(types: &'types TypeInterner) -> Self {
         let assembler = Keystone::new(Arch::X86, Mode::MODE_64).unwrap();
         assembler
             .option(OptionType::SYNTAX, OptionValue::SYNTAX_ATT)
             .unwrap();
 
-        Self { assembler }
+        Self { assembler, types }
     }
 
     pub fn compile(
@@ -83,7 +86,9 @@ impl JitCompiler {
 
         let mut asm_txt = String::new();
 
-        let mut ctx = CodegenContext::new();
+        let types = &self.types;
+
+        let mut ctx = CodegenContext::new(types);
         for func in ir.functions() {
             ctx.register::<BytecodeFunc>(&func.name);
         }
@@ -101,7 +106,8 @@ impl JitCompiler {
         asm_func.body.extend(self.mk_rt_err());
 
         let mut asm_func = asm_func
-            .regalloc()
+            .replace_pseudo(self.types)
+            .regalloc(self.types)
             .map_err(|e| JitError { msg: e.msg })?
             .fixup()
             .map_err(|e| JitError { msg: e.msg })?;
@@ -160,6 +166,15 @@ impl JitCompiler {
     }
 
     fn asm_exe(&mut self, asm_txt: &str) -> Result<ExecutableMem, JitError> {
+        for scale in ["0x4", "4"] {
+            let instr = &format!("leaq 0x0(%r10,%r11,{scale}), %rdi");
+
+            eprintln!(
+                "{instr}: {}",
+                self.assembler.asm(instr.to_owned(), 0).is_ok()
+            );
+        }
+
         if cfg!(debug_assertions) {
             eprintln!("{}", asm_txt);
         }
@@ -396,7 +411,7 @@ impl JitCompiler {
         body
     }
 
-    fn mk_rt_err(&mut self) -> Vec<AsmInstr> {
+    fn mk_rt_err(&self) -> Vec<AsmInstr> {
         /* Build the shared runtime error handler.
          *
          * Upon entry:
@@ -428,12 +443,6 @@ impl JitCompiler {
         body.push(AsmInstr::Ret);
 
         body
-    }
-}
-
-impl Default for JitCompiler {
-    fn default() -> Self {
-        Self::new()
     }
 }
 

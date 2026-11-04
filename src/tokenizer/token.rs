@@ -37,6 +37,8 @@ impl Token {
             '^' => TokenKind::Caret,
             '&' => TokenKind::Ampersand,
             '|' => TokenKind::Pipe,
+            '[' => TokenKind::LBracket,
+            ']' => TokenKind::RBracket,
             _ => panic!("Cannot find TokenKind for {}", ch),
         }
     }
@@ -61,6 +63,8 @@ pub enum TokenKind {
     RParen,
     LBrace,
     RBrace,
+    LBracket,
+    RBracket,
     Comma,
     Colon,
     Plus,
