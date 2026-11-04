@@ -117,7 +117,9 @@ impl<'types> Vm<'types> {
     fn push(&mut self, value: Value) {
         assert!(self.tos < self.stack.len(), "stack overflow");
 
-        self.stack[self.tos] = value;
+        let tgt = unsafe { self.stack.get_unchecked_mut(self.tos) };
+        *tgt = value;
+
         self.tos += 1;
     }
 
@@ -126,7 +128,8 @@ impl<'types> Vm<'types> {
         assert!(self.tos > 0, "stack underflow");
 
         self.tos -= 1;
-        self.stack[self.tos]
+
+        unsafe { self.stack.get_unchecked(self.tos).clone() }
     }
 
     pub fn exec(&mut self) -> Result<Value, QError> {
