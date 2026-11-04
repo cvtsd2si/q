@@ -379,6 +379,7 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
             val: LiteralVal::String(s),
             ..
         } => ExpRes::Plain(IRVal::Str(s.to_owned())),
+
         Expression::Literal { val, ty, .. } => {
             let ty = ty.unwrap();
             let literal = Literal::try_from((val, ty)).unwrap();

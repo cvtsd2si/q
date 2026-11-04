@@ -96,6 +96,13 @@ impl ValueTag {
     pub fn is_aggregate(self) -> bool {
         matches!(self, ValueTag::Array)
     }
+
+    pub fn is_signed(self) -> bool {
+        matches!(
+            self,
+            ValueTag::Int8 | ValueTag::Int16 | ValueTag::Int32 | ValueTag::Int64
+        )
+    }
 }
 
 impl From<Literal> for Value {

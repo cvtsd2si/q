@@ -670,6 +670,7 @@ impl<'types> Vm<'types> {
         let index = self.pop();
         let base = self.pop();
 
+        assert!(index.tag.is_signed());
         assert_eq!(base.tag, ValueTag::Ptr);
 
         let base = base.payload as *mut u8;
@@ -684,16 +685,18 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_load(&mut self, ty: Type) {
-        let ptr = self.pop();
-        assert_eq!(ptr.tag, ValueTag::Ptr);
+        let src = self.pop();
+        assert_eq!(src.tag, ValueTag::Ptr);
 
         let size = ty.size_of(self.types);
         assert!(size <= 8, "aggregate loads need separate handling");
 
         let mut bytes = [0u8; 8];
 
+        let src = src.payload as *const u8;
+
         unsafe {
-            std::ptr::copy_nonoverlapping(ptr.payload as *const u8, bytes.as_mut_ptr(), size);
+            std::ptr::copy_nonoverlapping(src, bytes.as_mut_ptr(), size);
         }
 
         let bits = u64::from_le_bytes(bytes);
