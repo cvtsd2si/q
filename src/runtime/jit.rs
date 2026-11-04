@@ -166,15 +166,6 @@ impl<'types> JitCompiler<'types> {
     }
 
     fn asm_exe(&mut self, asm_txt: &str) -> Result<ExecutableMem, JitError> {
-        for scale in ["0x4", "4"] {
-            let instr = &format!("leaq 0x0(%r10,%r11,{scale}), %rdi");
-
-            eprintln!(
-                "{instr}: {}",
-                self.assembler.asm(instr.to_owned(), 0).is_ok()
-            );
-        }
-
         if cfg!(debug_assertions) {
             eprintln!("{}", asm_txt);
         }

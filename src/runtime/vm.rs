@@ -681,8 +681,8 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_load(&mut self, ty: Type) {
-        let pointer = self.pop();
-        assert_eq!(pointer.tag, ValueTag::Ptr);
+        let ptr = self.pop();
+        assert_eq!(ptr.tag, ValueTag::Ptr);
 
         let size = ty.size_of(self.types);
         assert!(size <= 8, "aggregate loads need separate handling");
@@ -690,11 +690,12 @@ impl<'types> Vm<'types> {
         let mut bytes = [0u8; 8];
 
         unsafe {
-            std::ptr::copy_nonoverlapping(pointer.payload as *const u8, bytes.as_mut_ptr(), size);
+            std::ptr::copy_nonoverlapping(ptr.payload as *const u8, bytes.as_mut_ptr(), size);
         }
 
         let bits = u64::from_le_bytes(bytes);
 
+        /* Sign-extend smaller ints.  */
         let payload = match ty {
             Type::Int8 => bits as i8 as i64 as u64,
             Type::Int16 => bits as i16 as i64 as u64,
@@ -710,60 +711,41 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_store(&mut self, ty: Type) {
-        let value = self.pop();
-        let pointer = self.pop();
-
-        assert_eq!(pointer.tag, ValueTag::Ptr);
+        let src = self.pop();
+        let dst = self.pop();
+        assert_eq!(dst.tag, ValueTag::Ptr);
 
         let size = ty.size_of(self.types);
         assert!(size <= 8, "aggregate stores need separate handling");
 
-        let bytes = value.payload.to_le_bytes();
+        let src = src.payload.to_le_bytes();
+        let src = src.as_ptr();
+
+        let dst = dst.payload as *mut u8;
 
         unsafe {
-            std::ptr::copy_nonoverlapping(bytes.as_ptr(), pointer.payload as *mut u8, size);
+            std::ptr::copy_nonoverlapping(src, dst, size);
         }
     }
 
     fn handle_op_cpy_to_offset(&mut self, local: usize, offset: usize, ty: Type) {
-        let value = self.pop();
-        let obj = self.stack[self.fp + local];
+        let src = self.pop();
+        let dst = self.stack[self.fp + local];
+        let size = ty.size_of(self.types);
 
-        let raw_bytes = obj.payload as *mut u8;
+        let src = src.payload.to_le_bytes();
+        let src = src.as_ptr();
+
+        let dst = dst.payload as *mut u8;
+        let dst = dst.wrapping_offset(offset as isize);
+
         unsafe {
-            for (idx, byte) in value.payload.to_le_bytes().iter().enumerate() {
-                raw_bytes.add(offset + idx).write(*byte);
-            }
+            std::ptr::copy_nonoverlapping(src, dst, size);
         }
     }
 
     fn handle_op_cpy_from_offset(&mut self, local: usize, offset: usize, ty: Type) {
-        let obj = self.stack[self.fp + local];
-
-        let size = ty.size_of(self.types);
-
-        let base = self.mem.as_ptr() as usize;
-
-        let start = (obj.payload as usize) - base + offset;
-        let end = start + size;
-
-        let mut bytes = [0u8; 8];
-        bytes[..size].copy_from_slice(&self.mem[start..end]);
-
-        let bits = u64::from_le_bytes(bytes);
-
-        let payload = match ty {
-            Type::Int8 => bits as i8 as i64 as u64,
-            Type::Int16 => bits as i16 as i64 as u64,
-            Type::Int32 => bits as i32 as i64 as u64,
-            Type::Boolean => (bits != 0) as u64,
-            _ => bits,
-        };
-
-        self.push(Value {
-            tag: ty.into(),
-            payload,
-        });
+        todo!()
     }
 
     fn handle_op_ret(&mut self, v: Value) -> Option<Value> {
