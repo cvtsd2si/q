@@ -528,6 +528,10 @@ impl Type {
         matches!(self, Type::Int8 | Type::Int16 | Type::Int32 | Type::Int64)
     }
 
+    pub fn is_aggregate(self) -> bool {
+        matches!(self, Type::Array(_))
+    }
+
     pub fn alignment(self, types: &TypeInterner) -> usize {
         match self {
             Type::UInt8 | Type::Int8 => 1,

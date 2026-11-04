@@ -191,7 +191,7 @@ impl<'types> Vm<'types> {
                     continue;
                 }
                 Op::Cvt { src_ty, dst_ty } => self.handle_op_cvt(src_ty, dst_ty),
-                Op::GetAddr { local, ty } => self.handle_op_getaddr(local, ty),
+                Op::GetAddr { local } => self.handle_op_getaddr(local),
                 Op::Load(ty) => self.handle_op_load(ty),
                 Op::Store(ty) => self.handle_op_store(ty),
                 Op::AddPtr { scale } => self.handle_op_addptr(scale),
@@ -652,10 +652,11 @@ impl<'types> Vm<'types> {
         }
     }
 
-    fn handle_op_getaddr(&mut self, local: usize, ty: Type) {
+    fn handle_op_getaddr(&mut self, local: usize) {
         let obj = self.stack[self.fp + local];
+
         let ptr = match obj.tag {
-            ValueTag::Array => obj.payload,
+            tag if tag.is_aggregate() => obj.payload,
             _ => &mut self.stack[self.fp + local].payload as *mut u64 as u64,
         };
 
@@ -668,6 +669,8 @@ impl<'types> Vm<'types> {
     fn handle_op_addptr(&mut self, scale: usize) {
         let index = self.pop();
         let base = self.pop();
+
+        assert_eq!(base.tag, ValueTag::Ptr);
 
         let base = base.payload as *mut u8;
         let offset = index.payload as isize * scale as isize;
@@ -730,7 +733,10 @@ impl<'types> Vm<'types> {
 
     fn handle_op_cpy_to_offset(&mut self, local: usize, offset: usize, ty: Type) {
         let src = self.pop();
+
         let dst = self.stack[self.fp + local];
+        assert!(dst.tag.is_aggregate());
+
         let size = ty.size_of(self.types);
 
         let src = src.payload.to_le_bytes();

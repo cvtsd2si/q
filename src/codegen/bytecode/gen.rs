@@ -33,7 +33,6 @@ pub enum Op {
     },
     GetAddr {
         local: usize,
-        ty: Type,
     },
     Load(Type),
     Store(Type),
@@ -426,13 +425,7 @@ impl Codegen<Bytecode> for IRInstr {
 
                 let slot = ctx.get::<String>(name).unwrap();
 
-                Ok(vec![
-                    Op::GetAddr {
-                        local: slot,
-                        ty: *ty,
-                    },
-                    dst.store_op(ctx),
-                ])
+                Ok(vec![Op::GetAddr { local: slot }, dst.store_op(ctx)])
             }
 
             IRInstr::CpyFromOffset { src, offset, dst } => {

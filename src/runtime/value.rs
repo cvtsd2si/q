@@ -92,6 +92,12 @@ pub enum ValueTag {
     Ptr = 14,
 }
 
+impl ValueTag {
+    pub fn is_aggregate(self) -> bool {
+        matches!(self, ValueTag::Array)
+    }
+}
+
 impl From<Literal> for Value {
     fn from(value: Literal) -> Self {
         let (tag, payload) = match value {
