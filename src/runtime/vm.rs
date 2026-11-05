@@ -33,7 +33,7 @@ macro_rules! binop {
 }
 
 pub struct Vm<'types> {
-    mem: Vec<u8>,
+    mem: Vec<Box<[u8]>>,
     stack: Vec<Value>,
     tos: usize,
     fp_stack: Vec<Frame>,
@@ -96,19 +96,7 @@ impl<'types> Vm<'types> {
             types,
         };
 
-        for aggregate in &vm.bytecode.funcs[entrypoint].aggregates {
-            let start = vm.mem.len();
-            let end = start + aggregate.1.size;
-
-            vm.mem.resize(end, 0);
-
-            let slot = Value {
-                tag: ValueTag::Array,
-                payload: unsafe { vm.mem.as_mut_ptr().add(start) as u64 },
-            };
-
-            vm.stack[aggregate.1.slot] = slot;
-        }
+        Vm::init_aggregates(&mut vm, entrypoint);
 
         Ok(vm)
     }
@@ -307,9 +295,9 @@ impl<'types> Vm<'types> {
         let old_func = self.func;
         let old_pc = self.pc;
         let old_fp = self.fp;
-
         let old_tos = self.tos;
         let old_depth = self.fp_stack.len();
+        let old_mem_len = self.mem.len();
 
         let f = self.ir.function(target).unwrap();
         let params = &f.params;
@@ -334,6 +322,8 @@ impl<'types> Vm<'types> {
         self.handle_op_call(target, args.len());
 
         let r = self.exec_until(Some(old_depth));
+
+        self.mem.truncate(old_mem_len);
 
         self.tos = old_tos;
         self.fp_stack.truncate(old_depth);
@@ -616,43 +606,55 @@ impl<'types> Vm<'types> {
         self.pc = target;
     }
 
-    fn handle_op_call(&mut self, target: usize, argc: usize) {
-        let fp = self.tos - argc;
-
+    fn push_frame(&mut self) {
         self.fp_stack.push(Frame {
             func: self.func,
             pc: self.pc,
             ptr: self.fp,
             mem_base: self.mem.len(),
         });
+    }
 
-        let locals = self.bytecode.funcs[target].locals_count;
-        let end = fp + locals;
+    fn handle_op_call(&mut self, target: usize, argc: usize) {
+        let fp = self.tos - argc;
 
+        self.push_frame();
+        self.enter_fn(target, fp);
+    }
+
+    fn enter_fn(&mut self, target: usize, fp: usize) {
         self.func = target;
         self.pc = 0;
         self.fp = fp;
 
-        self.stack[fp + argc..end].fill(Value {
-            tag: ValueTag::Void,
-            payload: 0,
-        });
+        self.tos = fp + self.bytecode.funcs[self.func].locals_count;
 
-        self.tos = end;
+        self.init_aggregates(target);
+    }
 
-        for aggregate in self.bytecode.funcs[self.func].aggregates.values() {
-            let start = self.mem.len();
-            let end = start + aggregate.size;
+    fn init_aggregates(&mut self, func: usize) {
+        let aggregates = &self.bytecode.funcs[func].aggregates;
+        let mem = &mut self.mem;
+        let stack = &mut self.stack;
+        let fp = self.fp;
 
-            self.mem.resize(end, 0);
+        for agg in aggregates.values() {
+            let ptr = Self::alloc_aggregate(mem, agg.size);
 
-            let ptr = unsafe { self.mem.as_mut_ptr().add(start) };
-
-            self.stack[self.fp + aggregate.slot] = Value {
+            stack[fp + agg.slot] = Value {
                 tag: ValueTag::Array,
                 payload: ptr as u64,
             };
         }
+    }
+
+    fn alloc_aggregate(mem: &mut Vec<Box<[u8]>>, size: usize) -> *mut u8 {
+        let mut data = vec![0u8; size].into_boxed_slice();
+        let ptr = data.as_mut_ptr();
+
+        mem.push(data);
+
+        ptr
     }
 
     fn handle_op_getaddr(&mut self, local: usize) {
