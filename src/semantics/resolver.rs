@@ -82,6 +82,7 @@ impl Resolve for Declaration {
                 let resolved = resolve_fn(resolver, name, ret, params, body)?;
                 Ok(resolved)
             }
+            Declaration::Struct { name, members } => todo!(),
         }
     }
 }
@@ -401,6 +402,10 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             ty,
             span,
         }),
+
+        Expression::Get { object, field, ty, span } => todo!(),
+
+        Expression::StructLiteral { members, ty, span } => todo!(),
     }
 }
 

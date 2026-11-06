@@ -207,6 +207,7 @@ impl From<Type> for AsmType {
             Type::Float64 => AsmType::Double,
             Type::String | Type::Ptr(_) => AsmType::Quad,
             Type::Array(_) => AsmType::Bytearray,
+            Type::Struct(_) => AsmType::Bytearray,
         }
     }
 }

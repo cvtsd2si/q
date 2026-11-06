@@ -45,6 +45,7 @@ impl Irfy for Declaration {
                 params,
                 body,
             } => IRDecl::Fn(irfy_fn(name, ret, params, body, types)),
+            Declaration::Struct { name, members } => todo!(),
         }
     }
 }
@@ -691,6 +692,10 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
 
             ExpRes::Plain(dst)
         }
+
+        Expression::Get { object, field, ty, span } => todo!(),
+
+        Expression::StructLiteral { members, ty, span } => todo!(),
     }
 }
 

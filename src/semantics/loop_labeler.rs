@@ -78,6 +78,7 @@ impl LoopLabel for Declaration {
                 params,
                 body,
             } => Ok(loop_label_fn(labeler, name, ret, params, body)?),
+            Declaration::Struct { name, members } => todo!(),
         }
     }
 }
