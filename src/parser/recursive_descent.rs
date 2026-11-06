@@ -1,5 +1,6 @@
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, MemberInit, Param, Program, Statement, StructMember, Type, TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, GetExpressionKind, LiteralVal,
+    MemberInit, Param, Program, Statement, StructMember, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::{QError, QErrorKind};
@@ -274,7 +275,7 @@ impl<'src, 'types> Parser<'src, 'types> {
         self.consume(TokenKind::LBrace)?;
 
         let mut members = vec![];
-        
+
         while !self.check(TokenKind::RBrace) {
             let member_name = self.consume(TokenKind::Identifier)?;
 
@@ -286,13 +287,13 @@ impl<'src, 'types> Parser<'src, 'types> {
                 name: self.src_from_span(member_name.span),
                 ty,
             });
- 
+
             if self.check(TokenKind::RBrace) {
                 break;
             }
 
             self.consume(TokenKind::Comma)?;
-       }
+        }
 
         self.consume(TokenKind::RBrace)?;
 
@@ -974,16 +975,24 @@ impl<'src, 'types> Parser<'src, 'types> {
                     ty: None,
                     span: begin + end,
                 };
-            } else if self.check(TokenKind::Dot) {
+            } else if self.check_many_greedy(&[TokenKind::Dot, TokenKind::Arrow]) {
                 let begin = expr.span();
 
-                self.consume(TokenKind::Dot)?;
+                let kind = match self.prev {
+                    Some(token) => match token.kind {
+                        TokenKind::Dot => GetExpressionKind::Dot,
+                        TokenKind::Arrow => GetExpressionKind::Arrow,
+                        _ => unreachable!(),
+                    },
+                    None => unreachable!(),
+                };
 
                 let field = self.consume(TokenKind::Identifier)?;
 
                 let end = field.span;
 
                 expr = Expression::Get {
+                    kind,
                     object: expr.into(),
                     field: self.src_from_span(field.span),
                     ty: None,
@@ -1166,10 +1175,13 @@ impl<'src, 'types> Parser<'src, 'types> {
             let member_name = self.consume(TokenKind::Identifier)?;
 
             self.consume(TokenKind::Colon)?;
-            
+
             let member_init = self.parse_expr()?.into();
-            
-            members.push(MemberInit { name: self.src_from_span(member_name.span), init: member_init });
+
+            members.push(MemberInit {
+                name: self.src_from_span(member_name.span),
+                init: member_init,
+            });
 
             if self.check(TokenKind::RBrace) {
                 break;
@@ -1180,7 +1192,11 @@ impl<'src, 'types> Parser<'src, 'types> {
 
         let end = self.consume(TokenKind::RBrace)?.span;
 
-        Ok(Expression::StructLiteral { members, ty: None, span: begin + end })
+        Ok(Expression::StructLiteral {
+            members,
+            ty: None,
+            span: begin + end,
+        })
     }
 
     fn parse_type(&mut self) -> Result<Type, QError> {

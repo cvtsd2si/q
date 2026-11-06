@@ -693,7 +693,13 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
             ExpRes::Plain(dst)
         }
 
-        Expression::Get { object, field, ty, span } => todo!(),
+        Expression::Get {
+            kind,
+            object,
+            field,
+            ty,
+            span,
+        } => todo!(),
 
         Expression::StructLiteral { members, ty, span } => todo!(),
     }

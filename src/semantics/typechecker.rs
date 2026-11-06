@@ -887,12 +887,18 @@ fn typecheck_expr(
         Expression::ArrayLiteral { elements, span, .. } => {
             typecheck_array_literal(typechecker, elements, expected_ty, span)
         }
-        
+
         Expression::Index {
             array, index, span, ..
         } => typecheck_index(typechecker, *array, *index, expected_ty, span),
-        
-        Expression::Get { object, field, ty, span } => todo!(),
+
+        Expression::Get {
+            kind,
+            object,
+            field,
+            ty,
+            span,
+        } => todo!(),
 
         Expression::StructLiteral { members, ty, span } => todo!(),
     }
@@ -1254,8 +1260,14 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
             _ => Ok(None),
         },
 
-        Expression::Get { object, field, ty, span } => todo!(),
-        
+        Expression::Get {
+            kind,
+            object,
+            field,
+            ty,
+            span,
+        } => todo!(),
+
         Expression::StructLiteral { members, ty, span } => todo!(),
     }
 }

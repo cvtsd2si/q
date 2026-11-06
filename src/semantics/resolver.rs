@@ -403,7 +403,13 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             span,
         }),
 
-        Expression::Get { object, field, ty, span } => todo!(),
+        Expression::Get {
+            kind,
+            object,
+            field,
+            ty,
+            span,
+        } => todo!(),
 
         Expression::StructLiteral { members, ty, span } => todo!(),
     }

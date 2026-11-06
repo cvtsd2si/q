@@ -104,7 +104,7 @@ pub enum Expression {
         members: Vec<MemberInit>,
         ty: Option<Type>,
         span: Span,
-    },    
+    },
     ArrayLiteral {
         elements: Vec<Expression>,
         ty: Option<Type>,
@@ -154,6 +154,7 @@ pub enum Expression {
         span: Span,
     },
     Get {
+        kind: GetExpressionKind,
         object: Box<Expression>,
         field: String,
         ty: Option<Type>,
@@ -174,7 +175,7 @@ impl Expression {
             Expression::Cast { span, .. } => *span,
             Expression::Index { span, .. } => *span,
             Expression::Get { span, .. } => *span,
-            Expression::StructLiteral { span, .. } => *span, 
+            Expression::StructLiteral { span, .. } => *span,
         }
     }
 
@@ -190,7 +191,7 @@ impl Expression {
             Expression::ArrayLiteral { ty, .. } => *ty,
             Expression::Index { ty, .. } => *ty,
             Expression::Get { ty, .. } => *ty,
-            Expression::StructLiteral { ty, .. } => *ty, 
+            Expression::StructLiteral { ty, .. } => *ty,
         }
     }
 }
@@ -199,6 +200,12 @@ impl Expression {
 pub struct MemberInit {
     pub name: String,
     pub init: Box<Expression>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum GetExpressionKind {
+    Dot,
+    Arrow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -271,7 +278,6 @@ pub struct PtrTypeId(pub usize);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct StructTypeId(pub usize);
 
-
 #[derive(Debug, Default)]
 pub struct TypeInterner {
     arrays: Vec<ArrayType>,
@@ -300,7 +306,12 @@ impl TypeInterner {
             return Type::Struct(id);
         }
 
-        let id = StructTypeId(self.structs.len().try_into().expect("too many struct types"));
+        let id = StructTypeId(
+            self.structs
+                .len()
+                .try_into()
+                .expect("too many struct types"),
+        );
 
         self.structs.push(s.clone());
         self.struct_lookup.insert(s, id);
