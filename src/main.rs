@@ -59,10 +59,11 @@ fn run(src: &str, opts: &Opt) -> Result<i32, QError> {
     }
 
     let mut label_collector = LabelCollector::new();
-    let ast = ast.label_collect(&mut label_collector)?;
-
     let mut loop_labeler = LoopLabeler::new();
-    let labeled_ast = ast.loop_label(&mut loop_labeler)?;
+
+    let labeled_ast = ast
+        .label_collect(&mut label_collector)?
+        .loop_label(&mut loop_labeler)?;
 
     if opts.loop_label {
         println!("{:#?}", labeled_ast);
