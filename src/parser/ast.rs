@@ -26,7 +26,7 @@ pub enum Declaration {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct StructMember {
     pub name: String,
     pub ty: Type,
