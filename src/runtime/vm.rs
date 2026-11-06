@@ -76,7 +76,7 @@ impl<'types> Vm<'types> {
         let tos = bytecode.funcs[entrypoint].locals_count;
 
         let mut vm = Vm {
-            mem: Vec::with_capacity(16 * 1024 * 1024),
+            mem: Vec::with_capacity(bytecode.funcs[entrypoint].aggregates.len()),
             stack: vec![
                 Value {
                     tag: ValueTag::Void,

@@ -355,7 +355,14 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             span,
         }),
 
-        Expression::Assign { lhs, rhs, ty, span } => Ok(Expression::Assign {
+        Expression::Assign {
+            kind,
+            lhs,
+            rhs,
+            ty,
+            span,
+        } => Ok(Expression::Assign {
+            kind,
             lhs: resolve_expr(resolver, *lhs)?.into(),
             rhs: resolve_expr(resolver, *rhs)?.into(),
             ty,

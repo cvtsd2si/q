@@ -776,7 +776,13 @@ fn typecheck_expr(
             })
         }
 
-        Expression::Assign { lhs, rhs, span, .. } => {
+        Expression::Assign {
+            kind,
+            lhs,
+            rhs,
+            span,
+            ..
+        } => {
             /* Ensure lhs is assignable.  */
             if !is_assignable(&lhs) {
                 return Err(QError {
@@ -823,6 +829,7 @@ fn typecheck_expr(
             }
 
             Ok(Expression::Assign {
+                kind,
                 lhs: lhs.into(),
                 rhs: rhs.into(),
                 ty: Some(lhs_ty),

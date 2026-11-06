@@ -120,6 +120,7 @@ pub enum Expression {
         span: Span,
     },
     Assign {
+        kind: BinaryExpressionKind,
         lhs: Box<Expression>,
         rhs: Box<Expression>,
         ty: Option<Type>,

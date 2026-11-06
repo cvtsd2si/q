@@ -17,6 +17,11 @@ TEST_CASES = {
         "stdout": ["55"],
         "stderr": [],
     },
+    "compound_assignment.q": {
+        "ret": 0,
+        "stdout": ["3", "2", "4", "1", "1", "4", "2", "3", "1", "0"],
+        "stderr": [],
+    },
     "arrays.q": {
         "ret": 0,
         "stdout": [

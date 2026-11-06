@@ -585,14 +585,30 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
             ExpRes::Plain(dst)
         }
 
-        Expression::Assign { lhs, rhs, ty, .. } => {
-            /* Keep lhs as lvalue.  */
-            let lhs = irfy_expr(instrs, lhs, types);
-
+        Expression::Assign {
+            kind, lhs, rhs, ty, ..
+        } => {
             /* Force lvalue-to-rvalue conversion for rhs.  */
-            let rhs = irfy_expr_and_cvt(instrs, rhs, types);
+            let mut rhs = irfy_expr_and_cvt(instrs, rhs, types);
 
-            match lhs {
+            if *kind != BinaryExpressionKind::Equal {
+                let lhs_op = irfy_expr_and_cvt(instrs, lhs, types);
+                let tmp = mkirvar(ty.unwrap());
+                instrs.push(IRInstr::Bin {
+                    kind: *kind,
+                    lhs: lhs_op.clone(),
+                    rhs: rhs.clone(),
+                    dst: tmp.clone(),
+                    operand_ty: ty.clone().unwrap(),
+                });
+
+                rhs = tmp;
+            }
+
+            /* Keep lhs as lvalue.  */
+            let lhs_op = irfy_expr(instrs, lhs, types);
+
+            match lhs_op {
                 ExpRes::Plain(op) => {
                     instrs.push(IRInstr::Cpy {
                         src: rhs.clone(),

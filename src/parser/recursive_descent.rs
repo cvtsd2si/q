@@ -486,11 +486,49 @@ impl<'src, 'types> Parser<'src, 'types> {
         let mut result = self.or()?;
         let begin = result.span();
 
-        while self.check_many_greedy(&[TokenKind::Equal]) {
+        while self.check_many_greedy(&[
+            TokenKind::Equal,
+            TokenKind::PlusEqual,
+            TokenKind::MinusEqual,
+            TokenKind::StarEqual,
+            TokenKind::SlashEqual,
+            TokenKind::PercentEqual,
+            TokenKind::GreaterGreaterEqual,
+            TokenKind::LessLessEqual,
+            TokenKind::AmpersandEqual,
+            TokenKind::PipeEqual,
+            TokenKind::CaretEqual,
+        ]) {
+            let kind = match self.prev {
+                Some(token) => match token.kind {
+                    TokenKind::Equal => BinaryExpressionKind::Equal,
+                    TokenKind::PlusEqual => BinaryExpressionKind::Add,
+                    TokenKind::MinusEqual => BinaryExpressionKind::Sub,
+                    TokenKind::StarEqual => BinaryExpressionKind::Mul,
+                    TokenKind::SlashEqual => BinaryExpressionKind::Div,
+                    TokenKind::PercentEqual => BinaryExpressionKind::Rem,
+                    TokenKind::GreaterGreaterEqual => BinaryExpressionKind::Shr,
+                    TokenKind::LessLessEqual => BinaryExpressionKind::Shl,
+                    TokenKind::AmpersandEqual => BinaryExpressionKind::BitwiseAnd,
+                    TokenKind::PipeEqual => BinaryExpressionKind::BitwiseOr,
+                    TokenKind::CaretEqual => BinaryExpressionKind::BitwiseXor,
+                    _ => unreachable!(),
+                },
+                None => {
+                    return Err(QError {
+                        kind: QErrorKind::Parse,
+                        msg: "Encountered the end of token stream (prev: None)".to_string(),
+                        code: 1,
+                        span: Span { start: 0, end: 0 },
+                    });
+                }
+            };
+
             let right = self.assignment()?;
             let end = right.span();
 
             result = Expression::Assign {
+                kind,
                 lhs: result.clone().into(),
                 rhs: right.into(),
                 ty: None,
