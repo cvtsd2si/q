@@ -5,13 +5,13 @@ use crate::{
     codegen::ir::r#gen::mktmp,
     parser::ast::{
         BlockItem, Declaration, Expression, MemberInit, Param, Program, Statement, StructMember,
-        Type,
+        StructTypeId, Type,
     },
 };
 
 pub struct Resolver {
     var_map: HashMap<String, Var>,
-    struct_map: HashMap<String, Struct>,
+    struct_map: HashMap<StructTypeId, Struct>,
 }
 
 impl Resolver {
@@ -36,7 +36,7 @@ pub struct Var {
 
 #[derive(Debug, Clone)]
 pub struct Struct {
-    pub name: String,
+    pub id: StructTypeId,
     pub members: Vec<StructMember>,
 }
 
@@ -94,8 +94,8 @@ impl Resolve for Declaration {
                 Ok(resolved)
             }
 
-            Declaration::Struct { name, members } => {
-                let resolved = resolve_struct(resolver, name, members)?;
+            Declaration::Struct { id, members } => {
+                let resolved = resolve_struct(resolver, id, members)?;
                 Ok(resolved)
             }
         }
@@ -189,18 +189,18 @@ fn resolve_fn(
 
 fn resolve_struct(
     resolver: &mut Resolver,
-    name: String,
+    id: StructTypeId,
     members: Vec<StructMember>,
 ) -> Result<Declaration, QError> {
     resolver.struct_map.insert(
-        name.clone(),
+        id,
         Struct {
-            name: name.clone(),
+            id,
             members: members.clone(),
         },
     );
 
-    Ok(Declaration::Struct { name, members })
+    Ok(Declaration::Struct { id, members })
 }
 
 fn resolve_let(

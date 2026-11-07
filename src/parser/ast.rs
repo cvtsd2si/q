@@ -21,7 +21,7 @@ pub enum Declaration {
         body: Statement,
     },
     Struct {
-        name: String,
+        id: StructTypeId,
         members: Vec<StructMember>,
     },
 }
@@ -336,6 +336,10 @@ impl TypeInterner {
 
     pub fn get_array(&self, id: ArrayTypeId) -> ArrayType {
         self.arrays[id.0 as usize]
+    }
+
+    pub fn get_struct(&self, id: StructTypeId) -> StructType {
+        self.structs[id.0 as usize].clone()
     }
 
     pub fn intern_ptr(&mut self, pointee: Type) -> Type {

@@ -1,8 +1,9 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
-    Statement, Type, TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, GetExpressionKind, Literal,
+    LiteralVal, MemberInit, Param, Program, Statement, StructMember, StructTypeId, Type,
+    TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::Span;
 use crate::{QError, QErrorKind};
@@ -10,7 +11,13 @@ use crate::{QError, QErrorKind};
 pub struct Typechecker<'types> {
     pub sym_table: HashMap<String, Symbol>,
     pub funcs: HashMap<String, FnSignature>,
+    pub structs: HashMap<StructTypeId, StructDef>,
     pub types: &'types mut TypeInterner,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructDef {
+    pub fields: HashMap<String, Type>,
 }
 
 impl<'types> Typechecker<'types> {
@@ -18,6 +25,7 @@ impl<'types> Typechecker<'types> {
         Self {
             sym_table: HashMap::new(),
             funcs: HashMap::new(),
+            structs: HashMap::new(),
             types,
         }
     }
@@ -32,30 +40,53 @@ impl Typecheck for Program {
     type Output = Program;
 
     fn typecheck(self, typechecker: &mut Typechecker) -> Result<Self::Output, QError> {
-        self.block_items.iter().for_each(|block_item| {
-            if let BlockItem::Decl(decl) = block_item
-                && let Declaration::Fn {
-                    name,
-                    ret,
-                    params,
-                    body: _,
-                } = decl
-            {
-                typechecker.funcs.insert(
-                    name.to_owned(),
-                    FnSignature {
-                        params: params.iter().map(|p| p.ty).collect(),
-                        ret_ty: *ret,
-                    },
-                );
+        for item in &self.block_items {
+            match item {
+                BlockItem::Decl(Declaration::Fn {
+                    name, ret, params, ..
+                }) => {
+                    typechecker.funcs.insert(
+                        name.clone(),
+                        FnSignature {
+                            params: params.iter().map(|p| p.ty).collect(),
+                            ret_ty: *ret,
+                        },
+                    );
+                }
+
+                BlockItem::Decl(Declaration::Struct { id, members }) => {
+                    // Check for duplicate struct declarations.
+                    if typechecker.structs.contains_key(id) {
+                        let name = typechecker.types.get_struct(*id).name;
+
+                        return Err(QError {
+                            msg: format!("Struct '{name}' is already defined"),
+                            code: 1,
+                            kind: QErrorKind::Typecheck,
+                            span: Span { start: 0, end: 0 },
+                        });
+                    }
+
+                    let fields = members.iter().map(|m| (m.name.clone(), m.ty)).collect();
+
+                    typechecker.structs.insert(*id, StructDef { fields });
+                }
+
+                _ => {}
             }
-        });
+        }
+
+        for item in &self.block_items {
+            if let BlockItem::Decl(Declaration::Struct { id, members }) = item {
+                typecheck_struct(typechecker, *id, members.clone())?;
+            }
+        }
 
         Ok(Program {
             block_items: self
                 .block_items
                 .into_iter()
-                .map(|block_item| block_item.typecheck(typechecker))
+                .map(|item| item.typecheck(typechecker))
                 .collect::<Result<Vec<_>, _>>()?,
         })
     }
@@ -83,7 +114,7 @@ impl Typecheck for Declaration {
                 params,
                 body,
             } => typecheck_fn(typechecker, name, ret, params, body),
-            Declaration::Struct { name, members } => todo!(),
+            Declaration::Struct { id, members } => typecheck_struct(typechecker, id, members),
         }
     }
 }
@@ -173,6 +204,123 @@ fn typecheck_fn(
         params: typechecked_params,
         body: typechecked_body,
     })
+}
+
+fn typecheck_struct(
+    typechecker: &mut Typechecker,
+    id: StructTypeId,
+    members: Vec<StructMember>,
+) -> Result<Declaration, QError> {
+    let struct_name = typechecker.types.get_struct(id).name;
+
+    let mut seen = HashSet::new();
+
+    for member in &members {
+        if !seen.insert(&member.name) {
+            return Err(QError {
+                msg: format!(
+                    "Duplicate field '{}' in struct '{}'",
+                    member.name, struct_name
+                ),
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                span: Span { start: 0, end: 0 },
+            });
+        }
+
+        validate_type_exists(typechecker, member.ty)?;
+    }
+
+    validate_finite_type(typechecker, Type::Struct(id), &mut Vec::new())?;
+
+    Ok(Declaration::Struct { id, members })
+}
+
+fn validate_type_exists(tc: &Typechecker, ty: Type) -> Result<(), QError> {
+    match ty {
+        Type::Struct(id) => {
+            if !tc.structs.contains_key(&id) {
+                let name = tc.types.get_struct(id).name;
+
+                return Err(QError {
+                    msg: format!("Unkown struct '{}'", name),
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    span: Span { start: 0, end: 0 },
+                });
+            }
+        }
+
+        Type::Array(id) => {
+            let array = tc.types.get_array(id);
+
+            validate_type_exists(tc, array.element)?;
+        }
+
+        Type::Ptr(id) => {
+            let pointee = tc.types.get_pointer(id);
+
+            validate_type_exists(tc, pointee)?;
+        }
+
+        _ => {}
+    }
+
+    Ok(())
+}
+
+fn validate_finite_type(
+    tc: &Typechecker,
+    ty: Type,
+    visiting: &mut Vec<StructTypeId>,
+) -> Result<(), QError> {
+    match ty {
+        Type::Struct(id) => {
+            if visiting.contains(&id) {
+                let name = tc.types.get_struct(id).name;
+
+                return Err(QError {
+                    msg: format!("Struct '{}' contains itself by value", name),
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    span: Span { start: 0, end: 0 },
+                });
+            }
+
+            visiting.push(id);
+
+            let definition = tc.structs.get(&id).ok_or_else(|| {
+                let name = tc.types.get_struct(id).name;
+
+                QError {
+                    msg: format!("Uknown struct type: '{}'", name),
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    span: Span { start: 0, end: 0 },
+                }
+            })?;
+
+            for &field_ty in definition.fields.values() {
+                validate_finite_type(tc, field_ty, visiting)?;
+            }
+
+            visiting.pop();
+        }
+
+        Type::Array(id) => {
+            let array = tc.types.get_array(id);
+
+            if array.length > 0 {
+                validate_finite_type(tc, array.element, visiting)?;
+            }
+        }
+
+        Type::Ptr(_) => {}
+
+        _ => {}
+    }
+
+    Ok(())
 }
 
 fn typecheck_let(
@@ -896,12 +1044,192 @@ fn typecheck_expr(
             kind,
             object,
             field,
-            ty,
             span,
-        } => todo!(),
+            ..
+        } => {
+            let object = typecheck_expr(typechecker, *object, None)?;
 
-        Expression::StructLiteral { members, ty, span } => todo!(),
+            let object_ty = object.ty().ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: "Cannot determine object type".into(),
+                span,
+            })?;
+
+            let struct_id = match (kind, object_ty) {
+                (GetExpressionKind::Dot, Type::Struct(id)) => id,
+
+                (GetExpressionKind::Arrow, Type::Ptr(ptr_id)) => {
+                    let pointee_ty = typechecker.types.get_pointer(ptr_id);
+
+                    let Type::Struct(id) = pointee_ty else {
+                        return Err(QError {
+                            code: 1,
+                            kind: QErrorKind::Typecheck,
+                            msg: format!(
+                                "Arrow operator requires a pointer to a struct, got {pointee_ty:?}"
+                            ),
+                            span,
+                        });
+                    };
+
+                    id
+                }
+
+                _ => {
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Typecheck,
+                        msg: format!("Invalid member access {kind:?} on type {object_ty:?}"),
+                        span,
+                    });
+                }
+            };
+
+            let definition = typechecker.structs.get(&struct_id).ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Unknown struct type {struct_id:?}"),
+                span,
+            })?;
+
+            let field_ty = definition
+                .fields
+                .get(&field)
+                .copied()
+                .ok_or_else(|| QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("Struct {struct_id:?} has no field '{field}'"),
+                    span,
+                })?;
+
+            if let Some(expected) = expected_ty
+                && expected != field_ty
+            {
+                return Err(QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("Expected {expected:?}, got {field_ty:?}"),
+                    span,
+                });
+            }
+
+            Ok(Expression::Get {
+                kind,
+                object: Box::new(object),
+                field,
+                ty: Some(field_ty),
+                span,
+            })
+        }
+
+        Expression::StructLiteral { members, span, .. } => {
+            typecheck_struct_literal(typechecker, members, expected_ty, span)
+        }
     }
+}
+
+fn typecheck_struct_literal(
+    typechecker: &mut Typechecker,
+    members: Vec<MemberInit>,
+    expected_ty: Option<Type>,
+    span: Span,
+) -> Result<Expression, QError> {
+    let id = match expected_ty {
+        Some(Type::Struct(id)) => id,
+
+        Some(ty) => {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Expected {ty:?}, got a struct literal"),
+                span,
+            });
+        }
+
+        None => {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: "Cannot infer struct literal type".into(),
+                span,
+            });
+        }
+    };
+
+    let struct_name = typechecker.types.get_struct(id).name;
+
+    let fields = typechecker
+        .structs
+        .get(&id)
+        .ok_or_else(|| QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!("Unknown struct '{struct_name}'"),
+            span,
+        })?
+        .fields
+        .clone();
+
+    let mut seen = HashSet::new();
+    let mut checked_members = Vec::with_capacity(members.len());
+
+    for member in members {
+        if !seen.insert(member.name.clone()) {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Duplicate field '{}'", member.name),
+                span,
+            });
+        }
+
+        let field_ty = *fields.get(&member.name).ok_or_else(|| QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!("Struct '{}' has no field '{}'", struct_name, member.name),
+            span,
+        })?;
+
+        let init = typecheck_expr(typechecker, *member.init, Some(field_ty))?;
+
+        if init.ty() != Some(field_ty) {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!(
+                    "Field '{}': expected {:?}, got {:?}",
+                    member.name,
+                    field_ty,
+                    init.ty(),
+                ),
+                span: init.span(),
+            });
+        }
+
+        checked_members.push(MemberInit {
+            name: member.name,
+            init: Box::new(init),
+        });
+    }
+
+    for field_name in fields.keys() {
+        if !seen.contains(field_name) {
+            return Err(QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Missing field '{}' in struct '{}'", field_name, struct_name),
+                span,
+            });
+        }
+    }
+
+    Ok(Expression::StructLiteral {
+        members: checked_members,
+        ty: Some(Type::Struct(id)),
+        span,
+    })
 }
 
 fn typecheck_literal(
@@ -1264,11 +1592,67 @@ fn known_ty(typechecker: &mut Typechecker, expr: &Expression) -> Result<Option<T
             kind,
             object,
             field,
-            ty,
             span,
-        } => todo!(),
+            ..
+        } => {
+            let object_ty = known_ty(typechecker, object)?;
 
-        Expression::StructLiteral { members, ty, span } => todo!(),
+            let Some(object_ty) = object_ty else {
+                return Ok(None);
+            };
+
+            let struct_id = match (kind, object_ty) {
+                (GetExpressionKind::Dot, Type::Struct(id)) => id,
+
+                (GetExpressionKind::Arrow, Type::Ptr(ptr_id)) => {
+                    let pointee_ty = typechecker.types.get_pointer(ptr_id);
+
+                    let Type::Struct(id) = pointee_ty else {
+                        return Err(QError {
+                            code: 1,
+                            kind: QErrorKind::Typecheck,
+                            msg: format!(
+                                "Arrow operator requires a pointer to a struct, got {pointee_ty:?}"
+                            ),
+                            span: *span,
+                        });
+                    };
+
+                    id
+                }
+
+                _ => {
+                    return Err(QError {
+                        code: 1,
+                        kind: QErrorKind::Typecheck,
+                        msg: format!("Invalid member access {kind:?} on type {object_ty:?}"),
+                        span: *span,
+                    });
+                }
+            };
+
+            let definition = typechecker.structs.get(&struct_id).ok_or_else(|| QError {
+                code: 1,
+                kind: QErrorKind::Typecheck,
+                msg: format!("Unknown struct type {struct_id:?}"),
+                span: *span,
+            })?;
+
+            let field_ty = definition
+                .fields
+                .get(field)
+                .copied()
+                .ok_or_else(|| QError {
+                    code: 1,
+                    kind: QErrorKind::Typecheck,
+                    msg: format!("Struct {struct_id:?} has no field '{field}'"),
+                    span: *span,
+                })?;
+
+            Ok(Some(field_ty))
+        }
+
+        Expression::StructLiteral { ty, .. } => Ok(*ty),
     }
 }
 

@@ -45,7 +45,7 @@ impl Irfy for Declaration {
                 params,
                 body,
             } => IRDecl::Fn(irfy_fn(name, ret, params, body, types)),
-            Declaration::Struct { name, members } => todo!(),
+            Declaration::Struct { id, members } => todo!(),
         }
     }
 }

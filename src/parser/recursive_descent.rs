@@ -272,6 +272,10 @@ impl<'src, 'types> Parser<'src, 'types> {
 
         let name = self.consume(TokenKind::Identifier)?;
 
+        let Type::Struct(id) = self.types.intern_struct(self.src_from_span(name.span)) else {
+            unreachable!()
+        };
+
         self.consume(TokenKind::LBrace)?;
 
         let mut members = vec![];
@@ -297,10 +301,7 @@ impl<'src, 'types> Parser<'src, 'types> {
 
         self.consume(TokenKind::RBrace)?;
 
-        Ok(Declaration::Struct {
-            name: self.src_from_span(name.span),
-            members,
-        })
+        Ok(Declaration::Struct { id, members })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>, QError> {
