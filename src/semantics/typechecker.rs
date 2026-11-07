@@ -1,9 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, GetExpressionKind, Literal,
-    LiteralVal, MemberInit, Param, Program, Statement, StructMember, StructTypeId, Type,
-    TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, FieldLayout, GetExpressionKind, Literal, LiteralVal, MemberInit, Param, Program, Statement, StructLayout, StructMember, StructTypeId, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::Span;
 use crate::{QError, QErrorKind};
@@ -55,7 +53,6 @@ impl Typecheck for Program {
                 }
 
                 BlockItem::Decl(Declaration::Struct { id, members }) => {
-                    // Check for duplicate struct declarations.
                     if typechecker.structs.contains_key(id) {
                         let name = typechecker.types.get_struct(*id).name;
 
@@ -81,6 +78,8 @@ impl Typecheck for Program {
                 typecheck_struct(typechecker, *id, members.clone())?;
             }
         }
+
+        register_struct_layouts(typechecker, &self.block_items)?;
 
         Ok(Program {
             block_items: self
@@ -310,9 +309,7 @@ fn validate_finite_type(
         Type::Array(id) => {
             let array = tc.types.get_array(id);
 
-            if array.length > 0 {
-                validate_finite_type(tc, array.element, visiting)?;
-            }
+            validate_finite_type(tc, array.element, visiting)?;
         }
 
         Type::Ptr(_) => {}
@@ -1709,4 +1706,111 @@ fn is_assignable(expr: &Expression) -> bool {
         Expression::Index { array, .. } => is_assignable(array),
         _ => false,
     }
+}
+
+fn register_struct_layouts(
+    tc: &mut Typechecker,
+    items: &[BlockItem],
+) -> Result<(), QError> {
+    let declarations: HashMap<StructTypeId, &[StructMember]> = items
+        .iter()
+        .filter_map(|item| match item {
+            BlockItem::Decl(Declaration::Struct { id, members }) => {
+                Some((*id, members.as_slice()))
+            }
+            _ => None,
+        })
+        .collect();
+
+    for &id in declarations.keys() {
+        compute_struct_layout(tc.types, &declarations, id)?;
+    }
+
+    Ok(())
+}
+
+fn ensure_type_layout(
+    types: &mut TypeInterner,
+    declarations: &HashMap<StructTypeId, &[StructMember]>,
+    ty: Type,
+) -> Result<(), QError> {
+    match ty {
+        Type::Struct(id) => {
+            compute_struct_layout(types, declarations, id)
+        }
+
+        Type::Array(id) => {
+            let element = types.get_array(id).element;
+            ensure_type_layout(types, declarations, element)
+        }
+
+        _ => Ok(()),
+    }
+}
+
+fn compute_struct_layout(
+    types: &mut TypeInterner,
+    declarations: &HashMap<StructTypeId, &[StructMember]>,
+    id: StructTypeId,
+) -> Result<(), QError> {
+    if types.has_struct_layout(id) {
+        return Ok(());
+    }
+
+    let members = declarations.get(&id).ok_or_else(|| QError {
+        code: 1,
+        kind: QErrorKind::Typecheck,
+        msg: format!(
+            "Missing definition for struct '{}'",
+            types.get_struct(id).name
+        ),
+        span: Span { start: 0, end: 0 },
+    })?;
+
+    let mut fields = HashMap::new();
+
+    let mut offset: usize = 0;
+    let mut alignment: usize = 1;
+
+    for member in *members {
+        ensure_type_layout(types, declarations, member.ty)?;
+
+        let field_alignment = member.ty.alignment(types);
+        let field_size = member.ty.size_of(types);
+
+        offset = offset.next_multiple_of(field_alignment);
+
+        fields.insert(
+            member.name.clone(),
+            FieldLayout {
+                ty: member.ty,
+                offset,
+            },
+        );
+
+        offset = offset.checked_add(field_size).ok_or_else(|| QError {
+            code: 1,
+            kind: QErrorKind::Typecheck,
+            msg: format!(
+                "Struct '{}' is too large",
+                types.get_struct(id).name
+            ),
+            span: Span { start: 0, end: 0 },
+        })?;
+
+        alignment = alignment.max(field_alignment);
+    }
+
+    let size = offset.next_multiple_of(alignment);
+
+    types.insert_struct_layout(
+        id,
+        StructLayout {
+            fields,
+            size,
+            alignment,
+        },
+    );
+
+    Ok(())
 }
