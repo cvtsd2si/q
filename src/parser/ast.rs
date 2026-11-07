@@ -20,6 +20,16 @@ pub enum Declaration {
         params: Vec<Param>,
         body: Statement,
     },
+    Struct {
+        id: StructTypeId,
+        members: Vec<StructMember>,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct StructMember {
+    pub name: String,
+    pub ty: Type,
 }
 
 #[derive(Debug)]
@@ -90,6 +100,11 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    StructLiteral {
+        members: Vec<MemberInit>,
+        ty: Option<Type>,
+        span: Span,
+    },
     ArrayLiteral {
         elements: Vec<Expression>,
         ty: Option<Type>,
@@ -138,6 +153,13 @@ pub enum Expression {
         ty: Option<Type>,
         span: Span,
     },
+    Get {
+        kind: GetExpressionKind,
+        object: Box<Expression>,
+        field: String,
+        ty: Option<Type>,
+        span: Span,
+    },
 }
 
 impl Expression {
@@ -152,6 +174,8 @@ impl Expression {
             Expression::Unary { span, .. } => *span,
             Expression::Cast { span, .. } => *span,
             Expression::Index { span, .. } => *span,
+            Expression::Get { span, .. } => *span,
+            Expression::StructLiteral { span, .. } => *span,
         }
     }
 
@@ -166,8 +190,22 @@ impl Expression {
             Expression::Cast { ty, .. } => *ty,
             Expression::ArrayLiteral { ty, .. } => *ty,
             Expression::Index { ty, .. } => *ty,
+            Expression::Get { ty, .. } => *ty,
+            Expression::StructLiteral { ty, .. } => *ty,
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct MemberInit {
+    pub name: String,
+    pub init: Box<Expression>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum GetExpressionKind {
+    Dot,
+    Arrow,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -216,6 +254,7 @@ pub enum Type {
     Boolean,
     String,
     Array(ArrayTypeId),
+    Struct(StructTypeId),
     Ptr(PtrTypeId),
 }
 
@@ -228,8 +267,29 @@ pub struct ArrayType {
     pub length: usize,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct StructType {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FieldLayout {
+    pub ty: Type,
+    pub offset: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct StructLayout {
+    pub fields: HashMap<String, FieldLayout>,
+    pub size: usize,
+    pub alignment: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PtrTypeId(pub usize);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct StructTypeId(pub usize);
 
 #[derive(Debug, Default)]
 pub struct TypeInterner {
@@ -238,6 +298,11 @@ pub struct TypeInterner {
 
     ptrs: Vec<Type>,
     ptr_lookup: HashMap<Type, PtrTypeId>,
+
+    structs: Vec<StructType>,
+    struct_lookup: HashMap<StructType, StructTypeId>,
+
+    struct_layouts: HashMap<StructTypeId, StructLayout>,
 }
 
 impl TypeInterner {
@@ -247,6 +312,26 @@ impl TypeInterner {
 
     pub fn debug(&self, ty: Type) -> TypeDebug<'_> {
         TypeDebug { ty, types: self }
+    }
+
+    pub fn intern_struct(&mut self, name: String) -> Type {
+        let s = StructType { name };
+
+        if let Some(&id) = self.struct_lookup.get(&s) {
+            return Type::Struct(id);
+        }
+
+        let id = StructTypeId(
+            self.structs
+                .len()
+                .try_into()
+                .expect("too many struct types"),
+        );
+
+        self.structs.push(s.clone());
+        self.struct_lookup.insert(s, id);
+
+        Type::Struct(id)
     }
 
     pub fn intern_array(&mut self, element: Type, length: usize) -> Type {
@@ -266,6 +351,24 @@ impl TypeInterner {
 
     pub fn get_array(&self, id: ArrayTypeId) -> ArrayType {
         self.arrays[id.0 as usize]
+    }
+
+    pub fn get_struct(&self, id: StructTypeId) -> StructType {
+        self.structs[id.0 as usize].clone()
+    }
+
+    pub fn get_struct_layout(&self, id: StructTypeId) -> &StructLayout {
+        self.struct_layouts
+            .get(&id)
+            .expect("Struct layout has not been calculated")
+    }
+
+    pub fn has_struct_layout(&self, id: StructTypeId) -> bool {
+        self.struct_layouts.contains_key(&id)
+    }
+
+    pub fn insert_struct_layout(&mut self, id: StructTypeId, layout: StructLayout) {
+        self.struct_layouts.insert(id, layout);
     }
 
     pub fn intern_ptr(&mut self, pointee: Type) -> Type {
@@ -343,6 +446,7 @@ impl std::fmt::Debug for Type {
             Self::String => "str",
             Self::Array(id) => &format!("Array({id:?})"),
             Self::Ptr(id) => &format!("Ptr({id:?})"),
+            Self::Struct(id) => &format!("Struct({id:?})"),
         };
 
         write!(f, "{s}")
@@ -530,22 +634,25 @@ impl Type {
     }
 
     pub fn is_aggregate(self) -> bool {
-        matches!(self, Type::Array(_))
+        matches!(self, Type::Array(_) | Type::Struct(_))
     }
 
     pub fn alignment(self, types: &TypeInterner) -> usize {
         match self {
-            Type::UInt8 | Type::Int8 => 1,
+            Type::Boolean | Type::UInt8 | Type::Int8 => 1,
             Type::UInt16 | Type::Int16 => 2,
             Type::Int32 | Type::UInt32 | Type::Float32 => 4,
             Type::UInt64 | Type::Int64 | Type::Float64 => 8,
             Type::String => 8,
+
             Type::Array(id) => {
                 let array = types.get_array(id);
                 array.element.alignment(types)
             }
+
             Type::Ptr(_) => 8,
-            _ => unreachable!(),
+
+            Type::Struct(id) => types.get_struct_layout(id).alignment,
         }
     }
 
@@ -568,6 +675,7 @@ impl Type {
                 array.element.size_of(types) * array.length
             }
             Type::Ptr(_) => 8,
+            Type::Struct(id) => types.get_struct_layout(id).size,
         }
     }
 }

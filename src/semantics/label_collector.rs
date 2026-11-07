@@ -64,6 +64,8 @@ impl LabelCollect for Declaration {
                 params,
                 body,
             } => Ok(label_collect_fn(collector, name, ret, params, body)?),
+
+            Declaration::Struct { .. } => Ok(self),
         }
     }
 }

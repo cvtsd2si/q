@@ -47,7 +47,7 @@ impl<'src> Iterator for Tokenizer<'src> {
             }
 
             let token = match ch {
-                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '~' | '[' | ']' => {
+                '(' | ')' | '{' | '}' | ';' | ':' | ',' | '~' | '[' | ']' | '.' => {
                     Ok(Token::single(ch, idx))
                 }
                 '-' => {
@@ -214,6 +214,7 @@ impl<'src> Iterator for Tokenizer<'src> {
                         "ret" => TokenKind::Ret,
                         "let" => TokenKind::Let,
                         "as" => TokenKind::As,
+                        "struct" => TokenKind::Struct,
                         "u8" => TokenKind::U8,
                         "i8" => TokenKind::I8,
                         "u16" => TokenKind::U16,

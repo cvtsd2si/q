@@ -3,17 +3,22 @@ use std::collections::HashMap;
 use crate::{
     QError, QErrorKind,
     codegen::ir::r#gen::mktmp,
-    parser::ast::{BlockItem, Declaration, Expression, Param, Program, Statement, Type},
+    parser::ast::{
+        BlockItem, Declaration, Expression, MemberInit, Param, Program, Statement, StructMember,
+        StructTypeId, Type,
+    },
 };
 
 pub struct Resolver {
     var_map: HashMap<String, Var>,
+    struct_map: HashMap<StructTypeId, Struct>,
 }
 
 impl Resolver {
     pub fn new() -> Self {
         Self {
             var_map: HashMap::new(),
+            struct_map: HashMap::new(),
         }
     }
 }
@@ -27,6 +32,12 @@ impl Default for Resolver {
 #[derive(Debug, Clone)]
 pub struct Var {
     pub name: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct Struct {
+    pub id: StructTypeId,
+    pub members: Vec<StructMember>,
 }
 
 pub trait Resolve {
@@ -80,6 +91,11 @@ impl Resolve for Declaration {
                 body,
             } => {
                 let resolved = resolve_fn(resolver, name, ret, params, body)?;
+                Ok(resolved)
+            }
+
+            Declaration::Struct { id, members } => {
+                let resolved = resolve_struct(resolver, id, members)?;
                 Ok(resolved)
             }
         }
@@ -169,6 +185,22 @@ fn resolve_fn(
         params: resolved_params,
         body: resolved_body,
     })
+}
+
+fn resolve_struct(
+    resolver: &mut Resolver,
+    id: StructTypeId,
+    members: Vec<StructMember>,
+) -> Result<Declaration, QError> {
+    resolver.struct_map.insert(
+        id,
+        Struct {
+            id,
+            members: members.clone(),
+        },
+    );
+
+    Ok(Declaration::Struct { id, members })
 }
 
 fn resolve_let(
@@ -401,6 +433,38 @@ fn resolve_expr(resolver: &mut Resolver, expr: Expression) -> Result<Expression,
             ty,
             span,
         }),
+
+        Expression::Get {
+            kind,
+            object,
+            field,
+            ty,
+            span,
+        } => Ok(Expression::Get {
+            kind,
+            object: resolve_expr(resolver, *object)?.into(),
+            field,
+            ty,
+            span,
+        }),
+
+        Expression::StructLiteral { members, ty, span } => {
+            let mut resolved_member_inits = vec![];
+
+            for member in members {
+                let resolved = resolve_expr(resolver, *member.init)?;
+                resolved_member_inits.push(MemberInit {
+                    name: member.name,
+                    init: resolved.into(),
+                });
+            }
+
+            Ok(Expression::StructLiteral {
+                members: resolved_member_inits,
+                ty,
+                span,
+            })
+        }
     }
 }
 

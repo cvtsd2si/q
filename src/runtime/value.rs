@@ -90,11 +90,12 @@ pub enum ValueTag {
     Str = 12,
     Array = 13,
     Ptr = 14,
+    Struct = 15,
 }
 
 impl ValueTag {
     pub fn is_aggregate(self) -> bool {
-        matches!(self, ValueTag::Array)
+        matches!(self, ValueTag::Array | ValueTag::Struct)
     }
 
     pub fn is_signed(self) -> bool {
@@ -142,6 +143,7 @@ impl From<Type> for ValueTag {
             Type::String => ValueTag::Str,
             Type::Array(_) => ValueTag::Array,
             Type::Ptr(_) => ValueTag::Ptr,
+            Type::Struct(_) => ValueTag::Struct,
         }
     }
 }
@@ -480,6 +482,8 @@ impl std::fmt::Display for Value {
             ValueTag::Ptr => {
                 write!(f, "{:p}", self.payload as usize as *const u8)
             }
+
+            ValueTag::Struct => todo!(),
         }
     }
 }

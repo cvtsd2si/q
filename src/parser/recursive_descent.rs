@@ -1,6 +1,6 @@
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, LiteralVal, Param, Program,
-    Statement, Type, TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, GetExpressionKind, LiteralVal,
+    MemberInit, Param, Program, Statement, StructMember, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::{NumberKind, NumberToken, Span, Token, TokenKind};
 use crate::{QError, QErrorKind};
@@ -108,7 +108,7 @@ impl<'src, 'types> Parser<'src, 'types> {
     fn parse_block_item(&mut self) -> Result<BlockItem, QError> {
         match self.curr {
             Some(token) => match token.kind {
-                TokenKind::Fn => Ok(BlockItem::Decl(self.parse_decl()?)),
+                TokenKind::Fn | TokenKind::Struct => Ok(BlockItem::Decl(self.parse_decl()?)),
                 TokenKind::Ret
                 | TokenKind::Let
                 | TokenKind::Print
@@ -146,6 +146,7 @@ impl<'src, 'types> Parser<'src, 'types> {
         match self.curr {
             Some(token) => match token.kind {
                 TokenKind::Fn => self.parse_fn(),
+                TokenKind::Struct => self.parse_struct(),
                 _ => unimplemented!(),
             },
             None => Err(QError {
@@ -264,6 +265,43 @@ impl<'src, 'types> Parser<'src, 'types> {
             params,
             body,
         })
+    }
+
+    fn parse_struct(&mut self) -> Result<Declaration, QError> {
+        self.consume(TokenKind::Struct)?;
+
+        let name = self.consume(TokenKind::Identifier)?;
+
+        let Type::Struct(id) = self.types.intern_struct(self.src_from_span(name.span)) else {
+            unreachable!()
+        };
+
+        self.consume(TokenKind::LBrace)?;
+
+        let mut members = vec![];
+
+        while !self.check(TokenKind::RBrace) {
+            let member_name = self.consume(TokenKind::Identifier)?;
+
+            self.consume(TokenKind::Colon)?;
+
+            let ty = self.parse_type()?;
+
+            members.push(StructMember {
+                name: self.src_from_span(member_name.span),
+                ty,
+            });
+
+            if self.check(TokenKind::RBrace) {
+                break;
+            }
+
+            self.consume(TokenKind::Comma)?;
+        }
+
+        self.consume(TokenKind::RBrace)?;
+
+        Ok(Declaration::Struct { id, members })
     }
 
     fn parse_block(&mut self) -> Result<Vec<Statement>, QError> {
@@ -938,6 +976,29 @@ impl<'src, 'types> Parser<'src, 'types> {
                     ty: None,
                     span: begin + end,
                 };
+            } else if self.check_many_greedy(&[TokenKind::Dot, TokenKind::Arrow]) {
+                let begin = expr.span();
+
+                let kind = match self.prev {
+                    Some(token) => match token.kind {
+                        TokenKind::Dot => GetExpressionKind::Dot,
+                        TokenKind::Arrow => GetExpressionKind::Arrow,
+                        _ => unreachable!(),
+                    },
+                    None => unreachable!(),
+                };
+
+                let field = self.consume(TokenKind::Identifier)?;
+
+                let end = field.span;
+
+                expr = Expression::Get {
+                    kind,
+                    object: expr.into(),
+                    field: self.src_from_span(field.span),
+                    ty: None,
+                    span: begin + end,
+                };
             } else {
                 break;
             }
@@ -987,6 +1048,7 @@ impl<'src, 'types> Parser<'src, 'types> {
                 TokenKind::String => self.parse_string(),
                 TokenKind::LParen => self.parse_grouping(),
                 TokenKind::LBracket => self.parse_array_literal(),
+                TokenKind::LBrace => self.parse_struct_literal(),
                 _ => unreachable!("got: {token:?}"),
             },
             None => Err(QError {
@@ -1106,7 +1168,47 @@ impl<'src, 'types> Parser<'src, 'types> {
         })
     }
 
+    fn parse_struct_literal(&mut self) -> Result<Expression, QError> {
+        let begin = self.consume(TokenKind::LBrace)?.span;
+
+        let mut members = vec![];
+        while !self.check(TokenKind::RBrace) {
+            let member_name = self.consume(TokenKind::Identifier)?;
+
+            self.consume(TokenKind::Colon)?;
+
+            let member_init = self.parse_expr()?.into();
+
+            members.push(MemberInit {
+                name: self.src_from_span(member_name.span),
+                init: member_init,
+            });
+
+            if self.check(TokenKind::RBrace) {
+                break;
+            }
+
+            self.consume(TokenKind::Comma)?;
+        }
+
+        let end = self.consume(TokenKind::RBrace)?.span;
+
+        Ok(Expression::StructLiteral {
+            members,
+            ty: None,
+            span: begin + end,
+        })
+    }
+
     fn parse_type(&mut self) -> Result<Type, QError> {
+        if self.check(TokenKind::Struct) {
+            self.consume(TokenKind::Struct)?;
+
+            let name = self.consume(TokenKind::Identifier)?;
+
+            return Ok(self.types.intern_struct(self.src_from_span(name.span)));
+        }
+
         if self.check(TokenKind::Star) {
             self.consume(TokenKind::Star)?;
 
