@@ -1,8 +1,9 @@
 use std::sync::atomic::AtomicU64;
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, Literal, LiteralVal, Param, Program,
-    Statement, Type, TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, GetExpressionKind, Literal,
+    LiteralVal, Param, Program, Statement, StructMember, StructTypeId, Type, TypeInterner,
+    UnaryExpressionKind,
 };
 
 pub trait Irfy {
@@ -45,9 +46,15 @@ impl Irfy for Declaration {
                 params,
                 body,
             } => IRDecl::Fn(irfy_fn(name, ret, params, body, types)),
-            Declaration::Struct { id, members } => todo!(),
+            Declaration::Struct { id, members } => IRDecl::Struct(IRStruct { id, members }),
         }
     }
+}
+
+#[derive(Debug)]
+struct IRStruct {
+    id: StructTypeId,
+    members: Vec<StructMember>,
 }
 
 fn irfy_fn(
@@ -88,11 +95,8 @@ impl Irfy for Statement {
 
         match self {
             Statement::Let { name, init, ty } => match ty.unwrap() {
-                Type::Array(_) => {
-                    let dst = IRVal::Var {
-                        name,
-                        ty: ty.unwrap(),
-                    };
+                ty if ty.is_aggregate() => {
+                    let dst = IRVal::Var { name, ty };
                     irfy_compound_init(&mut instrs, &dst, 0, &init, types);
                 }
 
@@ -363,11 +367,11 @@ fn irfy_expr_and_cvt(
         ExpRes::SubObject { base, offset } => {
             let dst = mkirvar(expr.ty().unwrap());
 
-            // instrs.push(IRInstr::CpyFromOffset {
-            //     src: base,
-            //     offset,
-            //     dst: dst.clone(),
-            // });
+            instrs.push(IRInstr::CpyFromOffset {
+                src: base,
+                offset,
+                dst: dst.clone(),
+            });
 
             dst
         }
@@ -410,8 +414,28 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
                     ExpRes::Plain(dst)
                 }
                 ExpRes::DereferencedPtr(ptr) => ExpRes::Plain(ptr),
-                ExpRes::SubObject { .. } => todo!("address of subobject"),
-                ExpRes::Plain(_) => unreachable!("typechecker rejects address of rvalue"),
+
+                ExpRes::SubObject { base, offset } => {
+                    let base_ptr = mkirvar(types.intern_ptr(base.ty()));
+
+                    instrs.push(IRInstr::GetAddr {
+                        src: base,
+                        dst: base_ptr.clone(),
+                    });
+
+                    let dst = mkirvar(ptr_ty);
+
+                    instrs.push(IRInstr::AddPtr {
+                        ptr: base_ptr,
+                        index: IRVal::Const(Literal::Int64(offset.try_into().unwrap())),
+                        scale: 1,
+                        dst: dst.clone(),
+                    });
+
+                    ExpRes::Plain(dst)
+                }
+
+                _ => unreachable!(),
             }
         }
 
@@ -624,11 +648,11 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
                     });
                 }
                 ExpRes::SubObject { base, offset } => {
-                    // instrs.push(IRInstr::CpyToOffset {
-                    //     src: rhs.clone(),
-                    //     dst: base,
-                    //     offset,
-                    // });
+                    instrs.push(IRInstr::CpyToOffset {
+                        src: rhs.clone(),
+                        dst: base,
+                        offset,
+                    });
                 }
             }
 
@@ -698,10 +722,67 @@ fn irfy_expr(instrs: &mut Vec<IRInstr>, expr: &Expression, types: &mut TypeInter
             object,
             field,
             ty,
-            span,
-        } => todo!(),
+            ..
+        } => {
+            let object_ty = object.ty().unwrap();
+            let field_ty = ty.unwrap();
 
-        Expression::StructLiteral { members, ty, span } => todo!(),
+            let struct_ty = match (*kind, object_ty) {
+                (GetExpressionKind::Dot, ty) => ty,
+                (GetExpressionKind::Arrow, Type::Ptr(id)) => types.get_pointer(id),
+                _ => unreachable!(),
+            };
+
+            let Type::Struct(id) = struct_ty else {
+                unreachable!()
+            };
+
+            let offset = types
+                .get_struct_layout(id)
+                .fields
+                .get(field)
+                .unwrap()
+                .offset;
+
+            let object = match kind {
+                GetExpressionKind::Dot => irfy_expr(instrs, object, types),
+                GetExpressionKind::Arrow => {
+                    ExpRes::DereferencedPtr(irfy_expr_and_cvt(instrs, object, types))
+                }
+            };
+
+            match object {
+                ExpRes::Plain(base @ IRVal::Var { .. }) => ExpRes::SubObject { base, offset },
+
+                ExpRes::SubObject { base, offset: prev } => ExpRes::SubObject {
+                    base,
+                    offset: prev + offset,
+                },
+
+                ExpRes::DereferencedPtr(ptr) => {
+                    let dst = mkirvar(types.intern_ptr(field_ty));
+
+                    instrs.push(IRInstr::AddPtr {
+                        ptr,
+                        index: IRVal::Const(Literal::Int64(i64::try_from(offset).unwrap())),
+                        scale: 1,
+                        dst: dst.clone(),
+                    });
+
+                    ExpRes::DereferencedPtr(dst)
+                }
+
+                _ => unreachable!(),
+            }
+        }
+
+        Expression::StructLiteral { ty, .. } => {
+            let dst = mkirvar(ty.unwrap());
+
+            irfy_compound_init(instrs, &dst, 0, expr, types);
+
+            ExpRes::Plain(dst)
+        }
     }
 }
 
@@ -862,6 +943,23 @@ fn irfy_compound_init(
             }
         }
 
+        Expression::StructLiteral {
+            members,
+            ty: Some(Type::Struct(id)),
+            ..
+        } => {
+            for member in members {
+                let field_offset = types
+                    .get_struct_layout(*id)
+                    .fields
+                    .get(&member.name)
+                    .unwrap()
+                    .offset;
+
+                irfy_compound_init(instrs, dst, offset + field_offset, &member.init, types);
+            }
+        }
+
         _ => {
             let src = irfy_expr_and_cvt(instrs, init, types);
 
@@ -923,8 +1021,24 @@ fn irfy_array_base(
             }
         }
 
-        ExpRes::SubObject { .. } => {
-            todo!("address of subobject")
+        ExpRes::SubObject { base, offset } => {
+            let base_ptr = mkirvar(types.intern_ptr(base.ty()));
+
+            instrs.push(IRInstr::GetAddr {
+                src: base,
+                dst: base_ptr.clone(),
+            });
+
+            let dst = mkirvar(ptr_ty);
+
+            instrs.push(IRInstr::AddPtr {
+                ptr: base_ptr,
+                index: IRVal::Const(Literal::Int64(offset.try_into().unwrap())),
+                scale: 1,
+                dst: dst.clone(),
+            });
+
+            dst
         }
 
         ExpRes::Plain(_) => unreachable!(),
@@ -1357,14 +1471,14 @@ impl IRProg {
     pub fn functions(&self) -> impl Iterator<Item = &IRFunc> {
         self.block_items.iter().filter_map(|item| match item {
             IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
-            IRBlockItem::Stmt(_) => None,
+            _ => None,
         })
     }
 
     pub fn functions_mut(&mut self) -> impl Iterator<Item = &mut IRFunc> {
         self.block_items.iter_mut().filter_map(|item| match item {
             IRBlockItem::Decl(IRDecl::Fn(func)) => Some(func),
-            IRBlockItem::Stmt(_) => None,
+            _ => None,
         })
     }
 
@@ -1391,6 +1505,7 @@ pub enum StaticInit {
 #[derive(Debug)]
 pub enum IRDecl {
     Fn(IRFunc),
+    Struct(IRStruct),
 }
 
 #[derive(Debug)]
@@ -1432,7 +1547,7 @@ impl std::fmt::Display for IRVal {
 enum ExpRes {
     Plain(IRVal),
     DereferencedPtr(IRVal),
-    SubObject { base: String, offset: usize },
+    SubObject { base: IRVal, offset: usize },
 }
 
 fn mkirvar(ty: Type) -> IRVal {

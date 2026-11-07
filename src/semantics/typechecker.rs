@@ -1,7 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::parser::ast::{
-    BinaryExpressionKind, BlockItem, Declaration, Expression, FieldLayout, GetExpressionKind, Literal, LiteralVal, MemberInit, Param, Program, Statement, StructLayout, StructMember, StructTypeId, Type, TypeInterner, UnaryExpressionKind,
+    BinaryExpressionKind, BlockItem, Declaration, Expression, FieldLayout, GetExpressionKind,
+    Literal, LiteralVal, MemberInit, Param, Program, Statement, StructLayout, StructMember,
+    StructTypeId, Type, TypeInterner, UnaryExpressionKind,
 };
 use crate::tokenizer::token::Span;
 use crate::{QError, QErrorKind};
@@ -1708,16 +1710,11 @@ fn is_assignable(expr: &Expression) -> bool {
     }
 }
 
-fn register_struct_layouts(
-    tc: &mut Typechecker,
-    items: &[BlockItem],
-) -> Result<(), QError> {
+fn register_struct_layouts(tc: &mut Typechecker, items: &[BlockItem]) -> Result<(), QError> {
     let declarations: HashMap<StructTypeId, &[StructMember]> = items
         .iter()
         .filter_map(|item| match item {
-            BlockItem::Decl(Declaration::Struct { id, members }) => {
-                Some((*id, members.as_slice()))
-            }
+            BlockItem::Decl(Declaration::Struct { id, members }) => Some((*id, members.as_slice())),
             _ => None,
         })
         .collect();
@@ -1735,9 +1732,7 @@ fn ensure_type_layout(
     ty: Type,
 ) -> Result<(), QError> {
     match ty {
-        Type::Struct(id) => {
-            compute_struct_layout(types, declarations, id)
-        }
+        Type::Struct(id) => compute_struct_layout(types, declarations, id),
 
         Type::Array(id) => {
             let element = types.get_array(id).element;
@@ -1791,10 +1786,7 @@ fn compute_struct_layout(
         offset = offset.checked_add(field_size).ok_or_else(|| QError {
             code: 1,
             kind: QErrorKind::Typecheck,
-            msg: format!(
-                "Struct '{}' is too large",
-                types.get_struct(id).name
-            ),
+            msg: format!("Struct '{}' is too large", types.get_struct(id).name),
             span: Span { start: 0, end: 0 },
         })?;
 

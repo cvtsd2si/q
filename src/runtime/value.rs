@@ -95,7 +95,7 @@ pub enum ValueTag {
 
 impl ValueTag {
     pub fn is_aggregate(self) -> bool {
-        matches!(self, ValueTag::Array)
+        matches!(self, ValueTag::Array | ValueTag::Struct)
     }
 
     pub fn is_signed(self) -> bool {

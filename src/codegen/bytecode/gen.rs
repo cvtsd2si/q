@@ -72,6 +72,7 @@ pub struct BytecodeFunc {
 pub struct AggregateLocal {
     pub slot: usize,
     pub size: usize,
+    pub ty: Type,
 }
 
 impl Codegen<BytecodeProg> for IRProg {
@@ -117,10 +118,8 @@ impl Codegen<BytecodeFunc> for IRFunc {
                 _ => None,
             };
 
-            if let Some(IRVal::Var {
-                name,
-                ty: Type::Array(id),
-            }) = aggregate
+            if let Some(IRVal::Var { name, ty }) = aggregate
+                && ty.is_aggregate()
             {
                 let slot = ctx.register::<String>(name);
 
@@ -128,7 +127,8 @@ impl Codegen<BytecodeFunc> for IRFunc {
                     slot,
                     AggregateLocal {
                         slot,
-                        size: Type::Array(*id).size_of(ctx.types),
+                        size: ty.size_of(ctx.types),
+                        ty: *ty,
                     },
                 );
             }

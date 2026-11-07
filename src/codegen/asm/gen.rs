@@ -15,7 +15,7 @@ use crate::{
         bytecode::r#gen::BytecodeFunc,
         ir::r#gen::{IRFunc, IRInstr, IRProg, IRVal, StaticInit, mktmp},
     },
-    parser::ast::{BinaryExpressionKind, Literal, Type, UnaryExpressionKind},
+    parser::ast::{BinaryExpressionKind, Literal, Type, TypeInterner, UnaryExpressionKind},
     runtime::{
         jit::{JIT_ERROR, JIT_RET},
         rt::Rt,
@@ -169,7 +169,7 @@ pub enum AsmType {
     Quad,
     Float,
     Double,
-    Bytearray,
+    Bytearray { size: usize, alignment: usize },
 }
 
 impl AsmType {
@@ -191,8 +191,19 @@ impl AsmType {
             AsmType::Word => 2,
             AsmType::Long | AsmType::Float => 4,
             AsmType::Quad | AsmType::Double => 8,
-            _ => unreachable!(),
+            AsmType::Bytearray { size, .. } => *size,
         }
+    }
+
+    pub fn from_type(ty: Type, types: &TypeInterner) -> Self {
+        if ty.is_aggregate() {
+            return Self::Bytearray {
+                size: ty.size_of(types),
+                alignment: ty.alignment(types),
+            };
+        }
+
+        ty.into()
     }
 }
 
@@ -206,8 +217,7 @@ impl From<Type> for AsmType {
             Type::Float32 => AsmType::Float,
             Type::Float64 => AsmType::Double,
             Type::String | Type::Ptr(_) => AsmType::Quad,
-            Type::Array(_) => AsmType::Bytearray,
-            Type::Struct(_) => AsmType::Bytearray,
+            Type::Array(_) | Type::Struct(_) => unreachable!(),
         }
     }
 }
@@ -2731,33 +2741,35 @@ impl Codegen<Vec<AsmInstr>> for IRInstr {
                 let src_op = src.codegen(ctx)?;
                 let dst_op = AsmOp::PseudoMem(dst.to_string(), *offset as isize, dst.ty());
 
-                if matches!(src.ty(), Type::Array(_)) {
-                    Ok(copy_bytes(src_op, dst_op, src.ty().size_of(ctx.types)))
-                } else {
-                    Ok(vec![AsmInstr::Mov {
-                        src: src_op,
-                        dst: dst_op,
-                        asm_ty: src.ty().into(),
-                    }])
+                if src.ty().is_aggregate() {
+                    return Ok(copy_bytes(src_op, dst_op, src.ty().size_of(ctx.types)));
                 }
+
+                Ok(vec![AsmInstr::Mov {
+                    src: src_op,
+                    dst: dst_op,
+                    asm_ty: src.ty().into(),
+                }])
             }
 
             IRInstr::CpyFromOffset { src, offset, dst } => {
-                let ty = src.ty();
+                let IRVal::Var { name, ty } = src else {
+                    unreachable!("CpyFromOffset needs an aggregate source");
+                };
 
-                if matches!(ty, Type::Array(_)) {
-                    Ok(copy_bytes(
-                        AsmOp::PseudoMem(src.to_string(), *offset as isize, ty),
-                        dst.codegen(ctx)?,
-                        dst.ty().size_of(ctx.types),
-                    ))
-                } else {
-                    Ok(vec![AsmInstr::Mov {
-                        src: AsmOp::PseudoMem(src.to_string(), *offset as isize, ty),
-                        dst: dst.codegen(ctx)?,
-                        asm_ty: ty.into(),
-                    }])
+                let src_op = AsmOp::PseudoMem(name.clone(), *offset as isize, *ty);
+                let dst_op = dst.codegen(ctx)?;
+                let field_ty = dst.ty();
+
+                if field_ty.is_aggregate() {
+                    return Ok(copy_bytes(src_op, dst_op, field_ty.size_of(ctx.types)));
                 }
+
+                Ok(vec![AsmInstr::Mov {
+                    src: src_op,
+                    dst: dst_op,
+                    asm_ty: field_ty.into(),
+                }])
             }
         }
     }

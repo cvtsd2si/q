@@ -759,7 +759,34 @@ impl<'types> Vm<'types> {
     }
 
     fn handle_op_cpy_from_offset(&mut self, local: usize, offset: usize, ty: Type) {
-        todo!()
+        let src = self.stack[self.fp + local];
+        assert!(src.tag.is_aggregate());
+
+        let size = ty.size_of(self.types);
+        assert!(size <= 8);
+
+        let src = src.payload as *const u8;
+        let src = src.wrapping_add(offset);
+
+        let mut bytes = [0u8; 8];
+
+        unsafe {
+            std::ptr::copy_nonoverlapping(src, bytes.as_mut_ptr(), size);
+        }
+
+        let bits = u64::from_le_bytes(bytes);
+
+        let payload = match ty {
+            Type::Int8 => bits as i8 as i64 as u64,
+            Type::Int16 => bits as i16 as i64 as u64,
+            Type::Int32 => bits as i32 as i64 as u64,
+            _ => bits,
+        };
+
+        self.push(Value {
+            tag: ty.into(),
+            payload,
+        });
     }
 
     fn handle_op_ret(&mut self, v: Value) -> Option<Value> {
